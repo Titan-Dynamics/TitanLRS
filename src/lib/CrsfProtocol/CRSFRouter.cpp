@@ -64,16 +64,23 @@ void CRSFRouter::deliverMessage(const CRSFConnector *connector, const crsf_heade
     const crsf_frame_type_e packetType = message->type;
     const auto extMessage = (crsf_ext_header_t *)message;
 
-    // deliver extended header messages to the connector that 'knows' about the destination device address
+    // deliver extended header messages to all connectors that 'know' about the destination device address
     if (packetType >= CRSF_FRAMETYPE_DEVICE_PING && extMessage->dest_addr != CRSF_ADDRESS_BROADCAST)
     {
+        bool delivered = false;
         for (const auto other : connectors)
         {
             if (other != connector && other->forwardsTo(extMessage->dest_addr))
             {
                 other->forwardMessage(message);
-                return;
+                delivered = true;
+                // Continue to deliver to all matching connectors instead of returning
             }
+        }
+
+        if (delivered)
+        {
+            return; // We successfully delivered to at least one connector
         }
     }
 
@@ -89,12 +96,13 @@ void CRSFRouter::deliverMessage(const CRSFConnector *connector, const crsf_heade
 
 void CRSFRouter::deliverMessageTo(const crsf_addr_e destination, const crsf_header_t *message) const
 {
+    // Deliver to all connectors that forward to the destination address
     for (const auto other : connectors)
     {
         if (other->forwardsTo(destination))
         {
             other->forwardMessage(message);
-            return;
+            // Continue to deliver to all matching connectors instead of returning
         }
     }
 }

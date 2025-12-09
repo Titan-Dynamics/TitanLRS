@@ -22,6 +22,9 @@
 #include "devThermal.h"
 #include "devPDET.h"
 #include "devBackpack.h"
+#if defined(OPT_USE_TX_BACKPACK)
+#include "BackpackCRSF.h"
+#endif
 #else
 // Fake functions for 8285
 void checkBackpackUpdate() {}
@@ -1212,6 +1215,14 @@ static void HandleUARTin()
 
       // Try to parse any MSP packets from the Backpack
       ParseMSPData(buf, size);
+      
+      // Try to parse any CRSF parameter frames from the Backpack
+      #if defined(OPT_USE_TX_BACKPACK)
+      for (auto i = 0; i < size; i++)
+      {
+        backpackCRSF.processReceivedByte(buf[i]);
+      }
+      #endif
     }
   }
 
