@@ -1,6 +1,5 @@
 #include "targets.h"
 
-#include "BackpackCRSF.h"
 #include "CRSFHandset.h"
 #include "CRSFRouter.h"
 #include "config.h"
@@ -433,9 +432,6 @@ static bool initialize()
         }
         // Set all channels of PTR data to "do not override" (0xffff)
         memset(ptrChannelData, 0xff, sizeof(ptrChannelData));
-        
-        // Initialize CRSF connector for backpack UART
-        backpackCRSF.begin();
     }
     return OPT_USE_TX_BACKPACK;
 }
