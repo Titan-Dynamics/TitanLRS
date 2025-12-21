@@ -1,6 +1,7 @@
 #pragma once
 
 #include "device.h"
+#include "msp.h"
 
 /**
  * @brief process backpack PTR (pan/tilt/roll) MSP packet from goggles/head tracker.
