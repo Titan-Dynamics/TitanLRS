@@ -456,6 +456,9 @@ static int timeout()
         out.function = MSP_ELRS_GET_BACKPACK_VERSION;
         MSP::sendPacket(&out, BackpackOrLogStrm);
         DBGLN("Sending get backpack version command");
+
+        // Also try to send config to backpack as we get the version
+        sendConfigToBackpack();
     }
 
     if (connectionState < MODE_STATES && !config.GetBackpackDisable())
