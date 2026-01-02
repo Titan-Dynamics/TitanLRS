@@ -211,8 +211,12 @@ void TxConfig::Load()
         // backpackdisable was actually added after 7, but if not found will default to 0 (enabled)
         if (nvs_get_u8(handle, "backpackdisable", &value8) == ESP_OK)
             m_config.backpackDisable = value8;
-        if (nvs_get_u8(handle, "backpacktlmen", &value8) == ESP_OK)
+        // Only load backpacktlmen if version >= 9, otherwise default to WIFI
+        if (version >= 9 && nvs_get_u8(handle, "backpacktlmen", &value8) == ESP_OK)
             m_config.backpackTlmMode = value8;
+        else if (version < 9)
+            // Force write of new WIFI default when upgrading to v9
+            m_modified |= EVENT_CONFIG_MAIN_CHANGED;
     }
 
     for(unsigned i=0; i<CONFIG_TX_MODEL_CNT; i++)
@@ -301,6 +305,12 @@ void TxConfig::Load()
     if (version == 7)
     {
         UpgradeEepromV7ToV8();
+        version = 8;
+    }
+
+    if (version == 8)
+    {
+        UpgradeEepromV8ToV9();
     }
 }
 
@@ -384,6 +394,42 @@ void TxConfig::UpgradeEepromV7ToV8()
 
     // Full Commit now
     m_config.version = 8U | TX_CONFIG_MAGIC;
+    Commit();
+}
+
+void TxConfig::UpgradeEepromV8ToV9()
+{
+    tx_config_t v8Config;
+    m_eeprom->Get(0, v8Config);
+
+    // Copy all fields except backpackTlmMode (which stays at WIFI default from SetDefaults)
+    #define LAZY(member) m_config.member = v8Config.member
+    LAZY(vtxBand);
+    LAZY(vtxChannel);
+    LAZY(vtxPower);
+    LAZY(vtxPitmode);
+    LAZY(powerFanThreshold);
+    LAZY(fanMode);
+    LAZY(motionMode);
+    LAZY(dvrAux);
+    LAZY(dvrStartDelay);
+    LAZY(dvrStopDelay);
+    LAZY(backpackDisable);
+    // Note: NOT copying backpackTlmMode - force to new WIFI default
+    #undef LAZY
+
+    m_config.buttonColors[0].raw = v8Config.buttonColors[0].raw;
+    m_config.buttonColors[1].raw = v8Config.buttonColors[1].raw;
+
+    for (unsigned i=0; i<CONFIG_TX_MODEL_CNT; i++)
+    {
+        m_config.model_config[i] = v8Config.model_config[i];
+    }
+
+    m_modified = ALL_CHANGED;
+
+    // Full Commit now
+    m_config.version = 9U | TX_CONFIG_MAGIC;
     Commit();
 }
 #endif
@@ -715,6 +761,7 @@ TxConfig::SetDefaults(bool commit)
 
     m_config.version = TX_CONFIG_VERSION | TX_CONFIG_MAGIC;
     m_config.powerFanThreshold = PWR_250mW;
+    m_config.backpackTlmMode = BACKPACK_TELEM_MODE_WIFI;
     m_modified = ALL_CHANGED;
 
     // Set defaults for button 1

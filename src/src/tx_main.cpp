@@ -35,6 +35,7 @@ void sendMAVLinkTelemetryToBackpack(uint8_t *) {}
 #include "TXModuleEndpoint.h"
 #include "TXOTAConnector.h"
 #include "TXUSBConnector.h"
+#include "TXBackpackConnector.h"
 
 #if defined(PLATFORM_ESP8266)
 #include <user_interface.h>
@@ -95,6 +96,7 @@ CRSFRouter crsfRouter;
 TXModuleEndpoint crsfTransmitter;
 TXOTAConnector otaConnector;
 TXUSBConnector usbConnector;
+TXBackpackConnector backpackConnector;
 CRSFParser crsfParser;
 
 device_affinity_t ui_devices[] = {
@@ -1148,6 +1150,12 @@ static void HandleUARTin()
     return;
   }
 
+  // If not connected, flush any stale data in the mavlink input buffer
+  if (connectionState != connected)
+  {
+    uartInputBuffer.flush();
+  }
+
   // USB serial input
   // If a mavlink packet is received on the USB input, automatically switch the link mode to and process as mavlink
   // Otherwise, USB serial data is processed as CRSF
@@ -1173,10 +1181,8 @@ static void HandleUARTin()
       uartInputBuffer.pushBytes(buf, size);
       uartInputBuffer.unlock();
     }
-    else
-    {
-      crsfParser.processBytes(&usbConnector, buf, size);
-    }
+    // Always try to parse any CRSF packets from the USB serial input
+    crsfParser.processBytes(&usbConnector, buf, size);
   }
 
   // Backpack serial input
@@ -1208,8 +1214,9 @@ static void HandleUARTin()
         }
       }
 
-      // Try to parse any MSP packets from the Backpack
+      // Always try to parse MSP and CRSF packets from the Backpack
       ParseMSPData(buf, size);
+      crsfParser.processBytes(&backpackConnector, buf, size);
     }
   }
 
@@ -1281,7 +1288,7 @@ static void setupSerial()
 #elif defined(PLATFORM_ESP32) && !defined(PLATFORM_ESP32_C3)
   if (GPIO_PIN_DEBUG_RX == U0RXD_GPIO_NUM && GPIO_PIN_DEBUG_TX == U0TXD_GPIO_NUM)
   {
-    // The backpack or Airpoirt is already assigned on UART0 (pins 3, 1)
+    // The backpack or Airport is already assigned on UART0 (pins 3, 1)
     // This is also USB on modules that use DIPs
     // Set TxUSB to BackpackOrLogStrm so that data goes to the same place
     TxUSB = BackpackOrLogStrm;
@@ -1423,6 +1430,7 @@ void setup()
     crsfRouter.addConnector(&otaConnector);
     crsfRouter.addEndpoint(&crsfTransmitter);
     crsfRouter.addConnector(&usbConnector);
+    crsfRouter.addConnector(&backpackConnector);
     // When a CRSF handset is detected, it will add itself to the router
 
     handset->registerCallbacks(UARTconnected, firmwareOptions.is_airport ? nullptr : UARTdisconnected);
