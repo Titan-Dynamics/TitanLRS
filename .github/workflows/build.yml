@@ -260,7 +260,7 @@ jobs:
           AWS_REGION: "auto"
         run: |
           # Skip AWS upload for tagged releases (we use GitHub Releases instead)
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "This is a tagged release - skipping AWS upload (using GitHub Releases instead)"
             exit 0
           fi
@@ -300,7 +300,7 @@ jobs:
   release:
     needs: firmware
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -312,7 +312,7 @@ jobs:
       - name: Get version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          VERSION=${GITHUB_REF#refs/tags/}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Building TitanLRS version $VERSION"
 
