@@ -330,24 +330,9 @@ jobs:
           cd ..
           sha256sum firmware-${{ steps.version.outputs.VERSION }}.zip > firmware-${{ steps.version.outputs.VERSION }}.zip.sha256
 
-      - name: Create GitHub Release
+      - name: Attach firmware to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: TitanLRS ${{ steps.version.outputs.VERSION }}
-          body: |
-            TitanLRS Firmware Release ${{ steps.version.outputs.VERSION }}
-
-            Custom ExpressLRS firmware for Titan Dynamics applications.
-
-            ## Contents
-            - Firmware binaries for all supported hardware
-            - FCC and LBT regulatory domain builds
-            - Hardware definitions, Lua scripts, bootloaders
-            - Python flasher tool
-
-            ## Installation
-            Download `firmware-${{ steps.version.outputs.VERSION }}.zip` and extract.
-            Use included flasher.pyz or ExpressLRS Configurator.
           files: |
             firmware-${{ steps.version.outputs.VERSION }}.zip
             firmware-${{ steps.version.outputs.VERSION }}.zip.sha256
