@@ -259,6 +259,12 @@ jobs:
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
           AWS_REGION: "auto"
         run: |
+          # Skip AWS upload for tagged releases (we use GitHub Releases instead)
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "This is a tagged release - skipping AWS upload (using GitHub Releases instead)"
+            exit 0
+          fi
+
           aws --version
           if [[ -z $AWS_ACCESS_KEY_ID || -z $AWS_SECRET_ACCESS_KEY || -z $AWS_ENDPOINT_URL ]]; then
             echo "Artifactory credentials are not defined. Most likely action is running from pull request. Not a bug."
@@ -290,3 +296,62 @@ jobs:
             echo "Not overwriting already existing artifact at $GITHUB_SHA"
             exit 1
           fi
+
+  release:
+    needs: firmware
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building TitanLRS version $VERSION"
+
+      - name: Download firmware artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: dist
+
+      - name: Create release bundle
+        run: |
+          cd dist
+          mv firmware firmware-${{ steps.version.outputs.VERSION }}
+          zip -r -9 ../firmware-${{ steps.version.outputs.VERSION }}.zip ./firmware-${{ steps.version.outputs.VERSION }}
+          cd ..
+          sha256sum firmware-${{ steps.version.outputs.VERSION }}.zip > firmware-${{ steps.version.outputs.VERSION }}.zip.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TitanLRS ${{ steps.version.outputs.VERSION }}
+          body: |
+            TitanLRS Firmware Release ${{ steps.version.outputs.VERSION }}
+
+            Custom ExpressLRS firmware for Titan Dynamics applications.
+
+            ## Contents
+            - Firmware binaries for all supported hardware
+            - FCC and LBT regulatory domain builds
+            - Hardware definitions, Lua scripts, bootloaders
+            - Python flasher tool
+
+            ## Installation
+            Download `firmware-${{ steps.version.outputs.VERSION }}.zip` and extract.
+            Use included flasher.pyz or ExpressLRS Configurator.
+          files: |
+            firmware-${{ steps.version.outputs.VERSION }}.zip
+            firmware-${{ steps.version.outputs.VERSION }}.zip.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
