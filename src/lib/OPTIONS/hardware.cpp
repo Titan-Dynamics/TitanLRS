@@ -1,4 +1,25 @@
-#if !defined(UNIT_TEST)
+#if defined(PLATFORM_STM32)
+// STM32: hardware config is compile-time from target headers, no JSON loading needed
+#include "options.h"
+#include "hardware.h"
+
+static struct {
+    int int_value;
+    bool bool_value;
+    float float_value;
+    int16_t array_value[10];
+} hardware[HARDWARE_LAST] = {0};
+
+String builtinHardwareConfig;
+String& getHardware() { return builtinHardwareConfig; }
+int hardware_pin(nameType name) { return hardware[name].int_value; }
+bool hardware_flag(nameType name) { return hardware[name].bool_value; }
+int hardware_int(nameType name) { return hardware[name].int_value; }
+float hardware_float(nameType name) { return hardware[name].float_value; }
+const int16_t* hardware_i16_array(nameType name) { return hardware[name].array_value; }
+const uint16_t* hardware_u16_array(nameType name) { return (uint16_t *)hardware[name].array_value; }
+
+#elif !defined(UNIT_TEST)
 #include "options.h"
 #include "helpers.h"
 #include "logging.h"

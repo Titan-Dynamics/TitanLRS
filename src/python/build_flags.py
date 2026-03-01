@@ -138,7 +138,8 @@ process_flags("super_defines.txt") # allow secret super_defines to override user
 version_to_env()
 build_flags.append("-DLATEST_COMMIT=" + get_git_sha())
 build_flags.append("-DLATEST_VERSION=" + get_version())
-build_flags.append("-DTARGET_NAME=" + re.sub("_VIA_.*", "", target_name))
+if not any(x.startswith("-DTARGET_NAME=") for x in build_flags):
+    build_flags.append("-DTARGET_NAME=" + re.sub("_VIA_.*", "", target_name))
 condense_flags()
 
 if '-DRADIO_SX127X=1' in build_flags or '-DRADIO_LR1121=1' in build_flags:

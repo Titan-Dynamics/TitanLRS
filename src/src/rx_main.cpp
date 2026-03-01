@@ -33,13 +33,20 @@
 #include "devButton.h"
 #include "devLED.h"
 #include "devRXLUA.h"
+#if !defined(PLATFORM_STM32)
 #include "devServoOutput.h"
 #include "devWIFI.h"
+#else
+// Stub: no servo output on STM32
+static inline void servoNewChannelsAvailable() {}
+#endif
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
 #include "rx-serial/devSerialIO.h"
 
+#if !defined(PLATFORM_STM32)
 #include <LittleFS.h>
+#endif
 #if defined(PLATFORM_ESP8266)
 #include <user_interface.h>
 #elif defined(PLATFORM_ESP32)
@@ -48,6 +55,8 @@
 #include "devMSPVTX.h"
 #include "devThermal.h"
 #include "esp_task_wdt.h"
+#elif defined(PLATFORM_STM32)
+#include "stm32_def.h"
 #endif
 
 //
@@ -82,10 +91,14 @@ device_affinity_t ui_devices[] = {
   {&LED_device, 0},
   {&RXLUA_device, 0},
   {&RGB_device, 0},
+#if !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
+#endif
   {&Button_device, 0},
   {&AnalogVbat_device, 0},
+#if !defined(PLATFORM_STM32)
   {&ServoOut_device, 1},
+#endif
   {&Baro_device, 0}, // must come after AnalogVbat_device to slow updates
 #if defined(PLATFORM_ESP32) && !defined(PLATFORM_ESP32_C3)
   {&VTxSPI_device, 0},
@@ -110,12 +123,25 @@ bool crsfBatterySensorDetected = false;
 bool crsfBaroSensorDetected = false;
 
 unsigned long rebootTime = 0;
+#if !defined(PLATFORM_STM32)
 extern bool webserverPreventAutoStart;
+#else
+static bool webserverPreventAutoStart;
+#endif
 bool pwmSerialDefined = false;
 uint32_t serialBaud;
 
 /* SERIAL_PROTOCOL_TX is used by CRSF output */
+#if defined(TARGET_DIY_900_RX_WEACT_H743_DEBUG)
+HardwareSerial SERIAL_PROTOCOL_TX(USART2);
+#elif defined(TARGET_DIY_900_RX_WEACT_H743)
+HardwareSerial SERIAL_PROTOCOL_TX(USART2);
+#elif defined(PLATFORM_STM32)
+// Default STM32 serial: override per-target as needed
+HardwareSerial SERIAL_PROTOCOL_TX(USART1);
+#else
 #define SERIAL_PROTOCOL_TX Serial
+#endif
 
 #if defined(PLATFORM_ESP32)
     #define SERIAL1_PROTOCOL_TX Serial1
@@ -129,7 +155,11 @@ uint32_t serialBaud;
 
 SerialIO *serialIO = nullptr;
 
+#if defined(PLATFORM_STM32)
+#define SERIAL_PROTOCOL_RX SERIAL_PROTOCOL_TX
+#else
 #define SERIAL_PROTOCOL_RX Serial
+#endif
 #define SERIAL1_PROTOCOL_RX Serial1
 
 StubbornSender DataDlSender;
@@ -207,7 +237,11 @@ static uint8_t debugRcvrLinkstatsFhssIdx;
 
 bool BindingModeRequest = false;
 
+#if !defined(PLATFORM_STM32)
 extern void setWifiUpdateMode();
+#else
+static inline void setWifiUpdateMode() {}
+#endif
 void reconfigureSerial();
 
 uint8_t getLq()
@@ -1340,6 +1374,21 @@ static void setupSerial()
     // ARDUINO_CORE_INVERT_FIX PT2 end
 
     Serial.begin(serialBaud, serialConfig, GPIO_PIN_RCSIGNAL_RX, GPIO_PIN_RCSIGNAL_TX, invert);
+#elif defined(PLATFORM_STM32)
+    uint32_t serialConfig = SERIAL_8N1;
+
+    if(sbusSerialOutput)
+    {
+        serialConfig = SERIAL_8E2;
+    }
+    else if(hottTlmSerial)
+    {
+        serialConfig = SERIAL_8N2;
+    }
+
+    SERIAL_PROTOCOL_TX.setTx(GPIO_PIN_RCSIGNAL_TX);
+    SERIAL_PROTOCOL_TX.setRx(GPIO_PIN_RCSIGNAL_RX);
+    SERIAL_PROTOCOL_TX.begin(serialBaud, serialConfig);
 #endif
 
     if (firmwareOptions.is_airport)
@@ -1488,7 +1537,11 @@ static void serialShutdown()
     BackpackOrLogStrm = new NullStream();
     if(serialIO != nullptr)
     {
+#if defined(PLATFORM_STM32)
+        SERIAL_PROTOCOL_TX.end();
+#else
         Serial.end();
+#endif
         delete serialIO;
         serialIO = nullptr;
     }
@@ -1797,7 +1850,11 @@ void EnterBindingModeSafely()
         // Force 3-plug binding mode
         config.SetPowerOnCounter(3);
         config.Commit();
+#if defined(PLATFORM_STM32)
+        HAL_NVIC_SystemReset();
+#else
         ESP.restart();
+#endif
         // Unreachable
     }
 
@@ -1946,6 +2003,7 @@ RF_PRE_INIT()
 void resetConfigAndReboot()
 {
     config.SetDefaults(true);
+#if !defined(PLATFORM_STM32)
     // Prevent WDT from rebooting too early if
     // all this flash write is taking too long
     yield();
@@ -1956,6 +2014,9 @@ void resetConfigAndReboot()
     options_SetTrueDefaults();
 
     ESP.restart();
+#else
+    HAL_NVIC_SystemReset();
+#endif
 }
 
 void setup()
@@ -1966,12 +2027,14 @@ void setup()
         // if it decides to log something
         BackpackOrLogStrm = new NullStream();
 
+#if !defined(PLATFORM_STM32)
         // Register the WiFi with the framework
         static device_affinity_t wifi_device[] = {
             {&WIFI_device, 1}
         };
         devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
         devicesInit();
+#endif
 
         setConnectionState(hardwareUndefined);
     }
@@ -2068,7 +2131,11 @@ void loop()
 
     // If the reboot time is set and the current time is past the reboot time then reboot.
     if (rebootTime != 0 && now > rebootTime) {
+#if defined(PLATFORM_STM32)
+        HAL_NVIC_SystemReset();
+#else
         ESP.restart();
+#endif
     }
 
     CheckConfigChangePending();
@@ -2167,7 +2234,24 @@ void reset_into_bootloader(void)
 {
     SERIAL_PROTOCOL_TX.println((const char *)&target_name[4]);
     SERIAL_PROTOCOL_TX.flush();
-#if defined(PLATFORM_ESP8266)
+#if defined(PLATFORM_STM32)
+    delay(100);
+    DBGLN("Jumping to Bootloader...");
+    delay(100);
+
+    /** Write command for firmware update.
+     *
+     * Bootloader checks this memory area (if newer enough) and
+     * perpare itself for fw update. Otherwise it skips the check
+     * and starts ELRS firmware immediately
+     */
+    extern __IO uint32_t _bootloader_data;
+    volatile struct bootloader * blinfo = ((struct bootloader*)&_bootloader_data) + 0;
+    blinfo->key = 0x454c5253; // ELRS
+    blinfo->reset_type = 0xACDC;
+
+    HAL_NVIC_SystemReset();
+#elif defined(PLATFORM_ESP8266)
     delay(100);
     ESP.rebootIntoUartDownloadMode();
 #elif defined(PLATFORM_ESP32)

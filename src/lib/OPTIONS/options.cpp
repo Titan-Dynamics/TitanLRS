@@ -27,6 +27,27 @@ const char *wifi_ap_address = "10.0.0.1";
 #if defined(UNIT_TEST)
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
+#elif defined(PLATFORM_STM32)
+// STM32: compile-time fixed target, no runtime JSON loading
+char product_name[ELRSOPTS_PRODUCTNAME_SIZE+1];
+char device_name[ELRSOPTS_DEVICENAME_SIZE+1];
+firmware_options_t firmwareOptions;
+
+bool options_init()
+{
+    // Set defaults for firmware options
+    memset(&firmwareOptions, 0, sizeof(firmwareOptions));
+    firmwareOptions.uart_baud = 420000;
+#if defined(TARGET_RX)
+    firmwareOptions.lock_on_first_connection = true;
+#endif
+    // Copy target name, truncating to fit
+    strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
+    product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
+    strncpy(device_name, STR(TARGET_NAME), ELRSOPTS_DEVICENAME_SIZE);
+    device_name[ELRSOPTS_DEVICENAME_SIZE] = '\0';
+    return true;
+}
 #else
 #include <ArduinoJson.h>
 #include <StreamString.h>

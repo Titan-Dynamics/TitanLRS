@@ -81,6 +81,12 @@ void ICACHE_RAM_ATTR SPIExClass::_transfer(uint8_t cs_mask, uint8_t *data, uint3
             dataPtr[i] = fifoPtr[i];
         }
     }
+#elif defined(PLATFORM_STM32)
+    // only one (software-controlled) CS pin supported on STM32 devices,
+    // so set the state of the pin
+    digitalWrite(GPIO_PIN_NSS, LOW);
+    transfer(data, size);
+    digitalWrite(GPIO_PIN_NSS, HIGH);
 #endif
 }
 

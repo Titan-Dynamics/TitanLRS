@@ -56,7 +56,7 @@ extern char device_name[];
 extern firmware_options_t firmwareOptions;
 extern bool options_init();
 
-#if !defined(UNIT_TEST)
+#if !defined(UNIT_TEST) && !defined(PLATFORM_STM32)
 extern char product_name[];
 extern uint32_t logo_image;
 extern String& getOptions();
@@ -67,4 +67,6 @@ void setOptions(String &options);
 #include "EspFlashStream.h"
 bool options_HasStringInFlash(EspFlashStream &strmFlash);
 void options_SetTrueDefaults();
+#elif defined(PLATFORM_STM32)
+extern char product_name[];
 #endif
