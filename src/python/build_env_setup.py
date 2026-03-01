@@ -5,7 +5,7 @@ import shutil
 platform = env.get('PIOPLATFORM', '')
 stm = platform in ['ststm32']
 
-if not stm:
+if platform != 'native' and not stm:
     import UnifiedConfiguration
     import upload_via_esp8266_backpack
     import esp_compress
@@ -100,7 +100,7 @@ try:
     os.remove(env['PROJECT_BUILD_DIR'] + '/' + env['PIOENV'] +'/'+ env['PROGNAME'] + '.bin')
 except FileNotFoundError:
     None
-if not stm:
+if platform != 'native' and not stm:
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", UnifiedConfiguration.appendConfiguration)
 if platform in ['espressif8266'] and "_WIFI" in target_name:
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", esp_compress.compressFirmware)
