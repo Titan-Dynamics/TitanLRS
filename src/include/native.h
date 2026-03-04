@@ -20,9 +20,6 @@
 #define GPIO_PIN_NSS_2 UNDEF_PIN
 #define OPT_USE_HARDWARE_DCDC false
 
-// GPIO_PIN_SPI_VTX_NSS intentionally not defined here;
-// targets.h defaults it to UNDEF_PIN and sets OPT_HAS_VTX_SPI false
-
 typedef uint8_t byte;
 
 #define HEX 16

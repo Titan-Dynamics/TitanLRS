@@ -132,10 +132,10 @@ bool pwmSerialDefined = false;
 uint32_t serialBaud;
 
 /* SERIAL_PROTOCOL_TX is used by CRSF output */
-#if defined(TARGET_DIY_900_RX_WEACT_H743_DEBUG)
-HardwareSerial SERIAL_PROTOCOL_TX(USART2);
-#elif defined(TARGET_DIY_900_RX_WEACT_H743)
-HardwareSerial SERIAL_PROTOCOL_TX(USART2);
+#if defined(TARGET_DIY_900_RX_STM32H743_DEBUG)
+HardwareSerial SERIAL_PROTOCOL_TX(USART1);
+#elif defined(TARGET_DIY_900_RX_STM32H743)
+HardwareSerial SERIAL_PROTOCOL_TX(USART1);
 #elif defined(PLATFORM_STM32)
 // Default STM32 serial: override per-target as needed
 HardwareSerial SERIAL_PROTOCOL_TX(USART1);
@@ -2245,8 +2245,8 @@ void reset_into_bootloader(void)
      * perpare itself for fw update. Otherwise it skips the check
      * and starts ELRS firmware immediately
      */
-    extern __IO uint32_t _bootloader_data;
-    volatile struct bootloader * blinfo = ((struct bootloader*)&_bootloader_data) + 0;
+    extern __IO uint8_t _bootloader_data[];
+    volatile struct bootloader * blinfo = (volatile struct bootloader *)_bootloader_data;
     blinfo->key = 0x454c5253; // ELRS
     blinfo->reset_type = 0xACDC;
 
