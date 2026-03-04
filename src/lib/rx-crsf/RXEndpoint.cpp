@@ -2,8 +2,10 @@
 
 #if !defined(UNIT_TEST)
 #include "config.h"
+#if !defined(PLATFORM_STM32)
 #include "devMSPVTX.h"
 #include "devVTXSPI.h"
+#endif
 #include "freqTable.h"
 #include "logging.h"
 #include "msptypes.h"

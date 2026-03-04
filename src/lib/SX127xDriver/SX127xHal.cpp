@@ -56,6 +56,21 @@ void SX127xHal::init()
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setFrequency(10000000);
+#elif defined(PLATFORM_STM32)
+    DBGLN("Config SPI");
+    // Disable flash chip on shared SPI bus
+    #ifdef FLASH_CS_PIN
+    pinMode(FLASH_CS_PIN, OUTPUT);
+    digitalWrite(FLASH_CS_PIN, HIGH);
+    #endif
+    SPIEx.setBitOrder(MSBFIRST);
+    SPIEx.setDataMode(SPI_MODE0);
+    SPIEx.setMOSI(GPIO_PIN_MOSI);
+    SPIEx.setMISO(GPIO_PIN_MISO);
+    SPIEx.setSCLK(GPIO_PIN_SCK);
+    SPIEx.begin();
+    SPIEx.setClockDivider(SPI_CLOCK_DIV16); // ~3.75 MHz
+    DBGLN("SPI configured at ~3.75 MHz");
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO0), this->dioISR_1, RISING);
@@ -79,11 +94,14 @@ void SX127xHal::reset(void)
             digitalWrite(GPIO_PIN_RST_2, LOW);
         }
         delay(50); // Safety buffer. Busy takes longer to go low than the 1ms timeout in WaitOnBusy().
-        pinMode(GPIO_PIN_RST, INPUT); // leave floating
+        digitalWrite(GPIO_PIN_RST, HIGH); // Drive HIGH instead of floating
+        pinMode(GPIO_PIN_RST, OUTPUT);    // Keep as output
         if (GPIO_PIN_RST_2 != UNDEF_PIN)
         {
-            pinMode(GPIO_PIN_RST_2, INPUT);
+            digitalWrite(GPIO_PIN_RST_2, HIGH);
+            pinMode(GPIO_PIN_RST_2, OUTPUT);
         }
+        delay(10); // Give chip time to come out of reset
     }
 
     DBGLN("SX127x Ready!");

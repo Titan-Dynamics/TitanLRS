@@ -1,3 +1,6 @@
+#ifndef __HARDWARE_H__
+#define __HARDWARE_H__
+
 #include <stdint.h>
 
 typedef enum {
@@ -157,3 +160,5 @@ int hardware_int(nameType name);
 float hardware_float(nameType name);
 const int16_t* hardware_i16_array(nameType name);
 const uint16_t* hardware_u16_array(nameType name);
+
+#endif // __HARDWARE_H__

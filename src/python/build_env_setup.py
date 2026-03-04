@@ -1,12 +1,17 @@
 Import("env", "projenv")
 import os
 import shutil
-import upload_via_esp8266_backpack
-import esp_compress
-import elrs_helpers
-import BFinitPassthrough
-import ETXinitPassthrough
-import UnifiedConfiguration
+
+platform = env.get('PIOPLATFORM', '')
+stm = platform in ['ststm32']
+
+if platform != 'native' and not stm:
+    import UnifiedConfiguration
+    import upload_via_esp8266_backpack
+    import esp_compress
+    import elrs_helpers
+    import BFinitPassthrough
+    import ETXinitPassthrough
 
 def add_target_uploadoption(name: str, desc: str) -> None:
     # Add an upload target 'uploadforce' that forces update if target mismatch
@@ -21,9 +26,6 @@ def add_target_uploadoption(name: str, desc: str) -> None:
 
 def get_version(env):
     return '%s (%s) %s' % (env.get('GIT_VERSION'), env.get('GIT_SHA'), env.get('REG_DOMAIN'))
-
-platform = env.get('PIOPLATFORM', '')
-stm = platform in ['ststm32']
 
 target_name = env['PIOENV'].upper()
 print("PLATFORM : '%s'" % platform)
@@ -90,7 +92,7 @@ if "_WIFI" in target_name:
     else:
         env.SetDefault(UPLOAD_PORT="elrs_rx.local")
 
-if platform != 'native':
+if platform != 'native' and not stm:
     add_target_uploadoption("uploadforce", "Upload even if target mismatch")
 
 # Remove stale binary so the platform is forced to build a new one and attach options/hardware-layout files
@@ -98,7 +100,8 @@ try:
     os.remove(env['PROJECT_BUILD_DIR'] + '/' + env['PIOENV'] +'/'+ env['PROGNAME'] + '.bin')
 except FileNotFoundError:
     None
-env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", UnifiedConfiguration.appendConfiguration)
+if platform != 'native' and not stm:
+    env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", UnifiedConfiguration.appendConfiguration)
 if platform in ['espressif8266'] and "_WIFI" in target_name:
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", esp_compress.compressFirmware)
 

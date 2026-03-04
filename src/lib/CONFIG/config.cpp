@@ -1285,11 +1285,13 @@ RxConfig::SetDefaults(bool commit)
             {
                 mode = somSDA;
             }
+#if !defined(PLATFORM_STM32)
             else if ((GPIO_PIN_RCSIGNAL_RX == U0RXD_GPIO_NUM && GPIO_PIN_PWM_OUTPUTS[ch] == U0RXD_GPIO_NUM) ||
                      (GPIO_PIN_RCSIGNAL_TX == U0TXD_GPIO_NUM && GPIO_PIN_PWM_OUTPUTS[ch] == U0TXD_GPIO_NUM))
             {
                 mode = somSerial;
             }
+#endif
 #if defined(PLATFORM_ESP32)
             else if (GPIO_PIN_PWM_OUTPUTS[ch] == GPIO_PIN_SERIAL1_RX)
             {

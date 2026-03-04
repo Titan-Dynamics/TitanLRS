@@ -4,7 +4,12 @@
 #include "POWERMGNT.h"
 #include "config.h"
 #include "deferred.h"
+#if !defined(PLATFORM_STM32)
 #include "devServoOutput.h"
+#else
+// Stub for excluded ServoOutput library
+inline void servoCurrentToFailsafeConfig() {}
+#endif
 #include "helpers.h"
 #include "logging.h"
 
@@ -263,6 +268,7 @@ void RXEndpoint::luaparamMappingChannelOut(propertiesCommon *item, uint8_t arg)
 
     // SerialIO outputs (1 option)
     // ;[Serial RX] | [Serial TX]
+#if !defined(PLATFORM_STM32)
     if (GPIO_PIN_PWM_OUTPUTS[arg-1] == U0RXD_GPIO_NUM)
     {
         pModeString = serial_RX;
@@ -272,6 +278,7 @@ void RXEndpoint::luaparamMappingChannelOut(propertiesCommon *item, uint8_t arg)
         pModeString = serial_TX;
     }
     else
+#endif
     {
         pModeString = no1Option;
     }

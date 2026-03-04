@@ -1,4 +1,4 @@
-#if !defined(UNIT_TEST)
+#if !defined(UNIT_TEST) && !defined(PLATFORM_STM32)
 
 #include "EspFlashStream.h"
 

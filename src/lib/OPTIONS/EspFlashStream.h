@@ -2,6 +2,7 @@
 
 #include "targets.h"
 
+#if !defined(PLATFORM_STM32)
 class EspFlashStream : public Stream
 {
 public:
@@ -25,3 +26,4 @@ private:
 
     void fillBuffer();
 };
+#endif
