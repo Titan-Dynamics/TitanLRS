@@ -28,7 +28,10 @@ void LR1121Hal::init()
 {
     DBGLN("Hal Init");
 
-    pinMode(GPIO_PIN_BUSY, INPUT);
+    if (GPIO_PIN_BUSY != UNDEF_PIN)
+    {
+        pinMode(GPIO_PIN_BUSY, INPUT);
+    }
     if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
     {
         pinMode(GPIO_PIN_BUSY_2, INPUT);
@@ -67,6 +70,19 @@ void LR1121Hal::init()
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setFrequency(16000000);
+#elif defined(PLATFORM_STM32)
+    DBGLN("Config LR1121 SPI (STM32)");
+    #ifdef FLASH_CS_PIN
+    pinMode(FLASH_CS_PIN, OUTPUT);
+    digitalWrite(FLASH_CS_PIN, HIGH);
+    #endif
+    SPIEx.setBitOrder(MSBFIRST);
+    SPIEx.setDataMode(SPI_MODE0);
+    SPIEx.setMOSI(GPIO_PIN_MOSI);
+    SPIEx.setMISO(GPIO_PIN_MISO);
+    SPIEx.setSCLK(GPIO_PIN_SCK);
+    SPIEx.begin();
+    SPIEx.setClockDivider(SPI_CLOCK_DIV16);
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);
@@ -84,8 +100,11 @@ void LR1121Hal::reset(bool bootloader)
     {
         if (bootloader)
         {
-            pinMode(GPIO_PIN_BUSY, OUTPUT);
-            digitalWrite(GPIO_PIN_BUSY, LOW);
+            if (GPIO_PIN_BUSY != UNDEF_PIN)
+            {
+                pinMode(GPIO_PIN_BUSY, OUTPUT);
+                digitalWrite(GPIO_PIN_BUSY, LOW);
+            }
         }
         pinMode(GPIO_PIN_RST, OUTPUT);
         digitalWrite(GPIO_PIN_RST, LOW);
@@ -93,8 +112,11 @@ void LR1121Hal::reset(bool bootloader)
         {
             if (bootloader)
             {
-                pinMode(GPIO_PIN_BUSY_2, OUTPUT);
-                digitalWrite(GPIO_PIN_BUSY_2, LOW);
+                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
+                {
+                    pinMode(GPIO_PIN_BUSY_2, OUTPUT);
+                    digitalWrite(GPIO_PIN_BUSY_2, LOW);
+                }
             }
             pinMode(GPIO_PIN_RST_2, OUTPUT);
             digitalWrite(GPIO_PIN_RST_2, LOW);
@@ -108,10 +130,16 @@ void LR1121Hal::reset(bool bootloader)
         delay(300); // LR1121 busy is high for 230ms after reset.  The WaitOnBusy timeout is only 1ms.  So this long delay is required.
         if (bootloader)
         {
-            pinMode(GPIO_PIN_BUSY, INPUT);
+            if (GPIO_PIN_BUSY != UNDEF_PIN)
+            {
+                pinMode(GPIO_PIN_BUSY, INPUT);
+            }
             if (GPIO_PIN_RST_2 != UNDEF_PIN)
             {
-                pinMode(GPIO_PIN_BUSY_2, INPUT);
+                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
+                {
+                    pinMode(GPIO_PIN_BUSY_2, INPUT);
+                }
             }
             delay(100);
         }

@@ -1,5 +1,5 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD 900RX STM32H743"
+#define DEVICE_NAME "TD900 STM32H7"
 #endif
 
 #ifndef __ASSEMBLER__
@@ -18,7 +18,7 @@
 #define GPIO_PIN_DIO1        PE1   // FHSS Change IRQ
 
 // On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
-#define FLASH_CS_PIN         PD6   // W25Q64 SPI NOR flash chip select (active-low)
+#define FLASH_CS_PIN         PD6
 
 // CRSF UART
 #define GPIO_PIN_RCSIGNAL_RX PB7   // USART1_RX
@@ -72,6 +72,7 @@
 #define POWER_OUTPUT_DACWRITE       0
 #define OPT_USE_SX1276_RFO_HF       0
 
+// No PWM servo outputs on this target
 #define GPIO_PIN_PWM_OUTPUTS_COUNT  0
 #define OPT_HAS_SERVO_OUTPUT        0
 
