@@ -68,6 +68,8 @@
 // LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
+// #define OPT_USE_LR1121_TCXO        1
+//#define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
 
 // RF switch control — default config for standard LR1121 modules
 // [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]

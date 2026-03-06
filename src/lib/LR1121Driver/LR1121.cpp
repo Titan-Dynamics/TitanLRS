@@ -14,31 +14,34 @@ LR1121Hal hal;
 LR1121Driver *LR1121Driver::instance = NULL;
 
 #if defined(OPT_USE_LR1121_TCXO)
-static constexpr uint8_t LR1121TcxoVoltage = 0x02;
-static constexpr uint32_t LR1121TcxoStartupUs = 5000;
+#define LR1121_TCXO_DELAY_RAW                     0x0000A5UL
 
 static void LR1121ConfigureTcxo(const SX12XX_Radio_Number_t radioNumber)
 {
-    uint64_t timeoutRaw = (((uint64_t)LR1121TcxoStartupUs) * 100ULL + 3051ULL) / 3052ULL;
-    if (timeoutRaw > 0xFFFFFFULL)
+#if !defined(LR1121_TCXO_VOLTAGE)
+    DBGLN("LR1121_TCXO_VOLTAGE is not defined, skipping SetTcxoMode");
+    return;
+#else
+    // 6.3.2 SetTcxoMode
+    // RegTcxoTune sets the TCXO voltage for TCXOs that are powered via the LR1121 internal supply
+    const uint8_t tcxoVoltageRaw = LR1121_TCXO_VOLTAGE;
+    if (tcxoVoltageRaw > 0x07)
     {
-        timeoutRaw = 0xFFFFFFULL;
+        DBGLN("LR1121_TCXO_VOLTAGE out of range [0..7], skipping SetTcxoMode");
+        return;
     }
 
-    uint32_t timeout = (uint32_t)timeoutRaw;
-    if (timeout == 0 && LR1121TcxoStartupUs > 0)
-    {
-        timeout = 1;
-    }
+    const uint32_t timeout = (uint32_t)LR1121_TCXO_DELAY_RAW;
 
     uint8_t tcxoBuf[4] = {
-        LR1121TcxoVoltage,
+        tcxoVoltageRaw,
         (uint8_t)(timeout >> 16),
         (uint8_t)(timeout >> 8),
         (uint8_t)(timeout),
     };
 
     hal.WriteCommand(LR11XX_SYSTEM_SET_TCXO_MODE_OC, tcxoBuf, sizeof(tcxoBuf), radioNumber);
+#endif
 }
 #endif
 
@@ -156,7 +159,6 @@ bool LR1121Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
     hal.IsrCallback_2 = &LR1121Driver::IsrCallback_2;
 
     #if defined(OPT_USE_LR1121_TCXO)
-    // 6.3.2 SetTcxoMode
     LR1121ConfigureTcxo(SX12XX_Radio_All);
     #endif
 
