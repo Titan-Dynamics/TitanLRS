@@ -1,21 +1,21 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD-DB STM32H7"
+#define DEVICE_NAME "TD2400 STM32H7"
 #endif
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif
 
-#define TARGET_DIY_LR1121_RX_STM32H743
+#define TARGET_DIY_2400_RX_STM32H743
 
-// GPIO pin definitions
+// Radio (SX1280 on SPI1)
 #define GPIO_PIN_NSS         PE0   // Chip Select
 #define GPIO_PIN_MOSI        PA7   // SPI1_SDO (SPI1_MOSI)
 #define GPIO_PIN_MISO        PA6   // SPI1_SDI (SPI1_MISO)
 #define GPIO_PIN_SCK         PA5   // SPI1_SCK
 #define GPIO_PIN_RST         PE7   // Radio Reset
-#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
-#define GPIO_PIN_BUSY        PE9   // BUSY
+#define GPIO_PIN_DIO1        PE1   // Radio DIO1 IRQ
+#define GPIO_PIN_BUSY        PE9   // Radio BUSY
 
 // On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
 #define FLASH_CS_PIN         PD6
@@ -32,7 +32,7 @@
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD2400 STM32H7"
 #endif
 
 // LEDs
@@ -55,40 +55,24 @@
 // Use flash-emulated EEPROM (no external I2C EEPROM)
 #define STM32_USE_FLASH
 
-#ifndef RADIO_LR1121
-#define RADIO_LR1121
+#ifndef RADIO_SX128X
+#define RADIO_SX128X
 #endif
 
-// LR1121 configuration
-#define OPT_USE_HARDWARE_DCDC      true
-#define OPT_USE_SX1276_RFO_HF      0
-// #define OPT_USE_LR1121_TCXO        1
+#define OPT_USE_HARDWARE_DCDC          false
 
-// RF switch control — default config for standard LR1121 modules
-// [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]
-#ifndef __ASSEMBLER__
-static const uint16_t _rfsw_ctrl[] = {0x0F, 0x00, 0x04, 0x08, 0x08, 0x02, 0x00, 0x01};
-#define LR1121_RFSW_CTRL             _rfsw_ctrl
-#endif
-#define LR1121_RFSW_CTRL_COUNT       8
-
-// Power output — LR1121 dBm values
-// Sub-GHz power levels: 12, 16, 19, 22 dBm
-// 2.4GHz power levels: -10, -6, -3, 1 dBm
+// Power output — SX1280 dBm value (single level)
 #define MinPower                        PWR_10mW
-#define MaxPower                        PWR_100mW
+#define MaxPower                        PWR_10mW
 #define DefaultPower                    PWR_10mW
-#define POWER_OUTPUT_VALUES_COUNT       4
+#define POWER_OUTPUT_VALUES_COUNT       1
+#define POWER_OUTPUT_VALUES2_COUNT      POWER_OUTPUT_VALUES_COUNT
+#define POWER_OUTPUT_DACWRITE           0
 #ifndef __ASSEMBLER__
-static const int16_t _power_values[] = {12, 16, 19, 22};
+static const int16_t _power_values[] = {13};
 #define POWER_OUTPUT_VALUES             _power_values
 #define POWER_OUTPUT_VALUES2            _power_values
-#define POWER_OUTPUT_VALUES2_COUNT      POWER_OUTPUT_VALUES_COUNT
-static const int16_t _power_values_dual[] = {-10, -6, -3, 1};
-#define POWER_OUTPUT_VALUES_DUAL        _power_values_dual
 #endif
-#define POWER_OUTPUT_VALUES_DUAL_COUNT  4
-#define POWER_OUTPUT_DACWRITE           0
 
 // No PWM servo outputs on this target
 #define GPIO_PIN_PWM_OUTPUTS_COUNT      0

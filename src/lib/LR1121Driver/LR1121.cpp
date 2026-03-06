@@ -155,10 +155,10 @@ bool LR1121Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
     hal.IsrCallback_1 = &LR1121Driver::IsrCallback_1;
     hal.IsrCallback_2 = &LR1121Driver::IsrCallback_2;
 
-#if defined(OPT_USE_LR1121_TCXO)
+    #if defined(OPT_USE_LR1121_TCXO)
     // 6.3.2 SetTcxoMode
     LR1121ConfigureTcxo(SX12XX_Radio_All);
-#endif
+    #endif
 
     //Clear Errors
     hal.WriteCommand(LR11XX_SYSTEM_CLEAR_ERRORS_OC, SX12XX_Radio_All); // Remove later?  Might not be required???
@@ -980,12 +980,12 @@ int LR1121Driver::EndUpdate()
 
 #if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.setHwCs(true);
-#if defined(PLATFORM_ESP32)
-    if (GPIO_PIN_NSS_2 != UNDEF_PIN)
-    {
-        spiAttachSS(SPIEx.bus(), 1, GPIO_PIN_NSS_2);
-    }
-#endif
+    #if defined(PLATFORM_ESP32)
+        if (GPIO_PIN_NSS_2 != UNDEF_PIN)
+        {
+            spiAttachSS(SPIEx.bus(), 1, GPIO_PIN_NSS_2);
+        }
+    #endif
 #endif
 
     if (lr1121UpdateState->totalSize == lr1121UpdateState->expectedFilesize)

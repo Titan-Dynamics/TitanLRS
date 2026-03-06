@@ -1,21 +1,27 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD-DB STM32H7"
+#define DEVICE_NAME "TD-DB STM32H7 G"
 #endif
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif
 
-#define TARGET_DIY_LR1121_RX_STM32H743
+#define TARGET_DIY_LR1121_RX_STM32H743_GEMINI
 
 // GPIO pin definitions
 #define GPIO_PIN_NSS         PE0   // Chip Select
 #define GPIO_PIN_MOSI        PA7   // SPI1_SDO (SPI1_MOSI)
 #define GPIO_PIN_MISO        PA6   // SPI1_SDI (SPI1_MISO)
 #define GPIO_PIN_SCK         PA5   // SPI1_SCK
-#define GPIO_PIN_RST         PE7   // Radio Reset
-#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
-#define GPIO_PIN_BUSY        PE9   // BUSY
+#define GPIO_PIN_RST         PE7   // Radio 1 Reset
+#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ (Radio 1)
+#define GPIO_PIN_BUSY        PE9   // BUSY (Radio 1)
+
+// Second LR1121 on shared SPI1
+#define GPIO_PIN_NSS_2       PE8   // Chip Select (Radio 2)
+#define GPIO_PIN_RST_2       PE10  // Radio 2 Reset
+#define GPIO_PIN_DIO1_2      PE11  // LR1121 DIO9 IRQ (Radio 2)
+#define GPIO_PIN_BUSY_2      PE12  // BUSY (Radio 2)
 
 // On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
 #define FLASH_CS_PIN         PD6
@@ -32,7 +38,7 @@
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD-DB STM32H7 Gemini"
 #endif
 
 // LEDs
@@ -62,7 +68,6 @@
 // LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
-// #define OPT_USE_LR1121_TCXO        1
 
 // RF switch control — default config for standard LR1121 modules
 // [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]

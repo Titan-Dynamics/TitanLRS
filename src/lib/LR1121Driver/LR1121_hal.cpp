@@ -28,7 +28,10 @@ void LR1121Hal::init()
 {
     DBGLN("Hal Init");
 
-    pinMode(GPIO_PIN_BUSY, INPUT);
+    if (GPIO_PIN_BUSY != UNDEF_PIN)
+    {
+        pinMode(GPIO_PIN_BUSY, INPUT);
+    }
     if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
     {
         pinMode(GPIO_PIN_BUSY_2, INPUT);
@@ -97,8 +100,11 @@ void LR1121Hal::reset(bool bootloader)
     {
         if (bootloader)
         {
-            pinMode(GPIO_PIN_BUSY, OUTPUT);
-            digitalWrite(GPIO_PIN_BUSY, LOW);
+            if (GPIO_PIN_BUSY != UNDEF_PIN)
+            {
+                pinMode(GPIO_PIN_BUSY, OUTPUT);
+                digitalWrite(GPIO_PIN_BUSY, LOW);
+            }
         }
         pinMode(GPIO_PIN_RST, OUTPUT);
         digitalWrite(GPIO_PIN_RST, LOW);
@@ -106,8 +112,11 @@ void LR1121Hal::reset(bool bootloader)
         {
             if (bootloader)
             {
-                pinMode(GPIO_PIN_BUSY_2, OUTPUT);
-                digitalWrite(GPIO_PIN_BUSY_2, LOW);
+                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
+                {
+                    pinMode(GPIO_PIN_BUSY_2, OUTPUT);
+                    digitalWrite(GPIO_PIN_BUSY_2, LOW);
+                }
             }
             pinMode(GPIO_PIN_RST_2, OUTPUT);
             digitalWrite(GPIO_PIN_RST_2, LOW);
@@ -121,10 +130,16 @@ void LR1121Hal::reset(bool bootloader)
         delay(300); // LR1121 busy is high for 230ms after reset.  The WaitOnBusy timeout is only 1ms.  So this long delay is required.
         if (bootloader)
         {
-            pinMode(GPIO_PIN_BUSY, INPUT);
+            if (GPIO_PIN_BUSY != UNDEF_PIN)
+            {
+                pinMode(GPIO_PIN_BUSY, INPUT);
+            }
             if (GPIO_PIN_RST_2 != UNDEF_PIN)
             {
-                pinMode(GPIO_PIN_BUSY_2, INPUT);
+                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
+                {
+                    pinMode(GPIO_PIN_BUSY_2, INPUT);
+                }
             }
             delay(100);
         }
@@ -199,10 +214,7 @@ bool ICACHE_RAM_ATTR LR1121Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
         // Use this time to call micros().
         uint32_t now = micros();
         if (startTime == 0) startTime = now;
-        if ((now - startTime) > wtimeoutUS)
-        {
-            return false;
-        }
+        if ((now - startTime) > wtimeoutUS) return false;
     }
 }
 
