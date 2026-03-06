@@ -67,6 +67,19 @@ void LR1121Hal::init()
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setFrequency(16000000);
+#elif defined(PLATFORM_STM32)
+    DBGLN("Config LR1121 SPI (STM32)");
+    #ifdef FLASH_CS_PIN
+    pinMode(FLASH_CS_PIN, OUTPUT);
+    digitalWrite(FLASH_CS_PIN, HIGH);
+    #endif
+    SPIEx.setBitOrder(MSBFIRST);
+    SPIEx.setDataMode(SPI_MODE0);
+    SPIEx.setMOSI(GPIO_PIN_MOSI);
+    SPIEx.setMISO(GPIO_PIN_MISO);
+    SPIEx.setSCLK(GPIO_PIN_SCK);
+    SPIEx.begin();
+    SPIEx.setClockDivider(SPI_CLOCK_DIV16);
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);
@@ -186,7 +199,10 @@ bool ICACHE_RAM_ATTR LR1121Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
         // Use this time to call micros().
         uint32_t now = micros();
         if (startTime == 0) startTime = now;
-        if ((now - startTime) > wtimeoutUS) return false;
+        if ((now - startTime) > wtimeoutUS)
+        {
+            return false;
+        }
     }
 }
 

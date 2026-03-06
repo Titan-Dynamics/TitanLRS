@@ -3,13 +3,44 @@
 #include "LR1121_hal.h"
 #include "logging.h"
 
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
 #include <LittleFS.h>
+#endif
 #include <SPIEx.h>
 
 #define LR1121_FIRMWARE_TYPE 0xF3
 
 LR1121Hal hal;
 LR1121Driver *LR1121Driver::instance = NULL;
+
+#if defined(OPT_USE_LR1121_TCXO)
+static constexpr uint8_t LR1121TcxoVoltage = 0x02;
+static constexpr uint32_t LR1121TcxoStartupUs = 5000;
+
+static void LR1121ConfigureTcxo(const SX12XX_Radio_Number_t radioNumber)
+{
+    uint64_t timeoutRaw = (((uint64_t)LR1121TcxoStartupUs) * 100ULL + 3051ULL) / 3052ULL;
+    if (timeoutRaw > 0xFFFFFFULL)
+    {
+        timeoutRaw = 0xFFFFFFULL;
+    }
+
+    uint32_t timeout = (uint32_t)timeoutRaw;
+    if (timeout == 0 && LR1121TcxoStartupUs > 0)
+    {
+        timeout = 1;
+    }
+
+    uint8_t tcxoBuf[4] = {
+        LR1121TcxoVoltage,
+        (uint8_t)(timeout >> 16),
+        (uint8_t)(timeout >> 8),
+        (uint8_t)(timeout),
+    };
+
+    hal.WriteCommand(LR11XX_SYSTEM_SET_TCXO_MODE_OC, tcxoBuf, sizeof(tcxoBuf), radioNumber);
+}
+#endif
 
 //DEBUG_LR1121_OTA_TIMING
 
@@ -71,7 +102,11 @@ void LR1121Driver::End()
 bool LR1121Driver::CheckVersion(const SX12XX_Radio_Number_t radioNumber)
 {
     firmware_version_t version = GetFirmwareVersion(radioNumber);
-    if (!LittleFS.exists("/lr1121.txt") && (version.type != LR1121_FIRMWARE_TYPE || version.version != LR11XX_FIRMWARE_VERSION))
+    if (
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
+        !LittleFS.exists("/lr1121.txt") &&
+#endif
+        (version.type != LR1121_FIRMWARE_TYPE || version.version != LR11XX_FIRMWARE_VERSION))
     {
         DBGLN("Upgrading radio #%d", radioNumber);
         // do upgrade
@@ -119,6 +154,11 @@ bool LR1121Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
 
     hal.IsrCallback_1 = &LR1121Driver::IsrCallback_1;
     hal.IsrCallback_2 = &LR1121Driver::IsrCallback_2;
+
+#if defined(OPT_USE_LR1121_TCXO)
+    // 6.3.2 SetTcxoMode
+    LR1121ConfigureTcxo(SX12XX_Radio_All);
+#endif
 
     //Clear Errors
     hal.WriteCommand(LR11XX_SYSTEM_CLEAR_ERRORS_OC, SX12XX_Radio_All); // Remove later?  Might not be required???
@@ -874,7 +914,9 @@ int LR1121Driver::BeginUpdate(const SX12XX_Radio_Number_t radioNumber, const uin
     DBGLN("Erased");
 
     lr1121UpdateState->left_over = 0;
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.setHwCs(false);
+#endif
 
     pinMode(radioNumber == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, OUTPUT);
     digitalWrite(radioNumber == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, HIGH);
@@ -900,7 +942,11 @@ static void writeBytes(const uint8_t *data, const uint32_t data_size) {
 
     // Have to do this the OLD way, so we can pump out more than 64 bytes in one message
     digitalWrite(lr1121UpdateState->updatingRadio == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, LOW);
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.transferBytes(lr1121UpdateState->packet.header, nullptr, 6 + write_size);
+#elif defined(PLATFORM_STM32)
+    SPIEx.transfer(lr1121UpdateState->packet.header, 6 + write_size);
+#endif
     digitalWrite(lr1121UpdateState->updatingRadio == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, HIGH);
 
     while (!hal.WaitOnBusy(lr1121UpdateState->updatingRadio))
@@ -932,11 +978,15 @@ int LR1121Driver::EndUpdate()
     int retCode = 0;
     writeBytes(nullptr, 0);
 
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.setHwCs(true);
+#if defined(PLATFORM_ESP32)
     if (GPIO_PIN_NSS_2 != UNDEF_PIN)
     {
         spiAttachSS(SPIEx.bus(), 1, GPIO_PIN_NSS_2);
     }
+#endif
+#endif
 
     if (lr1121UpdateState->totalSize == lr1121UpdateState->expectedFilesize)
     {

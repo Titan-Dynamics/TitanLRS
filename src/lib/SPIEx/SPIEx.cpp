@@ -82,11 +82,17 @@ void ICACHE_RAM_ATTR SPIExClass::_transfer(uint8_t cs_mask, uint8_t *data, uint3
         }
     }
 #elif defined(PLATFORM_STM32)
-    // only one (software-controlled) CS pin supported on STM32 devices,
-    // so set the state of the pin
-    digitalWrite(GPIO_PIN_NSS, LOW);
+    if (cs_mask & 0x01)
+        digitalWrite(GPIO_PIN_NSS, LOW);
+    if ((cs_mask & 0x02) && GPIO_PIN_NSS_2 != UNDEF_PIN)
+        digitalWrite(GPIO_PIN_NSS_2, LOW);
+
     transfer(data, size);
-    digitalWrite(GPIO_PIN_NSS, HIGH);
+
+    if (cs_mask & 0x01)
+        digitalWrite(GPIO_PIN_NSS, HIGH);
+    if ((cs_mask & 0x02) && GPIO_PIN_NSS_2 != UNDEF_PIN)
+        digitalWrite(GPIO_PIN_NSS_2, HIGH);
 #endif
 }
 

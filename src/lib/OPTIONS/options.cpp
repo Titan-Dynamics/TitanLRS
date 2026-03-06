@@ -41,6 +41,13 @@ bool options_init()
 #if defined(TARGET_RX)
     firmwareOptions.lock_on_first_connection = true;
 #endif
+#if defined(MY_UID)
+    // Load bind phrase UID from compile-time define
+    const uint8_t myUid[] = { MY_UID };
+    static_assert(sizeof(myUid) == sizeof(firmwareOptions.uid), "MY_UID must be 6 bytes");
+    memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
+    firmwareOptions.hasUID = true;
+#endif
     // Copy target name, truncating to fit
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
     product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
