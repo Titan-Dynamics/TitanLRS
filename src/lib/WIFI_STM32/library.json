@@ -1,0 +1,4 @@
+{
+    "name": "WIFI_STM32",
+    "platforms": ["ststm32"]
+}

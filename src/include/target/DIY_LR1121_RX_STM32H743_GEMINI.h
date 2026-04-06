@@ -30,11 +30,8 @@
 #define GPIO_PIN_RCSIGNAL_RX PB7   // USART1_RX
 #define GPIO_PIN_RCSIGNAL_TX PB6   // USART1_TX
 
-// Debug logging via USB CDC (Serial)
-#ifdef DEBUG_LOG
-#define GPIO_PIN_DEBUG_RX    UNDEF_PIN
-#define GPIO_PIN_DEBUG_TX    UNDEF_PIN
-#define DEBUG_LOG_PORT       Serial
+// USB CDC descriptors (needed for Serial over USB)
+#ifdef USBCON
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
@@ -96,6 +93,18 @@ static const int16_t _power_values_dual[] = {-10, -6, -3, 1};
 #endif
 #define POWER_OUTPUT_VALUES_DUAL_COUNT  4
 #define POWER_OUTPUT_DACWRITE           0
+
+// ST67W611M1 WiFi Coprocessor (SPI2)
+#define GPIO_PIN_ST67_SCK       PB13
+#define GPIO_PIN_ST67_MISO      PB14
+#define GPIO_PIN_ST67_MOSI      PB15
+#define GPIO_PIN_ST67_CS        PB12   // Active HIGH (inverted from typical SPI)
+#define GPIO_PIN_ST67_RDY       PB1    // Input: module ready
+#define GPIO_PIN_ST67_CHIP_EN   PB0    // Output: module enable
+#define GPIO_PIN_ST67_BOOT      PA8    // Output: LOW=mission, HIGH=flash
+#define GPIO_PIN_ST67_SPI_FREQ  16000000
+
+#define HAS_WIFI_ST67           1
 
 // No PWM servo outputs on this target
 #define GPIO_PIN_PWM_OUTPUTS_COUNT      0

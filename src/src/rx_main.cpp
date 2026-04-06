@@ -39,6 +39,9 @@
 #else
 // Stub: no servo output on STM32
 static inline void servoNewChannelsAvailable() {}
+#if defined(HAS_WIFI_ST67)
+#include "devWIFI_STM32.h"
+#endif
 #endif
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
@@ -91,7 +94,9 @@ device_affinity_t ui_devices[] = {
   {&LED_device, 0},
   {&RXLUA_device, 0},
   {&RGB_device, 0},
-#if !defined(PLATFORM_STM32)
+#if defined(PLATFORM_STM32) && defined(HAS_WIFI_ST67)
+  {&WIFI_STM32_device, 0},
+#elif !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
 #endif
   {&Button_device, 0},
@@ -123,7 +128,7 @@ bool crsfBatterySensorDetected = false;
 bool crsfBaroSensorDetected = false;
 
 unsigned long rebootTime = 0;
-#if !defined(PLATFORM_STM32)
+#if !defined(PLATFORM_STM32) || defined(HAS_WIFI_ST67)
 extern bool webserverPreventAutoStart;
 #else
 static bool webserverPreventAutoStart;
@@ -237,7 +242,7 @@ static uint8_t debugRcvrLinkstatsFhssIdx;
 
 bool BindingModeRequest = false;
 
-#if !defined(PLATFORM_STM32)
+#if !defined(PLATFORM_STM32) || defined(HAS_WIFI_ST67)
 extern void setWifiUpdateMode();
 #else
 static inline void setWifiUpdateMode() {}
@@ -1428,6 +1433,9 @@ static void setupSerial()
 #if defined(PLATFORM_ESP32_S3) || defined(PLATFORM_ESP32_C3)
     USBSerial.begin(460800);
     BackpackOrLogStrm = &USBSerial;
+#elif defined(PLATFORM_STM32)
+    Serial.begin();  // init USB CDC (baud ignored by CDC)
+    BackpackOrLogStrm = &Serial;
 #else
     BackpackOrLogStrm = &Serial;
 #endif
@@ -2027,7 +2035,13 @@ void setup()
         // if it decides to log something
         BackpackOrLogStrm = new NullStream();
 
-#if !defined(PLATFORM_STM32)
+#if defined(PLATFORM_STM32) && defined(HAS_WIFI_ST67)
+        static device_affinity_t wifi_device[] = {
+            {&WIFI_STM32_device, 1}
+        };
+        devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
+        devicesInit();
+#elif !defined(PLATFORM_STM32)
         // Register the WiFi with the framework
         static device_affinity_t wifi_device[] = {
             {&WIFI_device, 1}
@@ -2118,6 +2132,18 @@ void loop()
 #endif
 {
     unsigned long now = millis();
+
+    // TODO - Remove this dev code
+    if (now > 10000)
+    {
+        setWifiUpdateMode();
+    }
+    else
+    {
+        webserverPreventAutoStart = true;
+        Serial.printf("Loop: %lu\r\n", now);
+    }
+    // Serial.printf("Loop: %lu\r\n", now);
 
     if (DataUlReceiver.HasFinishedData())
     {

@@ -14,8 +14,8 @@ RAM_CODE (rx)   : ORIGIN = 0x00000000, LENGTH = 4K
 RAM_DATA (xrw)  : ORIGIN = 0x20000000, LENGTH = 128K - LENGTH(RAM_CODE)
 /* AXI SRAM for larger data structures */
 CCMRAM (rw)     : ORIGIN = 0x24000000, LENGTH = 384K
-/* FLASH - full 2MB available, no bootloader */
-FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 2048K
+/* FLASH - Bank 1 only (Bank 2 reserved for OTA updates) */
+FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
 }
 
 INCLUDE "variants/ldscript_gen.ld"
