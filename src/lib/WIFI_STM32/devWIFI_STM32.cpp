@@ -67,7 +67,7 @@ static int event()
         Serial.flush();
         return DURATION_IMMEDIATELY;
     }
-    return DURATION_IMMEDIATELY;
+    return DURATION_IGNORE;
 }
 
 static int timeout()
