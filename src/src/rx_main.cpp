@@ -2133,18 +2133,6 @@ void loop()
 {
     unsigned long now = millis();
 
-    // TODO - Remove this dev code
-    if (now > 10000)
-    {
-        setWifiUpdateMode();
-    }
-    else
-    {
-        webserverPreventAutoStart = true;
-        Serial.printf("Loop: %lu\r\n", now);
-    }
-    // Serial.printf("Loop: %lu\r\n", now);
-
     if (DataUlReceiver.HasFinishedData())
     {
         DataUlReceiveComplete();

@@ -79,9 +79,18 @@ static int timeout()
     }
 
     // Auto-on: if disconnected for wifi_auto_on_interval, trigger WiFi
-    if (connectionState == disconnected && !webserverPreventAutoStart)
+    if (firmwareOptions.wifi_auto_on_interval != -1 && !webserverPreventAutoStart && connectionState == disconnected)
     {
-        setWifiUpdateMode();
+        static bool pastAutoInterval = false;
+        // If InBindingMode then wait at least 60 seconds before going into wifi,
+        // regardless of if .wifi_auto_on_interval is set to less
+        if (!InBindingMode || firmwareOptions.wifi_auto_on_interval >= 60000 || pastAutoInterval)
+        {
+            setWifiUpdateMode();
+            return DURATION_IMMEDIATELY;
+        }
+        pastAutoInterval = true;
+        return (60000 - firmwareOptions.wifi_auto_on_interval);
     }
     return DURATION_NEVER;
 }

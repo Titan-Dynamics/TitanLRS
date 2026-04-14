@@ -19,42 +19,109 @@ static const char HTML_BODY[] =
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<title>STM32H7 Updater</title>"
     "<style>"
-    ":root{--bg:#f2f4f8;--card:#ffffff;--ink:#17202a;--muted:#5d6d7e;"
-    "--accent:#0b7285;--ok:#1b8f4d;--bad:#c92a2a;}"
-    "body{margin:0;background:linear-gradient(150deg,#eaf4ff,#f2f4f8 45%,#eaf7ee);"
-    "font-family:Segoe UI,Arial,sans-serif;color:var(--ink)}"
-    "main{max-width:620px;margin:32px auto;padding:16px}"
-    ".card{background:var(--card);border-radius:14px;padding:22px;"
-    "box-shadow:0 8px 24px rgba(0,0,0,.08)}"
-    "h1{margin:0 0 6px;font-size:1.5rem}"
-    "p{margin:8px 0;color:var(--muted)}"
-    "label{display:block;margin-top:14px;font-weight:600}"
-    "input,button{width:100%;box-sizing:border-box;margin-top:8px;"
-    "padding:10px 12px;border-radius:10px;border:1px solid #ccd3da;font-size:.95rem}"
-    "button{background:var(--accent);border:none;color:#fff;font-weight:600;cursor:pointer}"
-    "button:disabled{opacity:.6;cursor:not-allowed}"
+    "html,body{height:100%;margin:0;background-color:#eee;"
+    "font-family:system-ui,Avenir,Helvetica,Arial,sans-serif;"
+    "color:#666;line-height:1.65em;"
+    "-webkit-font-smoothing:antialiased}"
+
+    /* header bar — matches .elrs-header gradient */
+    ".header{background-image:linear-gradient(45deg,#9dc66b 5%,#4fa49a 30%,#4361c2);"
+    "color:rgba(255,255,255,.75);padding:10px 15px;"
+    "font-size:20px;font-weight:400;"
+    "width:100%;box-sizing:border-box}"
+
+    /* mui-panel equivalent */
+    ".panel{background-color:#fff;padding:15px;margin-bottom:20px;"
+    "border-radius:0;box-shadow:0 2px 2px 0 rgba(0,0,0,.16),"
+    "0 0 2px 0 rgba(0,0,0,.12)}"
+    ".panel-title{font-size:20px;font-weight:400}"
+
+    /* content area */
+    ".content{padding:20px 15px}"
+
+    /* drop zone — matches .drop-zone in elrs.css */
+    ".drop-zone{font-weight:bold;text-align:center;padding:1em 0;"
+    "margin:1em 0;color:#555;border:2px dashed #555;border-radius:7px;"
+    "cursor:pointer;transition:all .2s ease-in-out}"
+    ".drop-zone.dragover{color:#f00;border-color:#f00;"
+    "border-style:solid;box-shadow:inset 0 3px 4px #888}"
+    ".drop-zone input{display:none}"
+
+    /* button — matches .mui-btn .mui-btn--primary */
+    ".btn{display:inline-block;font-weight:500;font-size:14px;"
+    "padding:8px 26px;margin-top:8px;border:none;border-radius:2px;"
+    "cursor:pointer;color:#fff;background-color:#2196F3;"
+    "text-transform:uppercase;letter-spacing:.03em;"
+    "transition:box-shadow .2s}"
+    ".btn:hover,.btn:focus{background-color:#39a1f4;"
+    "box-shadow:0 0 2px rgba(0,0,0,.12),0 2px 2px rgba(0,0,0,.2)}"
+    ".btn:disabled{opacity:.6;cursor:not-allowed}"
+
+    /* progress bar */
     "progress{width:100%;height:16px;margin-top:14px}"
-    "#status{margin-top:12px;font-weight:600}"
-    ".ok{color:var(--ok)} .bad{color:var(--bad)}"
-    "</style></head><body><main><div class=\"card\">"
-    "<h1>STM32H743 Firmware Update</h1>"
-    "<p>Bank-swap OTA &mdash; select a .bin file, click Upload, wait for reboot.</p>"
-    "<label>Firmware File (.bin)</label>"
+
+    /* status text */
+    "#status{margin-top:12px;font-weight:400;font-size:16px}"
+    ".ok{color:#2dd284} .bad{color:#d85261}"
+
+    /* footer — matches ESP footer */
+    ".footer{background-color:#0288D1;color:#fff;padding:6px 15px;"
+    "font-size:13px;text-align:center;position:fixed;bottom:0;"
+    "left:0;right:0}"
+    ".footer a{color:#fff;text-decoration:underline}"
+
+    "</style></head><body>"
+
+    /* header */
+    "<div class=\"header\">TitanLRS</div>"
+
+    "<div class=\"content\">"
+
+    /* title panel */
+    "<div class=\"panel panel-title\">Firmware Update</div>"
+
+    /* main panel */
+    "<div class=\"panel\">"
+    "<p>Select the correct <strong>firmware.bin</strong> for your "
+    "platform otherwise a bad flash may occur.</p>"
+
+    /* file select button + drop zone (mirrors ESP file-drop component) */
+    "<button class=\"btn\" onclick=\"document.getElementById('fw').click()\">"
+    "Select firmware file</button>"
+    "<div class=\"drop-zone\" id=\"dropzone\">"
+    "or drop firmware file here"
     "<input id=\"fw\" type=\"file\" accept=\".bin,application/octet-stream\">"
-    "<button id=\"go\">Upload Firmware</button>"
+    "</div>"
+
+    "<h3 id=\"status\"></h3>"
     "<progress id=\"bar\" value=\"0\" max=\"100\"></progress>"
-    "<div id=\"status\"></div>"
-    "</div></main>"
+    "</div>"
+    "</div>"
+
+    /* footer */
+    "<div class=\"footer\">STM32H7 Bank-Swap OTA</div>"
     "<script>"
     "var $=function(id){return document.getElementById(id);};"
     "var S=function(t,ok){var e=$('status');e.textContent=t;"
     "e.className=ok===null?'':(ok?'ok':'bad');};"
+    "var busy=false;"
 
-    // --- Upload button click handler ---
-    "$('go').onclick=function(){"
-    "var f=$('fw').files[0];"
-    "if(!f){S('Pick a .bin file first.',false);return;}"
-    "var btn=this;btn.disabled=true;$('bar').value=0;"
+    // --- Drop zone drag-and-drop support ---
+    "var dz=$('dropzone');"
+    "dz.ondragover=function(e){e.preventDefault();dz.classList.add('dragover');};"
+    "dz.ondragleave=function(){dz.classList.remove('dragover');};"
+    "dz.ondrop=function(e){e.preventDefault();dz.classList.remove('dragover');"
+    "if(e.dataTransfer.files.length)startUpload(e.dataTransfer.files[0]);};"
+
+    // --- File input change handler ---
+    "$('fw').onchange=function(){if(this.files[0])startUpload(this.files[0]);};"
+
+    // --- Two-phase upload function ---
+    "function startUpload(f){"
+    "if(busy)return;"
+    "if(!f.name.endsWith('.bin')){"
+    "S('Please select a .bin file.',false);return;}"
+    "busy=true;$('bar').value=0;"
 
     // Phase 1 — Erase (no body, just a header with the image size)
     "S('Erasing flash (up to 30 s) ...',null);"
@@ -64,7 +131,7 @@ static const char HTML_BODY[] =
     "ex.timeout=120000;"
     "ex.onload=function(){"
     "if(ex.status!==200){"
-    "S('Erase failed: '+ex.responseText,false);btn.disabled=false;return;}"
+    "S('Erase failed: '+ex.responseText,false);busy=false;return;}"
 
     // Phase 2 — Upload firmware binary
     "S('Uploading firmware ...',null);"
@@ -75,23 +142,23 @@ static const char HTML_BODY[] =
     "ux.upload.onprogress=function(e){"
     "if(e.lengthComputable)$('bar').value=Math.round(100*e.loaded/e.total);};"
     "ux.onload=function(){"
-    "btn.disabled=false;"
+    "busy=false;"
     "if(ux.status===200){$('bar').value=100;"
     "S('Update complete \\u2014 device is rebooting ...',true);}"
     "else{S('Upload failed: '+ux.responseText,false);}};"
-    "ux.onerror=function(){btn.disabled=false;"
+    "ux.onerror=function(){busy=false;"
     "S('Upload network error.',false);};"
-    "ux.ontimeout=function(){btn.disabled=false;"
+    "ux.ontimeout=function(){busy=false;"
     "S('Upload timed out.',false);};"
     "ux.send(f);"
     "};"  // end ex.onload (erase success → start upload)
 
-    "ex.onerror=function(){btn.disabled=false;"
+    "ex.onerror=function(){busy=false;"
     "S('Erase network error.',false);};"
-    "ex.ontimeout=function(){btn.disabled=false;"
+    "ex.ontimeout=function(){busy=false;"
     "S('Erase timed out.',false);};"
     "ex.send();"
-    "};"  // end onclick
+    "}"  // end startUpload
 
     "</script></body></html>";
 

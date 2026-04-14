@@ -41,6 +41,11 @@ bool options_init()
 #if defined(TARGET_RX)
     firmwareOptions.lock_on_first_connection = true;
 #endif
+#if defined(AUTO_WIFI_ON_INTERVAL)
+    firmwareOptions.wifi_auto_on_interval = AUTO_WIFI_ON_INTERVAL * 1000;
+#else
+    firmwareOptions.wifi_auto_on_interval = -1;
+#endif
 #if defined(MY_UID)
     // Load bind phrase UID from compile-time define
     const uint8_t myUid[] = { MY_UID };
