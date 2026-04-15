@@ -53,6 +53,24 @@ bool options_init()
     memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
     firmwareOptions.hasUID = true;
 #endif
+    // Set regulatory domain from compile-time define
+#if defined(Regulatory_Domain_AU_915)
+    firmwareOptions.domain = 0;
+#elif defined(Regulatory_Domain_FCC_915)
+    firmwareOptions.domain = 1;
+#elif defined(Regulatory_Domain_EU_868)
+    firmwareOptions.domain = 2;
+#elif defined(Regulatory_Domain_IN_866)
+    firmwareOptions.domain = 3;
+#elif defined(Regulatory_Domain_AU_433)
+    firmwareOptions.domain = 4;
+#elif defined(Regulatory_Domain_EU_433)
+    firmwareOptions.domain = 5;
+#elif defined(Regulatory_Domain_US_433)
+    firmwareOptions.domain = 6;
+#elif defined(Regulatory_Domain_US_433_WIDE)
+    firmwareOptions.domain = 7;
+#endif
     // Copy target name, truncating to fit
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
     product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
