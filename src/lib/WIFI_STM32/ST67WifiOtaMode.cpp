@@ -208,6 +208,9 @@ void ST67WifiOtaMode::service()
                 _uploadDiscPending = false;
             }
             handleUploadData(linkId, _clientBuf, n);
+        } else if (_postLinkId >= 0 && linkId == _postLinkId) {
+            // Continuation frame for a POST whose body hadn't fully arrived yet.
+            accumulatePost(linkId, _clientBuf, n);
         } else {
             handleClientRequest(linkId, _clientBuf, n);
         }
@@ -331,6 +334,30 @@ bool ST67WifiOtaMode::getParam(const char* request, int reqLen, const char* name
 }
 
 // ============================================================================
+// POST body accumulation
+// ============================================================================
+
+void ST67WifiOtaMode::accumulatePost(int linkId, const char* data, int len)
+{
+    int space = POST_BUF_SIZE - _postBufUsed - 1;
+    int copy  = (len < space) ? len : space;
+    if (copy > 0) {
+        memcpy(_postBuf + _postBufUsed, data, copy);
+        _postBufUsed += copy;
+        _postBuf[_postBufUsed] = '\0';
+    }
+
+    if (_postBufUsed >= _postExpected) {
+        // Full request assembled — dispatch.
+        _postLinkId = -1;
+        int used = _postBufUsed;
+        _postBufUsed  = 0;
+        _postExpected = 0;
+        handleClientRequest(linkId, _postBuf, used);
+    }
+}
+
+// ============================================================================
 // Request dispatch
 // ============================================================================
 
@@ -348,6 +375,32 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
 
     const bool isGet  = (strncmp(request, "GET ",  4) == 0);
     const bool isPost = (strncmp(request, "POST ", 5) == 0);
+
+    // POST body buffering: the ST67 sometimes delivers headers and body in
+    // separate SPI frames. Detect this and accumulate before dispatching.
+    if (isPost) {
+        const char* headersEnd = strstr(request, "\r\n\r\n");
+        if (headersEnd) {
+            int32_t cl = parseContentLength(request);
+            if (cl > 0) {
+                int headersLen = static_cast<int>(headersEnd + 4 - request);
+                int bodyAvail  = reqLen - headersLen;
+                if (bodyAvail < static_cast<int>(cl)) {
+                    // Body not fully arrived — start accumulation.
+                    int expected = headersLen + static_cast<int>(cl);
+                    int copy = (reqLen < POST_BUF_SIZE - 1) ? reqLen : POST_BUF_SIZE - 1;
+                    memcpy(_postBuf, request, copy);
+                    _postBuf[copy] = '\0';
+                    _postBufUsed  = copy;
+                    _postExpected = (expected < POST_BUF_SIZE - 1) ? expected : POST_BUF_SIZE - 1;
+                    _postLinkId   = linkId;
+                    Serial.printf("[HTTP] POST body split: %d/%ld bytes, buffering\n",
+                                  bodyAvail, (long)cl);
+                    return;
+                }
+            }
+        }
+    }
 
     // Config endpoints (POST before GET to disambiguate)
     if      (isPost && pathMatch(request, "/config"))       { handlePostConfig(linkId, request, reqLen); }

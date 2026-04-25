@@ -112,6 +112,14 @@ int buildConfigJSON(char* buf, size_t maxLen, bool exportMode)
             APPEND("\"uidtype\":\"Not set (using MAC address)\",");
 #else
         APPEND("\"module-type\":\"RX\",");
+        if (config.GetBindStorage() == BINDSTORAGE_VOLATILE)
+            APPEND("\"uidtype\":\"Volatile\",");
+        else if (config.GetBindStorage() == BINDSTORAGE_RETURNABLE && config.IsOnLoan())
+            APPEND("\"uidtype\":\"Loaned\",");
+        else if (config.GetIsBound())
+            APPEND("\"uidtype\":\"Bound\",");
+        else
+            APPEND("\"uidtype\":\"Not Bound\",");
 #endif
 
 #if defined(RADIO_SX128X)

@@ -236,17 +236,9 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
 
           <!-- Action bar -->
           <div class="action-bar">
-            <!--
-              TODO: Wire up "Reset to MAC" once a POST /binding (or equivalent) API exists
-              on the STM32 to clear the stored UID override and revert to the device MAC.
-            -->
-            <button class="btn btn-danger" id="btn-reset" disabled title="Not yet available — requires binding save API">Reset to MAC</button>
+            <button class="btn btn-danger" id="btn-reset" disabled>Reset to Unbound</button>
             <div class="filler"></div>
             <button class="btn btn-ghost" id="btn-cancel">Discard</button>
-            <!--
-              TODO: Wire up "Save binding" once a POST /binding (or equivalent) API exists
-              on the STM32 to persist the new UID to EEPROM storage.
-            -->
             <button class="btn btn-primary" id="btn-save" disabled>Save binding</button>
           </div>
 
@@ -345,6 +337,8 @@ function chipForUidtype(uidtype) {
 var currentUID = [];       // the device's current UID bytes, loaded from /config
 var currentUidtype = '';   // uidtype string from /config settings
 var moduleType = 'TX';     // TX or RX, from settings['module-type']
+var saving = false;        // true while a POST /config request is in flight
+var canResetToUnbound = false; // true when the device has a stored UID that can be cleared
 
 var phraseEl    = document.getElementById('phrase');
 var uidDirectEl = document.getElementById('uid-direct');
@@ -358,6 +352,7 @@ var btnReset    = document.getElementById('btn-reset');
 var loanNotice  = document.getElementById('loan-notice');
 
 // Update the page header chip and loan notice from a uidtype string.
+// Also recalculates canResetToUnbound: enabled for RX when a stored UID exists.
 function applyUidtype(uidtype) {
   var info = chipForUidtype(uidtype);
   bindChip.className = 'chip' + (info.cls ? ' ' + info.cls : '');
@@ -365,6 +360,7 @@ function applyUidtype(uidtype) {
   if (info.note) labelHTML += ' <span style="font-weight:400;opacity:.7;">&middot; ' + info.note + '</span>';
   bindChip.innerHTML = labelHTML;
   loanNotice.style.display = (uidtype === 'Loaned') ? 'flex' : 'none';
+  canResetToUnbound = (uidtype === 'Bound' || uidtype === 'Volatile' || uidtype === 'Loaned');
 }
 
 // Recompute the UID preview based on current input state.
@@ -406,11 +402,8 @@ function refresh() {
   sourceChip.className = srcCls;
   sourceChip.textContent = source;
 
-  // TODO: Enable btnSave and btnReset once the POST /binding API is available.
-  // When the API exists: btnSave.disabled = !dirty || !valid;
-  // For now both action buttons remain disabled — they are placeholders.
-  btnSave.disabled = true;
-  btnReset.disabled = true;
+  btnSave.disabled = saving || !dirty || !valid;
+  btnReset.disabled = saving || !canResetToUnbound;
 }
 
 phraseEl.addEventListener('input', function() {
@@ -427,28 +420,86 @@ btnCancel.addEventListener('click', function() {
   refresh();
 });
 
-// ── Load config ──────────────────────────────────────────────────────────────
-fetch('/config').then(function(r){ return r.json(); }).then(function(d) {
-  var s = d.settings || {};
-  var c = d.config   || {};
+// ── Config load / reload ─────────────────────────────────────────────────────
+function reloadConfig() {
+  return fetch('/config').then(function(r){ return r.json(); }).then(function(d) {
+    var s = d.settings || {};
+    var c = d.config   || {};
 
-  moduleType = s['module-type'] || 'TX';
-  currentUID = Array.isArray(c.uid) ? c.uid : [];
-  currentUidtype = s.uidtype || '';
+    moduleType = s['module-type'] || 'TX';
+    currentUID = Array.isArray(c.uid) ? c.uid : [];
+    currentUidtype = s.uidtype || '';
 
-  // Eyebrow: device type + UID
-  var eyebrow = document.getElementById('eyebrow');
-  var uidStr = currentUID.length ? currentUID.join(',') : '—';
-  eyebrow.innerHTML = '<span>Device &middot; ' + moduleType + '</span>'
-    + '<span class="sep"> &middot; </span>'
-    + '<span>UID ' + uidStr + '</span>';
+    var eyebrow = document.getElementById('eyebrow');
+    var uidStr = currentUID.length ? currentUID.join(',') : '—';
+    eyebrow.innerHTML = '<span>Device &middot; ' + moduleType + '</span>'
+      + '<span class="sep"> &middot; </span>'
+      + '<span>UID ' + uidStr + '</span>';
 
-  // Apply chip state
-  applyUidtype(currentUidtype);
+    applyUidtype(currentUidtype);
+    phraseEl.value = '';
+    uidDirectEl.value = '';
+    saving = false;
+    refresh();
+  });
+}
 
-  // Seed preview with current UID
+// ── Save binding ─────────────────────────────────────────────────────────────
+btnSave.addEventListener('click', function() {
+  if (saving) return;
+  var uid;
+  var dv = uidDirectEl.value.trim();
+  var pv = phraseEl.value.trim();
+  if (dv) {
+    uid = parseUidString(dv);
+    if (!uid) return;
+  } else if (pv) {
+    uid = uidBytesFromPhrase(pv);
+  } else {
+    return;
+  }
+
+  saving = true;
   refresh();
-}).catch(function() {
+  document.getElementById('err').textContent = '';
+
+  fetch('/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({uid: uid})
+  }).then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+    return reloadConfig();
+  }).catch(function(e) {
+    document.getElementById('err').textContent = 'Save failed: ' + (e.message || e);
+    saving = false;
+    refresh();
+  });
+});
+
+// ── Reset to Unbound ─────────────────────────────────────────────────────────
+btnReset.addEventListener('click', function() {
+  if (saving || !canResetToUnbound) return;
+  saving = true;
+  refresh();
+  document.getElementById('err').textContent = '';
+
+  fetch('/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({uid: [0,0,0,0,0,0], vbind: 0})
+  }).then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+    return reloadConfig();
+  }).catch(function(e) {
+    document.getElementById('err').textContent = 'Reset to unbound failed: ' + (e.message || e);
+    saving = false;
+    refresh();
+  });
+});
+
+// ── Initial load ─────────────────────────────────────────────────────────────
+reloadConfig().catch(function() {
   document.getElementById('eyebrow').textContent = 'Could not load configuration';
   applyUidtype('');
   document.getElementById('err').textContent = 'Could not reach /config — check device connection.';

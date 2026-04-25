@@ -43,6 +43,16 @@ private:
     uint32_t _eraseDeadlineMs = 0;
     uint32_t _lastProgressAt = 0;
 
+    // ── POST body accumulation ─────────────────────────────────────────────────
+    // The ST67 may deliver the HTTP headers and body in separate SPI frames.
+    // When a POST arrives with an incomplete body we copy into _postBuf and wait
+    // for the continuation frame(s) before dispatching the handler.
+    static constexpr int POST_BUF_SIZE = 2048;
+    char _postBuf[POST_BUF_SIZE];
+    int  _postBufUsed = 0;    // bytes written so far
+    int  _postExpected = 0;   // total bytes expected (headers + body)
+    int  _postLinkId = -1;    // which TCP link is being accumulated
+
     // ── Request dispatch ───────────────────────────────────────────────────────
     void handleClientRequest(int linkId, const char* request, int reqLen);
 
@@ -78,6 +88,9 @@ private:
     // Extract the value of a named param from the URL query string or form body.
     // Returns true and fills valueBuf if found, false if not found.
     bool getParam(const char* request, int reqLen, const char* name, char* valueBuf, int valueBufLen) const;
+
+    // ── POST accumulation helper ───────────────────────────────────────────────
+    void accumulatePost(int linkId, const char* data, int len);
 
     // ── OTA helpers ────────────────────────────────────────────────────────────
     void drainSpiFrames();
