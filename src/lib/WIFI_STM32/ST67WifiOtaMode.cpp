@@ -208,6 +208,11 @@ void ST67WifiOtaMode::service()
                 _uploadDiscPending = false;
             }
             handleUploadData(linkId, _clientBuf, n);
+        } else if (_updateState == UpdateState::RECEIVING) {
+            // During OTA upload, ignore requests on other links. Sending any
+            // HTTP response triggers AT+CIPSEND SPI traffic whose recvFrame()
+            // calls consume upload data frames from the bus, silently losing
+            // firmware chunks and stalling the upload.
         } else if (_postLinkId >= 0 && linkId == _postLinkId) {
             // Continuation frame for a POST whose body hadn't fully arrived yet.
             accumulatePost(linkId, _clientBuf, n);
