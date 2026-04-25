@@ -378,7 +378,10 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
 
     // POST body buffering: the ST67 sometimes delivers headers and body in
     // separate SPI frames. Detect this and accumulate before dispatching.
-    if (isPost) {
+    // Skip buffering for /upload — it uses the streaming state machine and
+    // handles partial body data itself; buffering a multi-hundred-KB binary
+    // into a 2 KB buffer would loop forever.
+    if (isPost && !pathMatch(request, "/upload")) {
         const char* headersEnd = strstr(request, "\r\n\r\n");
         if (headersEnd) {
             int32_t cl = parseContentLength(request);
