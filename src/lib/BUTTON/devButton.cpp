@@ -68,7 +68,11 @@ static int start()
 {
     if (GPIO_PIN_BUTTON != UNDEF_PIN)
     {
+#ifdef GPIO_PIN_BUTTON_ACTIVE_HIGH
+        button1.init(GPIO_PIN_BUTTON, true);
+#else
         button1.init(GPIO_PIN_BUTTON);
+#endif
         button1.OnShortPress = [](){ handlePress(0, false, button1.getCount()); };
         button1.OnLongPress = [](){ handlePress(0, true, button1.getLongCount()+1); };
     }

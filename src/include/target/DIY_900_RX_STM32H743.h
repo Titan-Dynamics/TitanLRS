@@ -45,9 +45,10 @@
 #define WS2812_VTX_STATUS_LEDS_COUNT 0
 #define WS2812_BOOT_LEDS_COUNT  0
 
-// Button (boot button on WeAct Mini)
+// Button (boot button on WeAct Mini) — active HIGH (SW2 pulls PC13 to VDD when pressed)
 #define GPIO_PIN_BUTTON      PC13
 #define GPIO_PIN_BUTTON2     UNDEF_PIN
+#define GPIO_PIN_BUTTON_ACTIVE_HIGH
 
 // Use flash-emulated EEPROM (no external I2C EEPROM)
 #define STM32_USE_FLASH

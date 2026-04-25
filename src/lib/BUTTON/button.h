@@ -40,7 +40,7 @@ public:
     {
         _pin = pin;
         _idlelow = idlelow,
-        pinMode(_pin, _idlelow ? INPUT : INPUT_PULLUP);
+        pinMode(_pin, _idlelow ? INPUT_PULLDOWN : INPUT_PULLUP);
     }
 
     // Call this in loop()
