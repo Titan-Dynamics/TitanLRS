@@ -70,4 +70,5 @@ void options_SetTrueDefaults();
 #elif defined(PLATFORM_STM32)
 extern char product_name[];
 extern void saveOptions();
+extern void resetOptionsToDefaults();
 #endif

@@ -112,6 +112,12 @@ static void applyCompileTimeDefaults()
 #endif
 }
 
+void resetOptionsToDefaults()
+{
+    applyCompileTimeDefaults();
+    saveOptions();
+}
+
 bool options_init()
 {
     // Set compile-time defaults as a baseline

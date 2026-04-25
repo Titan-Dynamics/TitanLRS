@@ -43,15 +43,43 @@ private:
     uint32_t _eraseDeadlineMs = 0;
     uint32_t _lastProgressAt = 0;
 
+    // ── Request dispatch ───────────────────────────────────────────────────────
     void handleClientRequest(int linkId, const char* request, int reqLen);
+
+    // ── Response helpers ──────────────────────────────────────────────────────
     void sendHttpResponse(int linkId, const char* status,
                           const char* contentType, const char* body,
                           bool closeConn = true);
     void serveAsset(int linkId, const char* path);
-    void handleGetConfig(int linkId);
+
+    // ── Endpoint handlers ─────────────────────────────────────────────────────
+    void handleGetConfig(int linkId, const char* request);
+    void handleGetReboot(int linkId);
+    void handleGetReset(int linkId, const char* request, int reqLen);
+    void handleGetOptions(int linkId);
+    void handleGetNetworks(int linkId);
+    void handlePostConfig(int linkId, const char* request, int reqLen);
+    void handlePostOptions(int linkId, const char* request, int reqLen);
+    void handlePostSethome(int linkId, const char* request, int reqLen);
+    void handlePostForget(int linkId, const char* request, int reqLen);
     void handlePostErase(int linkId, const char* request, int reqLen);
     void handlePostUpload(int linkId, const char* request, int reqLen);
     void handleUploadData(int linkId, const char* data, int len);
+#if defined(TARGET_TX)
+    void handlePostImport(int linkId, const char* request, int reqLen);
+    void handlePostButtons(int linkId, const char* request, int reqLen);
+#endif
+
+    // ── Request parsing helpers ────────────────────────────────────────────────
+    // Extract the body from a request buffer; uses Content-Length header.
+    const char* extractBody(const char* request, int reqLen, int* bodyLen) const;
+    // Check if a named param is present in the URL query string or form body.
+    bool hasParam(const char* request, int reqLen, const char* name) const;
+    // Extract the value of a named param from the URL query string or form body.
+    // Returns true and fills valueBuf if found, false if not found.
+    bool getParam(const char* request, int reqLen, const char* name, char* valueBuf, int valueBufLen) const;
+
+    // ── OTA helpers ────────────────────────────────────────────────────────────
     void drainSpiFrames();
     bool looksLikeHttpRequest(const char* data, int len) const;
     int32_t parseContentLength(const char* request) const;
