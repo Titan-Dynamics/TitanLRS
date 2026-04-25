@@ -64,6 +64,7 @@ private:
 
     // ── Endpoint handlers ─────────────────────────────────────────────────────
     void handleGetConfig(int linkId, const char* request);
+    void handleGetHeartbeat(int linkId);
     void handleGetReboot(int linkId);
     void handleGetReset(int linkId, const char* request, int reqLen);
     void handleGetOptions(int linkId);

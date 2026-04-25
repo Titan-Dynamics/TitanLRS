@@ -17,6 +17,7 @@
 //   GET /import   -> /import.html  (import/export config, TX only)
 //
 // API routes (no asset needed):
+//   GET  /heartbeat         -> {"ok":true} (used by the WebUI to detect device presence)
 //   GET  /config            -> GET /config JSON response
 //   GET  /config?export     -> GET /config JSON (extended, TX only)
 //   POST /config            -> update runtime config (EEPROM)

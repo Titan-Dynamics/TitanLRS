@@ -4,14 +4,22 @@ Builds the STM32 web assets header: ../lib/WIFI_STM32/web-stm32-info.h
 Reads stm32-info.html and stm32-update.html, gzips them, emits a C header.
 
 Run from html/ directory: python3 build-stm32.py
-Or via npm:               npm run build:stm32
+Or via PlatformIO pre-build hook (extra_scripts = pre:html/build-stm32.py)
 """
+try:
+    Import("env")  # noqa: F821 — SCons injects this; harmless NameError when run standalone
+except NameError:
+    pass
 
 import gzip
 import os
 import sys
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    # SCons exec() context: __file__ is not defined; CWD is the project root
+    SCRIPT_DIR = os.path.abspath('html')
 OUT_FILE = os.path.join(SCRIPT_DIR, '..', 'lib', 'WIFI_STM32', 'web-stm32-info.h')
 
 ASSETS = [

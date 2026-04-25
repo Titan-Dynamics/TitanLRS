@@ -11,10 +11,11 @@
   --fg:#E6E7EA;--fg-mute:#9A9DA3;--fg-dim:#6B6E74;--fg-faint:#4A4D52;
   --brand:#F26B1F;--brand-hi:#FF8133;--brand-lo:#C9551A;
   --brand-soft:rgba(242,107,31,.14);--brand-line:rgba(242,107,31,.36);
-  --ok:#4FC78F;--warn:#E5A53B;--bad:#E8624C;
+  --ok:#4FC78F;--warn:#E5A53B;--bad:#E8624C;--bad-soft:rgba(232,98,76,.14);
   --font:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --mono:ui-monospace,'SF Mono',Menlo,monospace;
   --r-md:6px;--r-lg:8px;--dur:120ms;--ease:cubic-bezier(.2,.6,.2,1);
+  --focus:0 0 0 1px var(--brand),0 0 0 4px var(--brand-soft);
 }
 *,*::before,*::after{box-sizing:border-box;}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg-0);}
@@ -48,6 +49,7 @@ body{font-family:var(--font);font-size:13px;line-height:18px;color:var(--fg);-we
 .dot-ok{background:var(--ok);box-shadow:0 0 8px var(--ok);}
 .dot-live::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--ok);animation:pulse 1.6s var(--ease) infinite;opacity:0;}
 @keyframes pulse{0%{transform:scale(.6);opacity:.8;}100%{transform:scale(1.4);opacity:0;}}
+.dot-bad{background:var(--bad);}
 
 /* Main */
 .main{display:grid;grid-template-rows:48px 1fr;overflow:hidden;background:var(--bg-0);}
@@ -61,7 +63,7 @@ body{font-family:var(--font);font-size:13px;line-height:18px;color:var(--fg);-we
 .pane-inner{max-width:920px;}
 
 /* Page header */
-.page-head{display:flex;align-items:flex-end;margin-bottom:20px;}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;gap:12px;}
 .eyebrow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--fg-dim);margin-bottom:8px;}
 .eyebrow .sep{color:var(--fg-faint);}
 h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:0;color:var(--fg);}
@@ -75,6 +77,15 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
 .info-row .v{padding:8px 16px;font-family:var(--mono);font-size:13px;color:var(--fg);word-break:break-all;display:flex;align-items:center;}
 .info-row .v.txt{font-family:var(--font);}
 .info-card-section{padding:6px 16px;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-dim);background:rgba(255,255,255,.02);border-bottom:1px solid var(--line);}
+
+/* Buttons */
+.btn{appearance:none;font-family:inherit;font-size:13px;font-weight:500;height:28px;padding:0 12px;display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--bg-2);color:var(--fg);cursor:pointer;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease);white-space:nowrap;text-decoration:none;}
+.btn:hover{background:var(--bg-3);border-color:var(--line-3);}
+.btn:active{background:var(--bg-4);}
+.btn:focus-visible{outline:none;box-shadow:var(--focus);}
+.btn-primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+.btn-primary:hover{background:var(--brand-hi);border-color:var(--brand-hi);}
+.btn-primary:active{background:var(--brand-lo);border-color:var(--brand-lo);}
 
 #err{color:var(--bad);margin-top:12px;font-size:13px;}
 
@@ -123,9 +134,8 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
       </a>
     </div>
     <div class="side-foot">
-      <span class="dot dot-ok dot-live"></span>
-      <span>Connected</span>
-      <span class="ip">192.168.4.1</span>
+      <span class="dot dot-ok dot-live" id="conn-dot"></span>
+      <span id="conn-text">Connected</span>
     </div>
   </aside>
 
@@ -146,6 +156,11 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
             <div class="eyebrow" id="eyebrow">&nbsp;</div>
             <h1 id="title">Loading&hellip;</h1>
           </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
+            <button class="btn" id="btn-reboot">Reboot</button>
+            <a class="btn" href="/config?export" download="config.json">Export</a>
+            <a class="btn btn-primary" href="/update">Flash firmware</a>
+          </div>
         </div>
 
         <div class="info-card" id="info-card">
@@ -162,6 +177,29 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
 
 </div>
 <script>
+document.getElementById('btn-reboot').addEventListener('click', function() {
+  fetch('/reboot');
+});
+
+(function(){
+  var dot=document.getElementById('conn-dot');
+  var txt=document.getElementById('conn-text');
+  function check(){
+    var ctrl=new AbortController();
+    var timer=setTimeout(function(){ctrl.abort();},4000);
+    fetch('/heartbeat',{signal:ctrl.signal}).then(function(){
+      clearTimeout(timer);
+      dot.className='dot dot-ok dot-live';
+      txt.textContent='Connected';
+    }).catch(function(){
+      clearTimeout(timer);
+      dot.className='dot dot-bad';
+      txt.textContent='Disconnected';
+    });
+  }
+  setInterval(check,5000);
+})();
+
 function row(k,v,txt){
   return '<div class="info-row"><span class="k">'+k+'</span><span class="v'+(txt?' txt':'')+'">'+v+'</span></div>';
 }

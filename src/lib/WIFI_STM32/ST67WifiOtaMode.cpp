@@ -405,6 +405,7 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
     // Config endpoints (POST before GET to disambiguate)
     if      (isPost && pathMatch(request, "/config"))       { handlePostConfig(linkId, request, reqLen); }
     else if (isGet  && pathMatch(request, "/config"))       { handleGetConfig(linkId, request); }
+    else if (isGet  && pathMatch(request, "/heartbeat"))    { handleGetHeartbeat(linkId); }
     // Options endpoints
     else if (isPost && pathMatch(request, "/options.json")) { handlePostOptions(linkId, request, reqLen); }
     else if (isGet  && pathMatch(request, "/options.json")) { handleGetOptions(linkId); }
@@ -470,6 +471,15 @@ void ST67WifiOtaMode::handleGetConfig(int linkId, const char* request)
     _wifi.closeConnection(linkId);
 
     delete[] body;
+}
+
+// ============================================================================
+// GET /heartbeat
+// ============================================================================
+
+void ST67WifiOtaMode::handleGetHeartbeat(int linkId)
+{
+    sendHttpResponse(linkId, "200 OK", "application/json", "{\"ok\":true}");
 }
 
 // ============================================================================

@@ -52,6 +52,7 @@ body{font-family:var(--font);font-size:13px;line-height:18px;color:var(--fg);-we
 .dot-ok{background:var(--ok);box-shadow:0 0 8px var(--ok);}
 .dot-live::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--ok);animation:pulse 1.6s var(--ease) infinite;opacity:0;}
 @keyframes pulse{0%{transform:scale(.6);opacity:.8;}100%{transform:scale(1.4);opacity:0;}}
+.dot-bad{background:var(--bad);}
 
 /* Main */
 .main{display:grid;grid-template-rows:48px 1fr;overflow:hidden;background:var(--bg-0);}
@@ -181,9 +182,8 @@ h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:
       </a>
     </div>
     <div class="side-foot">
-      <span class="dot dot-ok dot-live"></span>
-      <span>Connected</span>
-      <span class="ip">192.168.4.1</span>
+      <span class="dot dot-ok dot-live" id="conn-dot"></span>
+      <span id="conn-text">Connected</span>
     </div>
   </aside>
 
@@ -405,6 +405,25 @@ btnFlash.addEventListener('click',function(){
   ex.ontimeout=function(){busy=false;btnFlash.disabled=false;btnClear.disabled=false;setStatus('Erase timed out.','bad');};
   ex.send();
 });
+
+(function(){
+  var dot=document.getElementById('conn-dot');
+  var txt=document.getElementById('conn-text');
+  function check(){
+    var ctrl=new AbortController();
+    var timer=setTimeout(function(){ctrl.abort();},4000);
+    fetch('/heartbeat',{signal:ctrl.signal}).then(function(){
+      clearTimeout(timer);
+      dot.className='dot dot-ok dot-live';
+      txt.textContent='Connected';
+    }).catch(function(){
+      clearTimeout(timer);
+      dot.className='dot dot-bad';
+      txt.textContent='Disconnected';
+    });
+  }
+  setInterval(check,5000);
+})();
 </script>
 </body>
 </html>

@@ -148,8 +148,13 @@ bool options_init()
         saveOptions(); // first boot: write compile-time defaults to EEPROM
     }
 
-    // product_name / device_name always come from compile-time TARGET_NAME
+    // product_name uses PRODUCT_NAME if defined, otherwise falls back to TARGET_NAME
+    // device_name (Lua name) always comes from TARGET_NAME
+#ifdef PRODUCT_NAME
+    strncpy(product_name, STR(PRODUCT_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
+#else
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
+#endif
     product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
     strncpy(device_name, STR(TARGET_NAME), ELRSOPTS_DEVICENAME_SIZE);
     device_name[ELRSOPTS_DEVICENAME_SIZE] = '\0';
