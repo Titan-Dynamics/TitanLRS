@@ -8,14 +8,15 @@
 // STM32 web assets served by ST67WifiOtaMode::serveAsset()
 //
 // Routes:
-//   GET /         -> /index.html  (device info page)
-//   GET /update   -> /update.html (OTA firmware update)
+//   GET /         -> /index.html   (device info / overview page)
+//   GET /binding  -> /binding.html (binding UID configuration)
+//   GET /update   -> /update.html  (OTA firmware update)
 //
 // Assets are stored gzip-compressed in flash and sent with
 // Content-Encoding: gzip so the browser decompresses them.
 //
 // To regenerate web-stm32-info.h after editing the HTML sources:
-//   cd html && python3 build-stm32.py
+//   cd html && node build-stm32.js
 // ---------------------------------------------------------------------------
 
 typedef struct {

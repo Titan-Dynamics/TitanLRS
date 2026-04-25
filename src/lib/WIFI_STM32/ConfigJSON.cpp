@@ -26,6 +26,13 @@ int buildConfigJSON(char* buf, size_t maxLen)
     APPEND("\"custom_hardware\":false,");
 #if defined(TARGET_TX)
     APPEND("\"module-type\":\"TX\",");
+    // uidtype mirrors the ESP GetConfigUidType() TX branch.
+    // "Overridden" would require a runtime customised flag stored in EEPROM — add that
+    // once the POST /binding save API is implemented.
+    if (firmwareOptions.hasUID)
+        APPEND("\"uidtype\":\"Flashed\",");
+    else
+        APPEND("\"uidtype\":\"Not set (using MAC address)\",");
 #else
     APPEND("\"module-type\":\"RX\",");
 #endif

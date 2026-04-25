@@ -32,8 +32,9 @@ function toHexLines(buf) {
 }
 
 const assets = [
-  { webPath: '/index.html',  srcFile: 'stm32-info.html',   contentType: 'text/html' },
-  { webPath: '/update.html', srcFile: 'stm32-update.html', contentType: 'text/html' },
+  { webPath: '/index.html',   srcFile: 'stm32-info.html',    contentType: 'text/html' },
+  { webPath: '/binding.html', srcFile: 'stm32-binding.html', contentType: 'text/html' },
+  { webPath: '/update.html',  srcFile: 'stm32-update.html',  contentType: 'text/html' },
 ];
 
 let header = `#pragma once

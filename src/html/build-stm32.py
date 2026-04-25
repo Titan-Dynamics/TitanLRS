@@ -15,8 +15,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_FILE = os.path.join(SCRIPT_DIR, '..', 'lib', 'WIFI_STM32', 'web-stm32-info.h')
 
 ASSETS = [
-    ('/index.html',  'stm32-info.html',   'text/html'),
-    ('/update.html', 'stm32-update.html', 'text/html'),
+    ('/index.html',   'stm32-info.html',    'text/html'),
+    ('/binding.html', 'stm32-binding.html', 'text/html'),
+    ('/update.html',  'stm32-update.html',  'text/html'),
 ]
 
 

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TitanLRS — Binding</title>
+<style>
+:root{
+  --bg-0:#08090A;--bg-1:#0E0F11;--bg-2:#16181B;--bg-3:#1D1F23;--bg-4:#25282D;
+  --line:rgba(255,255,255,.06);--line-2:rgba(255,255,255,.10);--line-3:rgba(255,255,255,.16);
+  --fg:#E6E7EA;--fg-mute:#9A9DA3;--fg-dim:#6B6E74;--fg-faint:#4A4D52;
+  --brand:#F26B1F;--brand-hi:#FF8133;--brand-lo:#C9551A;
+  --brand-soft:rgba(242,107,31,.14);--brand-line:rgba(242,107,31,.36);
+  --ok:#4FC78F;--ok-soft:rgba(79,199,143,.14);
+  --warn:#E5A53B;--warn-soft:rgba(229,165,59,.14);
+  --bad:#E8624C;--bad-soft:rgba(232,98,76,.14);
+  --font:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --r-xs:3px;--r-sm:4px;--r-md:6px;--r-lg:8px;
+  --dur:120ms;--ease:cubic-bezier(.2,.6,.2,1);
+  --focus:0 0 0 1px var(--brand),0 0 0 4px var(--brand-soft);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg-0);}
+body{font-family:var(--font);font-size:13px;line-height:18px;color:var(--fg);-webkit-font-smoothing:antialiased;}
+
+/* App shell */
+.app{display:grid;grid-template-columns:224px 1fr;height:100vh;}
+
+/* Sidebar */
+.side{border-right:1px solid var(--line);background:var(--bg-0);display:flex;flex-direction:column;overflow:hidden;}
+.side-head{height:48px;padding:0 12px;display:flex;align-items:center;border-bottom:1px solid var(--line);}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;letter-spacing:-.01em;color:var(--fg);text-decoration:none;}
+.logo-mark{width:16px;height:16px;display:inline-block;background:var(--fg);
+  -webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2L2 21L22 21Z M12 8L7 18L17 18Z' fill='black' fill-rule='evenodd'/></svg>") no-repeat center/contain;
+          mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2L2 21L22 21Z M12 8L7 18L17 18Z' fill='black' fill-rule='evenodd'/></svg>") no-repeat center/contain;}
+.side-scroll{flex:1;overflow-y:auto;padding:8px 0 16px;}
+.side-foot{padding:10px 12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-mute);}
+.side-foot .ip{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--fg-dim);}
+
+/* Nav */
+.nav-section{padding:12px 12px 4px;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-dim);}
+.nav-item{display:flex;align-items:center;gap:10px;padding:0 10px;height:28px;margin:1px 6px;border-radius:var(--r-md);color:var(--fg-mute);font-size:13px;cursor:pointer;text-decoration:none;transition:background var(--dur) var(--ease),color var(--dur) var(--ease);position:relative;}
+.nav-item:hover{background:var(--bg-2);color:var(--fg);}
+.nav-item.is-active{background:var(--bg-3);color:var(--fg);}
+.nav-item.is-active::before{content:'';position:absolute;left:-6px;top:6px;bottom:6px;width:2px;background:var(--brand);border-radius:0 2px 2px 0;}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;stroke:var(--fg-dim);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.nav-item.is-active svg{stroke:var(--brand);}
+
+/* Live dot */
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;position:relative;}
+.dot-ok{background:var(--ok);box-shadow:0 0 8px var(--ok);}
+.dot-live::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--ok);animation:pulse 1.6s var(--ease) infinite;opacity:0;}
+@keyframes pulse{0%{transform:scale(.6);opacity:.8;}100%{transform:scale(1.4);opacity:0;}}
+
+/* Main */
+.main{display:grid;grid-template-rows:48px 1fr;overflow:hidden;background:var(--bg-0);}
+.topbar{display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);}
+.crumbs{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-mute);}
+.crumbs .sep{color:var(--fg-faint);}
+.crumbs .here{color:var(--fg);}
+
+/* Pane */
+.pane{overflow-y:auto;padding:28px 32px 64px;}
+.pane-inner{max-width:720px;}
+
+/* Page header */
+.page-head{display:flex;align-items:flex-end;margin-bottom:20px;}
+.eyebrow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--fg-dim);margin-bottom:8px;}
+.eyebrow .sep{color:var(--fg-faint);}
+h1{font-size:28px;line-height:34px;font-weight:600;letter-spacing:-.02em;margin:0;color:var(--fg);display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+
+/* Chips */
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;font-size:11px;font-weight:500;letter-spacing:.02em;border-radius:999px;background:var(--bg-3);color:var(--fg-mute);border:1px solid var(--line);white-space:nowrap;}
+.chip-ok{background:var(--ok-soft);color:var(--ok);border-color:transparent;}
+.chip-warn{background:var(--warn-soft);color:var(--warn);border-color:transparent;}
+.chip-bad{background:var(--bad-soft);color:var(--bad);border-color:transparent;}
+.chip-brand{background:var(--brand-soft);color:var(--brand);border-color:var(--brand-line);}
+.chip-mono{background:var(--bg-3);color:var(--fg-dim);border-color:var(--line);font-family:var(--mono);}
+.chip .chip-dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;}
+
+/* Bind stack */
+.bind-stack{display:flex;flex-direction:column;gap:16px;}
+
+/* Help text */
+.bind-help{font-size:13px;line-height:1.55;color:var(--fg-mute);margin:0;}
+.bind-help strong{color:var(--fg);font-weight:500;}
+
+/* Form fields */
+.field{display:flex;flex-direction:column;gap:6px;}
+.field-label{font-size:12px;font-weight:500;color:var(--fg-mute);}
+.field-help{font-size:11px;color:var(--fg-dim);}
+.input{appearance:none;font-family:inherit;font-size:13px;height:32px;padding:0 10px;background:var(--bg-1);border:1px solid var(--line-2);border-radius:var(--r-md);color:var(--fg);outline:none;transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease);width:100%;}
+.input:focus{border-color:var(--brand);box-shadow:var(--focus);}
+.input::placeholder{color:var(--fg-faint);}
+.input-mono{font-family:var(--mono);}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+/* UID preview bar */
+.uid-preview{display:flex;align-items:center;gap:12px;padding:9px 12px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-md);}
+.uid-preview .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg-dim);font-weight:500;white-space:nowrap;}
+.uid-preview .octets{font-family:var(--mono);font-size:13px;color:var(--fg);flex:1;}
+.uid-preview .octets .pending{color:var(--warn);}
+
+/* Notice */
+.notice{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-left:2px solid var(--warn);border-radius:var(--r-md);background:var(--bg-1);}
+.notice svg{width:16px;height:16px;flex-shrink:0;margin-top:1px;stroke:var(--warn);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.notice p{margin:0;font-size:12px;color:var(--fg-mute);line-height:1.5;}
+.notice p strong{color:var(--fg);font-weight:500;}
+
+/* Buttons */
+.btn{appearance:none;font-family:inherit;font-size:13px;font-weight:500;height:28px;padding:0 12px;display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--bg-2);color:var(--fg);cursor:pointer;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease);white-space:nowrap;}
+.btn:hover{background:var(--bg-3);border-color:var(--line-3);}
+.btn:active{background:var(--bg-4);}
+.btn:focus-visible{outline:none;box-shadow:var(--focus);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+.btn-primary:hover:not(:disabled){background:var(--brand-hi);border-color:var(--brand-hi);}
+.btn-primary:active{background:var(--brand-lo);border-color:var(--brand-lo);}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--fg-mute);}
+.btn-ghost:hover{background:var(--bg-2);color:var(--fg);}
+.btn-danger{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);}
+.btn-danger:hover:not(:disabled){background:var(--bad);color:#fff;}
+
+/* Action bar */
+.action-bar{display:flex;align-items:center;gap:8px;padding-top:4px;}
+.action-bar .filler{flex:1;}
+
+/* Error */
+#err{color:var(--bad);margin-top:12px;font-size:13px;}
+
+/* Mobile */
+@media(max-width:640px){
+  html,body{overflow:auto;}
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:100vh;}
+  .side{flex-direction:row;border-right:none;border-bottom:1px solid var(--line);height:auto;}
+  .side-head{border-bottom:none;height:44px;flex-shrink:0;}
+  .side-scroll{flex-direction:row;display:flex;align-items:center;padding:0 8px;overflow-x:auto;overflow-y:hidden;}
+  .nav-section{display:none;}
+  .nav-item{height:44px;white-space:nowrap;margin:0 2px;}
+  .nav-item.is-active::before{top:auto;bottom:0;left:6px;right:6px;width:auto;height:2px;border-radius:2px 2px 0 0;}
+  .side-foot{display:none;}
+  .main{grid-template-rows:44px 1fr;}
+  .pane{padding:16px 12px 32px;}
+  h1{font-size:20px;line-height:26px;}
+  .field-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="side-head">
+      <a class="logo" href="/">
+        <span class="logo-mark"></span>
+        TitanLRS
+      </a>
+    </div>
+    <div class="side-scroll">
+      <div class="nav-section">Workspace</div>
+      <a class="nav-item" href="/">
+        <svg viewBox="0 0 16 16"><path d="m2 7 6-5 6 5v6.5a.5.5 0 0 1-.5.5H10v-4H6v4H2.5a.5.5 0 0 1-.5-.5z"/></svg>
+        Overview
+      </a>
+      <a class="nav-item is-active" href="/binding">
+        <svg viewBox="0 0 16 16"><path d="M5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0zM2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8z"/><path d="M8 5.5V2M8 14v-3.5M5.5 8H2M14 8h-3.5"/></svg>
+        Binding
+      </a>
+      <a class="nav-item" href="/update">
+        <svg viewBox="0 0 16 16"><path d="M9 2 3.5 9.5H7L7 14l5.5-7.5H9z"/></svg>
+        Flash Firmware
+      </a>
+    </div>
+    <div class="side-foot">
+      <span class="dot dot-ok dot-live"></span>
+      <span>Connected</span>
+      <span class="ip">192.168.4.1</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">
+        <span>Device</span>
+        <span class="sep">/</span>
+        <span class="here">Binding</span>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="pane-inner">
+
+        <div class="page-head">
+          <div class="id-block">
+            <div class="eyebrow" id="eyebrow">&nbsp;</div>
+            <h1>Binding <span class="chip" id="bind-chip"><span class="chip-dot"></span> <span id="bind-chip-label">Loading&hellip;</span></span></h1>
+          </div>
+        </div>
+
+        <div class="bind-stack">
+
+          <p class="bind-help">
+            The binding UID is six bytes that pair this transmitter with one or more receivers. Enter a <strong>binding phrase</strong> below &mdash; it is hashed into the UID. The phrase itself is not stored; only the resulting six octets are. You may also paste a UID directly as six comma-separated numbers (0&ndash;255) and it will be used as-is. Re-flashing firmware that includes a binding phrase will reset whatever you set here.
+          </p>
+
+          <div class="field-row">
+            <!-- Binding phrase -->
+            <div class="field">
+              <label class="field-label" for="phrase">Binding phrase</label>
+              <input class="input" id="phrase" type="text" placeholder="e.g. north-field-quad" autocomplete="off" spellcheck="false">
+              <span class="field-help">Hashed into the UID. Not stored on device.</span>
+            </div>
+
+            <!-- Direct UID entry -->
+            <div class="field">
+              <label class="field-label" for="uid-direct">Binding UID</label>
+              <input class="input input-mono" id="uid-direct" type="text" placeholder="85,132,48,83,229,41" autocomplete="off" spellcheck="false">
+              <span class="field-help">Six bytes, comma separated (0&ndash;255 each).</span>
+            </div>
+          </div>
+
+          <!-- Live resolved UID preview -->
+          <div class="uid-preview">
+            <span class="lbl">Resolved UID</span>
+            <span class="octets" id="uid-preview">&mdash;</span>
+            <span class="chip chip-mono" id="uid-source">current</span>
+          </div>
+
+          <!-- Loan notice — only shown when uidtype is Loaned -->
+          <div class="notice" id="loan-notice" style="display:none;">
+            <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v3.5M8 5.25v.01"/></svg>
+            <p>This receiver is currently <strong>on loan</strong> from another transmitter. Returning it restores the original binding UID. Saving here will only update what is restored on return.</p>
+          </div>
+
+          <!-- Action bar -->
+          <div class="action-bar">
+            <!--
+              TODO: Wire up "Reset to MAC" once a POST /binding (or equivalent) API exists
+              on the STM32 to clear the stored UID override and revert to the device MAC.
+            -->
+            <button class="btn btn-danger" id="btn-reset" disabled title="Not yet available — requires binding save API">Reset to MAC</button>
+            <div class="filler"></div>
+            <button class="btn btn-ghost" id="btn-cancel">Discard</button>
+            <!--
+              TODO: Wire up "Save binding" once a POST /binding (or equivalent) API exists
+              on the STM32 to persist the new UID to EEPROM storage.
+            -->
+            <button class="btn btn-primary" id="btn-save" disabled>Save binding</button>
+          </div>
+
+        </div>
+
+        <div id="err"></div>
+
+      </div>
+    </div>
+  </main>
+
+</div>
+<script>
+// ── Inline MD5 (adapted from src/utils/md5.js) ─────────────────────────────
+// Computes MD5 of a string and returns a Uint8Array of 16 bytes.
+var _md5K = (function(){
+  var k = [];
+  for (var i = 0; i < 64;) k[i] = 0|(Math.abs(Math.sin(++i)) * 4294967296);
+  return k;
+})();
+function calcMD5(str) {
+  var b, c, d, j;
+  var x = [];
+  var str2 = unescape(encodeURI(str));
+  var a = str2.length;
+  var h = [b = 1732584193, c = -271733879, ~b, ~c];
+  var i = 0;
+  for (; i <= a;) x[i >> 2] |= (str2.charCodeAt(i) || 128) << 8 * (i++ % 4);
+  x[str = (a + 8 >> 6) * 16 + 14] = a * 8;
+  i = 0;
+  for (; i < str; i += 16) {
+    a = h; j = 0;
+    for (; j < 64;) {
+      a = [
+        d = a[3],
+        ((b = a[1] | 0) + ((d = (
+          (a[0] + [b&(c=a[2])|~b&d, d&b|~d&c, b^c^d, c^(b|~d)][a = j>>4]) +
+          (_md5K[j] + (x[[j, 5*j+1, 3*j+5, 7*j][a] % 16 + i] | 0))
+        )) << (a = [7,12,17,22,5,9,14,20,4,11,16,23,6,10,15,21][4*a + j++%4]) | d >>> 32 - a)),
+        b, c
+      ];
+    }
+    for (j = 4; j;) h[--j] = h[j] + a[j];
+  }
+  var out = [];
+  for (j = 0; j < 32;) out.push(((h[j>>3] >> ((1^j++&7)*4)) & 15)*16 + ((h[j>>3] >> ((1^j++&7)*4)) & 15));
+  return new Uint8Array(out);
+}
+
+// ── UID helpers ─────────────────────────────────────────────────────────────
+// Hash a binding phrase the same way the firmware does:
+//   MD5("-DMY_BINDING_PHRASE=\"<phrase>\"") → first 6 bytes
+function uidBytesFromPhrase(phrase) {
+  var input = '-DMY_BINDING_PHRASE="' + phrase + '"';
+  var digest = calcMD5(input);
+  return Array.from(digest.subarray(0, 6));
+}
+
+// Parse a direct UID string (4–6 comma-separated bytes, same logic as ESP binding-panel.js).
+// Returns an array of 6 numbers, or null if invalid.
+function parseUidString(s) {
+  if (!s || !/^[0-9, ]+$/.test(s)) return null;
+  var parts = s.split(',').map(function(p){ return p.trim(); }).filter(function(p){ return p !== ''; });
+  if (parts.length < 4 || parts.length > 6) return null;
+  var nums = parts.map(Number);
+  for (var i = 0; i < nums.length; i++) {
+    if (!Number.isInteger(nums[i]) || nums[i] < 0 || nums[i] > 255) return null;
+  }
+  while (nums.length < 6) nums.unshift(0);
+  return nums;
+}
+
+function uidToString(arr) {
+  return arr.join(',');
+}
+
+// ── Chip state mapping ───────────────────────────────────────────────────────
+// Maps uidtype strings (from /config settings.uidtype) to chip classes and labels.
+// Matches the logic in devWIFI.cpp GetConfigUidType().
+function chipForUidtype(uidtype) {
+  if (!uidtype || uidtype.indexOf('Not set') === 0) {
+    return { cls: 'chip-warn', label: 'Not set', note: 'using MAC address' };
+  }
+  switch (uidtype) {
+    case 'Flashed':    return { cls: '',           label: 'Flashed',   note: '' };
+    case 'Overridden': return { cls: 'chip-brand',  label: 'Overridden',note: '' };
+    case 'Bound':      return { cls: 'chip-ok',     label: 'Bound',     note: '' };
+    case 'Not Bound':  return { cls: 'chip-bad',    label: 'Not Bound', note: '' };
+    case 'Loaned':     return { cls: 'chip-warn',   label: 'Loaned',    note: '' };
+    case 'Volatile':   return { cls: 'chip-warn',   label: 'Volatile',  note: 'cleared on power cycle' };
+    default:           return { cls: '',            label: uidtype,     note: '' };
+  }
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+var currentUID = [];       // the device's current UID bytes, loaded from /config
+var currentUidtype = '';   // uidtype string from /config settings
+var moduleType = 'TX';     // TX or RX, from settings['module-type']
+
+var phraseEl    = document.getElementById('phrase');
+var uidDirectEl = document.getElementById('uid-direct');
+var previewEl   = document.getElementById('uid-preview');
+var sourceChip  = document.getElementById('uid-source');
+var bindChip    = document.getElementById('bind-chip');
+var chipLabel   = document.getElementById('bind-chip-label');
+var btnSave     = document.getElementById('btn-save');
+var btnCancel   = document.getElementById('btn-cancel');
+var btnReset    = document.getElementById('btn-reset');
+var loanNotice  = document.getElementById('loan-notice');
+
+// Update the page header chip and loan notice from a uidtype string.
+function applyUidtype(uidtype) {
+  var info = chipForUidtype(uidtype);
+  bindChip.className = 'chip' + (info.cls ? ' ' + info.cls : '');
+  var labelHTML = '<span class="chip-dot"></span> ' + info.label;
+  if (info.note) labelHTML += ' <span style="font-weight:400;opacity:.7;">&middot; ' + info.note + '</span>';
+  bindChip.innerHTML = labelHTML;
+  loanNotice.style.display = (uidtype === 'Loaned') ? 'flex' : 'none';
+}
+
+// Recompute the UID preview based on current input state.
+function refresh() {
+  var phraseVal    = phraseEl.value;
+  var uidDirectVal = uidDirectEl.value.trim();
+  var resolved = currentUID.slice();
+  var source = 'current';
+  var dirty = false;
+  var valid = true;
+
+  if (uidDirectVal) {
+    var parsed = parseUidString(uidDirectVal);
+    if (parsed) {
+      resolved = parsed;
+      source = 'from UID';
+      dirty = (uidToString(parsed) !== uidToString(currentUID));
+    } else {
+      source = 'invalid';
+      valid = false;
+    }
+  } else if (phraseVal.trim()) {
+    resolved = uidBytesFromPhrase(phraseVal.trim());
+    source = 'from phrase';
+    dirty = (uidToString(resolved) !== uidToString(currentUID));
+  }
+
+  if (resolved.length === 6) {
+    previewEl.innerHTML = dirty
+      ? '<span class="pending">' + uidToString(resolved) + '</span>'
+      : uidToString(resolved);
+  } else {
+    previewEl.innerHTML = '<span style="color:var(--fg-dim);">&mdash;</span>';
+  }
+
+  var srcCls = 'chip chip-mono';
+  if (source === 'invalid') srcCls = 'chip chip-bad';
+  else if (dirty)           srcCls = 'chip chip-brand';
+  sourceChip.className = srcCls;
+  sourceChip.textContent = source;
+
+  // TODO: Enable btnSave and btnReset once the POST /binding API is available.
+  // When the API exists: btnSave.disabled = !dirty || !valid;
+  // For now both action buttons remain disabled — they are placeholders.
+  btnSave.disabled = true;
+  btnReset.disabled = true;
+}
+
+phraseEl.addEventListener('input', function() {
+  if (phraseEl.value) uidDirectEl.value = '';
+  refresh();
+});
+uidDirectEl.addEventListener('input', function() {
+  if (uidDirectEl.value) phraseEl.value = '';
+  refresh();
+});
+btnCancel.addEventListener('click', function() {
+  phraseEl.value = '';
+  uidDirectEl.value = '';
+  refresh();
+});
+
+// ── Load config ──────────────────────────────────────────────────────────────
+fetch('/config').then(function(r){ return r.json(); }).then(function(d) {
+  var s = d.settings || {};
+  var c = d.config   || {};
+
+  moduleType = s['module-type'] || 'TX';
+  currentUID = Array.isArray(c.uid) ? c.uid : [];
+  currentUidtype = s.uidtype || '';
+
+  // Eyebrow: device type + UID
+  var eyebrow = document.getElementById('eyebrow');
+  var uidStr = currentUID.length ? currentUID.join(',') : '—';
+  eyebrow.innerHTML = '<span>Device &middot; ' + moduleType + '</span>'
+    + '<span class="sep"> &middot; </span>'
+    + '<span>UID ' + uidStr + '</span>';
+
+  // Apply chip state
+  applyUidtype(currentUidtype);
+
+  // Seed preview with current UID
+  refresh();
+}).catch(function() {
+  document.getElementById('eyebrow').textContent = 'Could not load configuration';
+  applyUidtype('');
+  document.getElementById('err').textContent = 'Could not reach /config — check device connection.';
+});
+</script>
+</body>
+</html>

@@ -233,13 +233,17 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
         Serial.printf("[HTTP] %s\n", line);
     }
 
-    bool isGetRoot   = (strstr(request, "GET / ") != nullptr) ||
-                       (strstr(request, "GET /index") != nullptr);
+    bool isGetRoot    = (strstr(request, "GET / ") != nullptr) ||
+                        (strstr(request, "GET /index") != nullptr);
     // Match /update exactly — avoid spurious match on /updates or similar.
-    bool isGetUpdate = (strstr(request, "GET /update ") != nullptr) ||
-                       (strstr(request, "GET /update\r") != nullptr) ||
-                       (strstr(request, "GET /update/") != nullptr);
-    bool isGetConfig = (strstr(request, "GET /config") != nullptr);
+    bool isGetUpdate  = (strstr(request, "GET /update ") != nullptr) ||
+                        (strstr(request, "GET /update\r") != nullptr) ||
+                        (strstr(request, "GET /update/") != nullptr);
+    // Match /binding exactly — avoid spurious match on /bindings or similar.
+    bool isGetBinding = (strstr(request, "GET /binding ") != nullptr) ||
+                        (strstr(request, "GET /binding\r") != nullptr) ||
+                        (strstr(request, "GET /binding/") != nullptr);
+    bool isGetConfig  = (strstr(request, "GET /config") != nullptr);
     bool isPostErase  = (strstr(request, "POST /erase") != nullptr);
     bool isPostUpload = (strstr(request, "POST /upload") != nullptr);
 
@@ -249,6 +253,8 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
         handlePostErase(linkId, request, reqLen);
     } else if (isPostUpload) {
         handlePostUpload(linkId, request, reqLen);
+    } else if (isGetBinding) {
+        serveAsset(linkId, "/binding.html");
     } else if (isGetUpdate) {
         serveAsset(linkId, "/update.html");
     } else if (isGetRoot) {
