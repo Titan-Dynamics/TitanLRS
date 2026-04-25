@@ -28,14 +28,53 @@ const char *wifi_ap_address = "10.0.0.1";
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
 #elif defined(PLATFORM_STM32)
+#include "elrs_eeprom.h"
+
+// Shared EEPROM instance, defined in rx_main.cpp / tx_main.cpp
+extern ELRS_EEPROM eeprom;
+
+// EEPROM layout for firmware_options_t persistence
+#define FW_OPTIONS_EEPROM_OFFSET  512
+#define FW_OPTIONS_MAGIC          0xEF
+#define FW_OPTIONS_VERSION        1
+
+struct fw_options_header_t {
+    uint8_t  magic;
+    uint8_t  version;
+    uint16_t crc;
+} __attribute__((packed));
+
+// CRC16/CCITT-FALSE: init=0xFFFF, poly=0x1021, no final XOR
+static uint16_t fw_options_crc(const uint8_t* data, size_t len)
+{
+    uint16_t crc = 0xFFFF;
+    while (len--) {
+        crc ^= (uint16_t)(*data++) << 8;
+        for (int i = 0; i < 8; i++) {
+            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
 // STM32: compile-time fixed target, no runtime JSON loading
 char product_name[ELRSOPTS_PRODUCTNAME_SIZE+1];
 char device_name[ELRSOPTS_DEVICENAME_SIZE+1];
 firmware_options_t firmwareOptions;
 
-bool options_init()
+void saveOptions()
 {
-    // Set defaults for firmware options
+    fw_options_header_t hdr;
+    hdr.magic   = FW_OPTIONS_MAGIC;
+    hdr.version = FW_OPTIONS_VERSION;
+    hdr.crc     = fw_options_crc((const uint8_t*)&firmwareOptions, sizeof(firmwareOptions));
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), firmwareOptions);
+    eeprom.Commit();
+}
+
+static void applyCompileTimeDefaults()
+{
     memset(&firmwareOptions, 0, sizeof(firmwareOptions));
     firmwareOptions.uart_baud = 420000;
 #if defined(TARGET_RX)
@@ -47,13 +86,13 @@ bool options_init()
     firmwareOptions.wifi_auto_on_interval = -1;
 #endif
 #if defined(MY_UID)
-    // Load bind phrase UID from compile-time define
-    const uint8_t myUid[] = { MY_UID };
-    static_assert(sizeof(myUid) == sizeof(firmwareOptions.uid), "MY_UID must be 6 bytes");
-    memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
-    firmwareOptions.hasUID = true;
+    {
+        const uint8_t myUid[] = { MY_UID };
+        static_assert(sizeof(myUid) == sizeof(firmwareOptions.uid), "MY_UID must be 6 bytes");
+        memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
+        firmwareOptions.hasUID = true;
+    }
 #endif
-    // Set regulatory domain from compile-time define
 #if defined(Regulatory_Domain_AU_915)
     firmwareOptions.domain = 0;
 #elif defined(Regulatory_Domain_FCC_915)
@@ -71,7 +110,39 @@ bool options_init()
 #elif defined(Regulatory_Domain_US_433_WIDE)
     firmwareOptions.domain = 7;
 #endif
-    // Copy target name, truncating to fit
+}
+
+bool options_init()
+{
+    // Set compile-time defaults as a baseline
+    applyCompileTimeDefaults();
+
+    // options_init() is called before setupConfigAndPocCheck() fills the EEPROM
+    // buffer, so we must call Begin() here to read flash into the RAM buffer.
+    // eeprom_buffer_fill() is idempotent; the later Begin() call in
+    // setupConfigAndPocCheck() is a harmless re-read.
+    eeprom.Begin();
+
+    // Try to load persisted options from EEPROM
+    fw_options_header_t hdr;
+    eeprom.Get(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    if (hdr.magic == FW_OPTIONS_MAGIC && hdr.version == FW_OPTIONS_VERSION) {
+        firmware_options_t loaded;
+        eeprom.Get(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), loaded);
+        uint16_t expected = fw_options_crc((const uint8_t*)&loaded, sizeof(loaded));
+        if (expected == hdr.crc) {
+            firmwareOptions = loaded;
+            DBGLN("options: loaded from EEPROM");
+        } else {
+            DBGLN("options: EEPROM CRC mismatch, using compile-time defaults");
+            saveOptions(); // seed EEPROM with current defaults
+        }
+    } else {
+        DBGLN("options: no valid EEPROM header, seeding defaults");
+        saveOptions(); // first boot: write compile-time defaults to EEPROM
+    }
+
+    // product_name / device_name always come from compile-time TARGET_NAME
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
     product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
     strncpy(device_name, STR(TARGET_NAME), ELRSOPTS_DEVICENAME_SIZE);

@@ -4,6 +4,7 @@
 #include <stm32h7xx_hal.h>
 
 #include "WebPage.h"
+#include "ConfigJSON.h"
 
 bool ST67WifiOtaMode::start()
 {
@@ -232,38 +233,79 @@ void ST67WifiOtaMode::handleClientRequest(int linkId, const char* request, int r
         Serial.printf("[HTTP] %s\n", line);
     }
 
-    bool isGetRoot = (strstr(request, "GET / ") != nullptr) ||
-                     (strstr(request, "GET /index") != nullptr);
-    bool isPostErase = (strstr(request, "POST /erase") != nullptr);
+    bool isGetRoot   = (strstr(request, "GET / ") != nullptr) ||
+                       (strstr(request, "GET /index") != nullptr);
+    // Match /update exactly — avoid spurious match on /updates or similar.
+    bool isGetUpdate = (strstr(request, "GET /update ") != nullptr) ||
+                       (strstr(request, "GET /update\r") != nullptr) ||
+                       (strstr(request, "GET /update/") != nullptr);
+    bool isGetConfig = (strstr(request, "GET /config") != nullptr);
+    bool isPostErase  = (strstr(request, "POST /erase") != nullptr);
     bool isPostUpload = (strstr(request, "POST /upload") != nullptr);
 
-    if (isPostErase) {
+    if (isGetConfig) {
+        handleGetConfig(linkId);
+    } else if (isPostErase) {
         handlePostErase(linkId, request, reqLen);
     } else if (isPostUpload) {
         handlePostUpload(linkId, request, reqLen);
+    } else if (isGetUpdate) {
+        serveAsset(linkId, "/update.html");
     } else if (isGetRoot) {
-        handleGetRoot(linkId);
+        serveAsset(linkId, "/index.html");
     } else {
         sendHttpResponse(linkId, "404 Not Found", "text/plain", "404 - Not Found");
     }
 }
 
-void ST67WifiOtaMode::handleGetRoot(int linkId)
+void ST67WifiOtaMode::serveAsset(int linkId, const char* path)
 {
-    uint16_t bodyLen = static_cast<uint16_t>(strlen(HTML_BODY));
+    for (size_t i = 0; i < WEB_ASSETS_COUNT; i++) {
+        if (strcmp(path, WEB_ASSETS[i].path) == 0) {
+            char hdr[256];
+            int hdrLen = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: %s\r\n"
+                "Content-Encoding: gzip\r\n"
+                "Content-Length: %u\r\n"
+                "Cache-Control: no-store\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                WEB_ASSETS[i].content_type,
+                (unsigned)WEB_ASSETS[i].size);
+
+            bool ok = _wifi.sendResponse(linkId, reinterpret_cast<const uint8_t*>(hdr), static_cast<uint16_t>(hdrLen));
+            if (ok) {
+                ok = _wifi.sendResponse(linkId, WEB_ASSETS[i].data, static_cast<uint16_t>(WEB_ASSETS[i].size));
+            }
+            // Wait long enough for the ST67 to deliver all queued TCP data to the
+            // browser before we close the connection.  Too short a delay causes a
+            // TCP RST to arrive while the browser is still processing the response,
+            // which the browser reports as "could not load page".
+            delay(ok ? 300 : 50);
+            _wifi.closeConnection(linkId);
+            return;
+        }
+    }
+    sendHttpResponse(linkId, "404 Not Found", "text/plain", "Not found");
+}
+
+void ST67WifiOtaMode::handleGetConfig(int linkId)
+{
+    char body[1024];
+    int bodyLen = buildConfigJSON(body, sizeof(body));
 
     char hdr[256];
     int hdrLen = snprintf(hdr, sizeof(hdr),
-                          "HTTP/1.1 200 OK\r\n"
-                          "Content-Type: text/html; charset=UTF-8\r\n"
-                          "Content-Length: %u\r\n"
-                          "Connection: close\r\n"
-                          "\r\n",
-                          bodyLen);
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %d\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n"
+        "\r\n", bodyLen);
 
     _wifi.sendResponse(linkId, reinterpret_cast<const uint8_t*>(hdr), static_cast<uint16_t>(hdrLen));
-    _wifi.sendResponse(linkId, reinterpret_cast<const uint8_t*>(HTML_BODY), bodyLen);
-
+    _wifi.sendResponse(linkId, reinterpret_cast<const uint8_t*>(body), static_cast<uint16_t>(bodyLen));
     delay(50);
     _wifi.closeConnection(linkId);
 }

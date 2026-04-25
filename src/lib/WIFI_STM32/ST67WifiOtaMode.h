@@ -47,7 +47,8 @@ private:
     void sendHttpResponse(int linkId, const char* status,
                           const char* contentType, const char* body,
                           bool closeConn = true);
-    void handleGetRoot(int linkId);
+    void serveAsset(int linkId, const char* path);
+    void handleGetConfig(int linkId);
     void handlePostErase(int linkId, const char* request, int reqLen);
     void handlePostUpload(int linkId, const char* request, int reqLen);
     void handleUploadData(int linkId, const char* data, int len);

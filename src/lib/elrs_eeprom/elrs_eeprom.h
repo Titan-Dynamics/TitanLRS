@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <cstddef>
 
-#define RESERVED_EEPROM_SIZE 1024
+#define RESERVED_EEPROM_SIZE 2048
 
 class ELRS_EEPROM
 {
