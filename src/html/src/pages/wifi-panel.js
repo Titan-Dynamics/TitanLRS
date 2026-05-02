@@ -37,73 +37,86 @@ class WifiPanel extends LitElement {
     }
 
     render() {
+        const isAP = elrsState.settings.mode !== 'STA'
         return html`
-            <div class="mui-panel mui--text-title">WiFi Configuration</div>
-            <div class="mui-panel">
-                <div class="mui-panel info-bg">
-                    ${elrsState.settings.mode !== 'STA' ? 'Currently in Access-Point mode' : 'Currently connected to home network: ' + elrsState.settings.ssid}
+            <div class="td-row td-spread" style="margin-bottom: var(--td-s-4);">
+                <span class="td-h2">WiFi Configuration</span>
+                <span class="td-chip ${isAP ? 'td-chip-info' : 'td-chip-ok'}">
+                    ${isAP ? 'Access Point' : 'STA: ' + elrsState.settings.ssid}
+                </span>
+            </div>
+
+            <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                <div class="td-card-header">
+                    <span class="td-h4">Network mode</span>
                 </div>
-                <p>
-                    Here you can join a network, and save it as your Home network. When you enable WiFi in range of your
-                    Home network, ExpressLRS will automatically connect to it. In Access Point (AP) mode, the network
-                    name is ExpressLRS TX or ExpressLRS RX with password "expresslrs".
-                </p>
-                <form id="sethome" class="mui-form">
-                    <div class="mui-radio">
-                        <input id="home" type="radio" name="networktype" value="0" checked @change="${this._handleChange}">
-                        <label for="home">Set new home network</label>
+
+                <form id="sethome">
+                    <div class="td-card-body" style="padding: var(--td-s-3) var(--td-s-4); display: flex; flex-direction: column; gap: var(--td-s-2);">
+                        ${[
+                            ['0', 'Set new home network'],
+                            ['1', 'Temporarily connect to a network, retain current home network setting'],
+                            ['2', 'Temporarily enable "Access Point" mode, retain current home network setting'],
+                            ['3', 'Forget home network setting, always use "Access Point" mode'],
+                        ].map(([val, label]) => html`
+                            <label style="display: flex; align-items: center; gap: var(--td-s-3); cursor: pointer; font-size: var(--td-fs-md); color: var(--td-fg-mute);">
+                                <input type="radio" name="wifi-mode" value="${val}"
+                                       .checked="${this.selectedValue === val}"
+                                       @change="${() => { this.selectedValue = val }}"
+                                       style="accent-color: var(--td-primary); width: 15px; height: 15px; flex-shrink: 0; cursor: pointer;"/>
+                                ${label}
+                            </label>
+                        `)}
                     </div>
-                    <div class="mui-radio">
-                        <input id="temp" type="radio" name="networktype" value="1" @change="${this._handleChange}">
-                        <label for="temp">Temporarily connect to a network, retain current home network setting</label>
-                    </div>
-                    <div class="mui-radio">
-                        <input id="ap" type="radio" name="networktype" value="2" @change="${this._handleChange}">
-                        <label for="ap">Temporarily enable "Access Point" mode, retain current home network setting</label>
-                    </div>
-                    <div class="mui-radio">
-                        <input id="forget" type="radio" name="networktype" value="3" @change="${this._handleChange}">
-                        <label for="forget">Forget home network setting, always use "Access Point" mode</label>
-                    </div>
-                    <br/>
-                    <div ?hidden="${this.selectedValue !== '0' && this.selectedValue !== '3'}">
-                        <div class="mui-textfield">
-                            <input id="interval" size='3' name='wifi-on-interval' type='number' placeholder="Disabled"
-                                   @input="${(e) => this.wifiOnInterval = parseInt(e.target.value)}"
-                                   .value="${this.wifiOnInterval}"
-                            />
-                            <label for="interval">WiFi "auto on" interval in seconds (leave blank to disable)</label>
+
+                    ${this.selectedValue === '0' || this.selectedValue === '3' ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">WiFi auto-on interval</span>
+                            <div class="td-input-group" style="width: 120px;">
+                                <input class="td-input td-input-mono" id="interval" type="number" size="3"
+                                       placeholder="Disabled"
+                                       @input="${(e) => this.wifiOnInterval = parseInt(e.target.value)}"
+                                       .value="${this.wifiOnInterval}"/>
+                                <span class="td-btn" style="cursor:default; background: var(--td-bg-3);">s</span>
+                            </div>
                         </div>
-                    </div>
-                    <div id="credentials" ?hidden="${this.selectedValue === '2' || this.selectedValue === '3'}">
-                        <div class="autocomplete mui-textfield" style="position:relative;">
-                            <div style="display: ${this.showLoader ? 'block' : 'none'};" class="loader"></div>
-                            <input id="ssid" name="network" type="text" placeholder="SSID" autocomplete="off"
-                                value="${elrsState.options['wifi-ssid']}"
-                            />
-                            <label for="ssid">WiFi SSID</label>
+                    ` : ''}
+
+                    ${this.selectedValue !== '2' && this.selectedValue !== '3' ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">SSID</span>
+                            <div class="autocomplete" style="position: relative; flex: 1;">
+                                ${this.showLoader ? html`<span class="td-small td-mute" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);">Scanning...</span>` : ''}
+                                <input class="td-input" id="ssid" name="network" type="text"
+                                       placeholder="SSID" autocomplete="off"
+                                       @input="${() => this.requestUpdate()}"
+                                       value="${elrsState.options['wifi-ssid']}"/>
+                            </div>
                         </div>
-                        <div class="mui-textfield">
-                            <input id="pwd" size='64' name='password' type='password'
-                                value="${elrsState.options['wifi-password']}"
-                            />
-                            <label for="pwd">WiFi password</label>
+                        <div class="td-card-row">
+                            <span class="td-label">Password</span>
+                            <input class="td-input" id="pwd" name="password" type="password" size="64"
+                                   placeholder="Password" autocomplete="off"
+                                   @input="${() => this.requestUpdate()}"
+                                   value="${elrsState.options['wifi-password']}"/>
                         </div>
+                    ` : ''}
+
+                    <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center; gap: var(--td-s-2);">
+                        <div style="flex: 1;"></div>
+                        ${isAP && elrsState.options['wifi-ssid'] ? html`
+                            <button class="td-btn td-btn-danger" type="button"
+                                    @click="${postWithFeedback('Connect to Home Network', 'An error occurred connecting to the Home network', '/connect', null)}">
+                                Connect to Home: ${elrsState.options['wifi-ssid']}
+                            </button>
+                        ` : ''}
+                        <button class="td-btn td-btn-primary" type="button"
+                                @click="${this._setupNetwork}"
+                                ?disabled="${!(this.checkChanged() || this.selectedValue !== '0')}">Save</button>
                     </div>
-                    <button class="mui-btn mui-btn--primary" @click="${this._setupNetwork}" ?disabled="${!(this.checkChanged() || this.selectedValue!=='0')}">Save</button>
                 </form>
             </div>
-            <div class="mui-panel" ?hidden="${elrsState.settings.mode === 'STA'}">
-                <a id="connect" href="#"
-                   @click="${postWithFeedback('Connect to Home Network', 'An error occurred connecting to the Home network', '/connect', null)}">
-                    Connect to Home network: ${elrsState.options['wifi-ssid']}
-                </a>
-            </div>
         `
-    }
-
-    _handleChange(event) {
-        this.selectedValue = event.target.value
     }
 
     _setupNetwork(event) {
@@ -162,9 +175,7 @@ class WifiPanel extends LitElement {
             }
         }
         xmlhttp.onerror = function () {
-            if (self.running) {
-                setTimeout(self._getNetworks, 2000)
-            }
+            if (self.running) setTimeout(self._getNetworks, 2000)
         }
         xmlhttp.open('GET', 'networks.json', true)
         xmlhttp.send()

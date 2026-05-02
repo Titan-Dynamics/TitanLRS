@@ -19,37 +19,48 @@ class ButtonsPanel extends LitElement {
 
     render() {
         return html`
-            <div class="mui-panel mui--text-title">Button & Actions</div>
-            <div class="mui-panel">
-                <p>
-                    Specify which actions to perform when clicking or long pressing module buttons.
-                </p>
-                <form class="mui-form">
-                    ${elrsState.config['button-actions'] ? html`
-                        <table class="mui-table">
-                            <tbody id="button-actions">
+            <div class="td-h2" style="margin-bottom: var(--td-s-4);">Buttons &amp; Actions</div>
+            <div class="td-card">
+                <div class="td-card-header">
+                    <span class="td-h4">Button action mapping</span>
+                </div>
+                ${elrsState.config['button-actions'] ? html`
+                    <table class="td-table td-table-roomy">
+                        <thead>
+                            <tr>
+                                <th>Button</th>
+                                <th>Action</th>
+                                <th>Press type</th>
+                                <th>Count / Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="button-actions">
                             ${this._appendButtonActions()}
-                            </tbody>
-                        </table>
-                    ` : ``}
-                    ${this.buttonActions[0] && this.buttonActions[0]['color'] !== undefined ? html`
-                        <p>
-                            <input id='button1-color' type='color' @input="${(e) => this._changeCurrentColors(e, 0)}"
-                                   .value="${this._toRGB(this.buttonActions[0]['color'])}"/>
-                            <label for="button1-color">User button 1 color</label>
-                        </p>
-                    ` : ''}
-                    ${this.buttonActions[1] && this.buttonActions[1]['color'] !== undefined ? html`
-                        <p>
-                            <input id='button2-color' type='color' @input="${(e) => this._changeCurrentColors(e, 1)}"
-                                   .value="${this._toRGB(this.buttonActions[1]['color'])}"/>
-                            <label for="button2-color">User button 2 color</label>
-                        </p>
-                    ` : ''}
-                    <button class="mui-btn mui-btn--primary" @click="${this._submitButtonActions}"
-                            ?disabled="${this._checkEnableButtonActionSave()}">Save
-                    </button>
-                </form>
+                        </tbody>
+                    </table>
+                ` : ''}
+                ${this.buttonActions[0] && this.buttonActions[0]['color'] !== undefined ? html`
+                    <div class="td-card-row">
+                        <span class="td-label">Button 1 color</span>
+                        <input type="color"
+                               @input="${(e) => this._changeCurrentColors(e, 0)}"
+                               .value="${this._toRGB(this.buttonActions[0]['color'])}"/>
+                    </div>
+                ` : ''}
+                ${this.buttonActions[1] && this.buttonActions[1]['color'] !== undefined ? html`
+                    <div class="td-card-row">
+                        <span class="td-label">Button 2 color</span>
+                        <input type="color"
+                               @input="${(e) => this._changeCurrentColors(e, 1)}"
+                               .value="${this._toRGB(this.buttonActions[1]['color'])}"/>
+                    </div>
+                ` : ''}
+                <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center;">
+                    <div style="flex: 1;"></div>
+                    <button class="td-btn td-btn-primary"
+                            @click="${this._submitButtonActions}"
+                            ?disabled="${this._checkEnableButtonActionSave()}">Save</button>
+                </div>
             </div>
         `;
     }
@@ -68,51 +79,31 @@ class ButtonsPanel extends LitElement {
     _appendButtonActionRow(b, p, v) {
         return html`
             <tr>
+                <td class="td-mono">Button ${parseInt(b) + 1}</td>
                 <td>
-                    Button ${parseInt(b) + 1}
+                    <select class="td-select" style="width: auto;" @change="${(e) => this._changeAction(b, p, parseInt(e.target.value))}">
+                        ${_renderOptions(['Unused','Increase Power','Go to VTX Band Menu','Go to VTX Channel Menu',
+                            'Send VTX Settings','Start WiFi','Enter Binding Mode','Start BLE Joystick'], v.action)}
+                    </select>
                 </td>
                 <td>
-                    <div class="mui-select">
-                        <select @change="${(e) => this._changeAction(b, p, parseInt(e.target.value))}">
-                            ${_renderOptions(['Unused', 'Increase Power', 'Go to VTX Band Menu', 'Go to VTX Channel Menu',
-                                'Send VTX Settings', 'Start WiFi', 'Enter Binding Mode', 'Start BLE Joystick'], v.action)}
-                        </select>
-                        <label>Action</label>
-                    </div>
+                    <select id="select-press-${b}-${p}" class="td-select" style="width: auto;"
+                            @change="${(e) => this._changePress(b, p, e.target.value)}"
+                            ?disabled="${v.action === 0}">
+                        ${v.action === 0 ? html`<option value="" disabled selected></option>` : ''}
+                        <option value="false" ?selected="${v['is-long-press'] === false}">Short press</option>
+                        <option value="true"  ?selected="${v['is-long-press'] === true}">Long press</option>
+                    </select>
                 </td>
                 <td>
-                    <div class="mui-select">
-                        <select id="select-press-${b}-${p}"
-                                @change="${(e) => this._changePress(b, p, e.target.value)}"
-                                ?disabled="${v.action === 0}"
-                        >
-                            <option value='' disabled hidden ?selected="${v.action === 0}"></option>
-                            <option value='false' ?selected="${v['is-long-press'] === false}">Short press (click)
-                            </option>
-                            <option value='true' ?selected="${v['is-long-press'] === true}">Long press (hold)</option>
-                        </select>
-                        <label>Press</label>
-                    </div>
-                </td>
-                <td>
-                    <div class="mui-select">
-                        <select id="select-timing-${b}-${p}"
-                                @change="${(e) => this._changeCount(b, p, parseInt(e.target.value))}"
-                                ?disabled="${v.action === 0}"
-                        >
-                            <option value='' disabled hidden ?selected="${v.action === 0}"></option>
-                            ${v['is-long-press'] === true
-                                    ? _renderOptions([
-                                        'for 0.5 seconds', 'for 1 second', 'for 1.5 seconds', 'for 2 seconds',
-                                        'for 2.5 seconds', 'for 3 seconds', 'for 3.5 seconds', 'for 4 seconds',
-                                    ], v.count)
-                                    : _renderOptions([
-                                        '1 time', '2 times', '3 times', '4 times',
-                                        '5 times', '6 times', '7 times', '8 times',
-                                    ], v.count)}
-                        </select>
-                        <label>Count</label>
-                    </div>
+                    <select id="select-timing-${b}-${p}" class="td-select" style="width: auto;"
+                            @change="${(e) => this._changeCount(b, p, parseInt(e.target.value))}"
+                            ?disabled="${v.action === 0}">
+                        ${v.action === 0 ? html`<option value="" disabled selected></option>` : ''}
+                        ${v['is-long-press'] === true
+                            ? _renderOptions(['0.5 s','1 s','1.5 s','2 s','2.5 s','3 s','3.5 s','4 s'], v.count)
+                            : _renderOptions(['1×','2×','3×','4×','5×','6×','7×','8×'], v.count)}
+                    </select>
                 </td>
             </tr>
         `

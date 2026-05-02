@@ -1,6 +1,6 @@
 import {html, LitElement} from "lit"
 import {customElement} from "lit/decorators.js"
-import '../assets/mui.js'
+import '../components/filedrag.js'
 import {saveJSONWithReboot} from "../utils/feedback.js"
 
 @customElement('models-panel')
@@ -11,18 +11,30 @@ class ModelsPanel extends LitElement {
 
     render() {
         return html`
-            <div class="mui-panel mui--text-title">Import/Export Module Settings</div>
-            <div class="mui-panel">
-                <p>Backup your global transmitter module and model configurations stored in the transmitter module.</p>
-                <div>
+            <div class="td-h2" style="margin-bottom: var(--td-s-4);">Import / Export</div>
+            <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                <div class="td-card-header">
+                    <span class="td-h4">Export module settings</span>
+                </div>
+                <div class="td-card-body">
+                    <p class="td-small td-mute" style="margin-bottom: var(--td-s-3);">
+                        Backup global transmitter module and model configurations.
+                    </p>
                     <a href="/config?export" download="models.json" target="_blank"
-                       class="mui-btn mui-btn--primary">Export module settings</a>
+                       class="td-btn td-btn-primary" style="text-decoration: none;">Export module settings</a>
                 </div>
             </div>
-            <div class="mui-panel">
-                <p>Restore your transmitter module and model configurations from a previous export.</p>
-                <div>
-                    <file-drop label="Import module settings" @file-drop=${this.upload}>or drop model JSON configuration file here</file-drop>
+            <div class="td-card">
+                <div class="td-card-header">
+                    <span class="td-h4">Import module settings</span>
+                </div>
+                <div class="td-card-body">
+                    <p class="td-small td-mute" style="margin-bottom: var(--td-s-3);">
+                        Restore from a previous export file.
+                    </p>
+                    <file-drop label="Import module settings" @file-drop=${this.upload}>
+                        or drop model JSON configuration file here
+                    </file-drop>
                 </div>
             </div>
         `
