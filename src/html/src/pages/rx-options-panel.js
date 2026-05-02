@@ -1,7 +1,6 @@
 import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
-import '../assets/mui.js'
-import {_renderOptions, _uintInput} from "../utils/libs.js"
+import {_uintInput} from "../utils/libs.js"
 import {elrsState, saveOptionsAndConfig} from "../utils/state.js"
 import {postWithFeedback} from "../utils/feedback.js"
 
@@ -16,8 +15,8 @@ class RxOptionsPanel extends LitElement {
     createRenderRoot() {
         this.domain = elrsState.options.domain
         this.lockOnFirst = elrsState.options['lock-on-first-connection']
-        this.enableModelMatch = elrsState.config.modelid!==undefined && elrsState.config.modelid !== 255
-        this.modelId = elrsState.config.modelid===undefined ? 0 : elrsState.config.modelid
+        this.enableModelMatch = elrsState.config.modelid !== undefined && elrsState.config.modelid !== 255
+        this.modelId = elrsState.config.modelid === undefined ? 0 : elrsState.config.modelid
         this.forceTlmOff = elrsState.config['force-tlm']
         this.save = this.save.bind(this)
         return this
@@ -25,78 +24,81 @@ class RxOptionsPanel extends LitElement {
 
     render() {
         return html`
-            <div class="mui-panel mui--text-title">Runtime Options</div>
-            <div class="mui-panel">
-                <p><b>Override</b> options provided when the firmware was flashed. These changes will
-                    persist across reboots, but <b>will be reset</b> when the firmware is reflashed.</p>
-                <form id='upload_options' method='POST' action="/options">
-                    <!-- FEATURE:HAS_SUBGHZ -->
-                    <div class="mui-select">
-                        <select id="domain" @change="${(e) => this.domain = parseInt(e.target.value)}">
-                            ${_renderOptions(['AU915','FCC915','EU868','IN866','AU433','EU433','US433','US433-Wide'], this.domain)}
-                        </select>
-                        <label for="domain">Regulatory domain</label>
-                    </div>
-                    <!-- /FEATURE:HAS_SUBGHZ -->
-                    <h2>Lock on first connection</h2>
-                    RF Mode Locking - Default mode is for the RX to cycle through the available RF modes with 5s pauses
-                    going from highest to lowest mode and finding which mode the TX is transmitting. This allows the RX to
-                    cycle, but once a connection has been established, the Rx will no longer cycle through the RF modes
-                    (until it receives a power reset).
-                    <br/>
-                    <div class="mui-checkbox">
-                        <input id="lock" type='checkbox'
-                               ?checked="${this.lockOnFirst}"
-                               @change="${(e) => {this.lockOnFirst = e.target.checked}}"/>
-                        <label for="lock">Lock on first connection</label>
-                    </div>
-                    <h2>Model Match</h2>
-                    Model Match is used to prevent accidentally selecting the wrong model in the handset and flying with an
-                    unexpected handset or ELRS configuration. When enabled, Model Match restricts this receiver to only
-                    connect fully with the specific Receiver ID below. Set the transmitter's Receiver ID in EdgeTX's model
-                    settings, and enable Model Match in the ExpressLRS lua.
-                    <br/>
-                    <div class="mui-checkbox">
-                        <input id="modelMatch" type='checkbox'
-                               ?checked="${this.enableModelMatch}"
-                               @change="${(e) => {this.enableModelMatch = e.target.checked}}"/>
-                        <label for="modelMatch">Enable Model Match</label>
-                    </div>
-                    ${this.enableModelMatch ? html`
-                    <div class="mui-textfield">
-                        <input id="modelId" min="0" max="63" type='number' required
-                               @change="${(e) => this.modelId = parseInt(e.target.value)}"
-                               .value="${this.modelId}"
-                               @keypress="${_uintInput}"/>
-                        <label for="modelId">Receiver ID (0 - 63)</label>
-                    </div>
-                    ` : ''}
-                    <h2>Force telemetry off</h2>
-                    When running multiple receivers simultaneously from the same TX (to increase the number of PWM servo outputs), there can be at most one receiver with telemetry enabled.
-                    <br>Enable this option to ignore the "Telem Ratio" setting on the TX and never send telemetry from this receiver.
-                    <br/>
-                    <div class="mui-checkbox">
-                        <input id='force-tlm' name='force-tlm' type='checkbox'
-                               ?checked="${this.forceTlmOff}"
-                               @change="${(e) => this.forceTlmOff = e.target.checked}"
-                        />
-                        <label for="force-tlm">Force telemetry OFF on this receiver</label>
-                    </div>
+            <div class="td-row td-spread" style="margin-bottom: var(--td-s-4);">
+                <span class="td-h2">Runtime Options</span>
+                ${elrsState.options.customised ? html`<span class="td-chip td-chip-warn">Modified</span>` : ''}
+            </div>
+            <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                <div class="td-card-header">
+                    <span class="td-h4">RF &amp; Protocol</span>
+                </div>
 
-                    <button class="mui-btn mui-btn--primary"
-                            ?disabled="${!this.checkChanged()}"
-                            @click="${this.save}"
-                    >
-                        Save
-                    </button>
+                <!-- FEATURE:HAS_SUBGHZ -->
+                <div class="td-card-row">
+                    <span class="td-label">Regulatory domain</span>
+                    <select class="td-select" style="width: auto;"
+                            @change="${(e) => this.domain = parseInt(e.target.value)}"
+                            .value="${this.domain}">
+                        ${['AU915', 'FCC915', 'EU868', 'IN866', 'AU433', 'EU433', 'US433', 'US433-Wide'].map((d, i) => html`
+                            <option value="${i}" ?selected="${this.domain === i}">${d}</option>
+                        `)}
+                    </select>
+                </div>
+                <!-- /FEATURE:HAS_SUBGHZ -->
+
+                <div class="td-card-row">
+                    <span class="td-label">Lock on first connection</span>
+                    <div class="td-row td-gap-3">
+                        <span class="td-toggle ${this.lockOnFirst ? 'is-on' : ''}"
+                              @click="${() => { this.lockOnFirst = !this.lockOnFirst; this.requestUpdate() }}"></span>
+                        <span class="td-small td-mute">Stop cycling RF modes once linked</span>
+                    </div>
+                </div>
+
+                <div class="td-card-row">
+                    <span class="td-label">Model Match</span>
+                    <div class="td-row td-gap-3">
+                        <span class="td-toggle ${this.enableModelMatch ? 'is-on' : ''}"
+                              @click="${() => { this.enableModelMatch = !this.enableModelMatch; this.requestUpdate() }}"></span>
+                        <span class="td-small td-mute">Restrict RX to specific handset model ID</span>
+                    </div>
+                </div>
+
+                ${this.enableModelMatch ? html`
+                    <div class="td-card-row">
+                        <span class="td-label">Receiver ID</span>
+                        <div class="td-field">
+                            <input class="td-input td-input-mono" id="modelId" min="0" max="63" type="number" required
+                                   style="width: 80px;"
+                                   @change="${(e) => this.modelId = parseInt(e.target.value)}"
+                                   .value="${this.modelId}"
+                                   @keypress="${_uintInput}"/>
+                            <span class="td-field-help">0 – 63</span>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="td-card-row">
+                    <span class="td-label">Force telemetry off</span>
+                    <div class="td-row td-gap-3">
+                        <span class="td-toggle ${this.forceTlmOff ? 'is-on' : ''}"
+                              @click="${() => { this.forceTlmOff = !this.forceTlmOff; this.requestUpdate() }}"></span>
+                        <span class="td-small td-mute">Never send telemetry (for multi-RX setups)</span>
+                    </div>
+                </div>
+
+                <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center; gap: var(--td-s-2);">
+                    <div style="flex: 1;"></div>
                     ${elrsState.options.customised ? html`
-                        <button class="mui-btn mui-btn--small mui-btn--danger mui--pull-right"
-                                @click="${postWithFeedback('Reset Runtime Options', 'An error occurred resetting runtime options', '/reset?options', null)}"
-                        >
+                        <button class="td-btn td-btn-danger"
+                                @click="${postWithFeedback('Reset Runtime Options', 'An error occurred resetting runtime options', '/reset?options', null)}">
                             Reset to defaults
                         </button>
                     ` : ''}
-                </form>
+                    <button class="td-btn td-btn-primary"
+                            ?disabled="${!this.checkChanged()}"
+                            @click="${this.save}">Save</button>
+                </div>
             </div>
         `
     }

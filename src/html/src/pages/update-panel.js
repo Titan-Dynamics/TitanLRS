@@ -1,9 +1,9 @@
 import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
-import '../assets/mui.js'
 import '../components/filedrag.js'
 import FEATURES from "../features.js"
 import {cuteAlert} from "../utils/feedback.js"
+import {elrsState} from "../utils/state.js"
 
 @customElement('update-panel')
 class UpdatePanel extends LitElement {
@@ -17,32 +17,48 @@ class UpdatePanel extends LitElement {
     }
 
     render() {
+        const version = elrsState.settings?.version || ''
+        const gitHash = elrsState.settings?.['git-commit'] || ''
+        const eyebrowParts = []
+        if (version) eyebrowParts.push('v' + version)
+        if (gitHash) eyebrowParts.push(gitHash)
         return html`
-            <div class="mui-panel mui--text-title">Firmware Update</div>
-            <div class="mui-panel">
-                <p>
-                    Select the correct <strong>firmware.bin${FEATURES.IS_8285 ? '.gz' : ''}</strong> for your platform otherwise a bad flash may occur.
-                    If this happens you will need to recover via USB/Serial. You may also download the <a
-                        href="firmware.bin" title="Click to download firmware">currently running firmware</a>.
-                </p>
-                <file-drop id="firmware-upload" label="Select firmware file" @file-drop="${this._fileSelectHandler}">or drop firmware file here</file-drop>
-                <br/>
-                <h3 id="status">${this.progressText}</h3>
-                <progress id="progressBar" value="0" max="100" style="width:100%;" .value="${this.progress}"></progress>
+            <div class="td-page-head" style="margin-bottom: var(--td-s-4);">
+                <div>
+                    ${eyebrowParts.length ? html`<div class="td-eyebrow">Currently installed<span class="td-eyebrow-sep"> &middot; </span>${eyebrowParts.join(' · ')}</div>` : ''}
+                    <div class="td-h2">Firmware Update</div>
+                </div>
+            </div>
+            <div class="td-card">
+                <div class="td-card-header">
+                    <span class="td-h4">Flash firmware</span>
+                </div>
+                <div class="td-card-body">
+                    <p class="td-body td-mute" style="margin-bottom: var(--td-s-3);">
+                        Select the correct <strong class="td-fg">firmware.bin${FEATURES.IS_8285 ? '.gz' : ''}</strong> for your platform.
+                        You can also <a href="firmware.bin" style="color: var(--td-brand);">download the running firmware</a>.
+                    </p>
+                    <file-drop id="firmware-upload" label="Select firmware file" @file-drop="${this._fileSelectHandler}">
+                        or drop firmware file here
+                    </file-drop>
+                    ${this.progressText ? html`
+                        <div class="td-progress-wrap">
+                            <div class="td-progress-label">${this.progressText}</div>
+                            <progress class="td-progress" value="${this.progress}" max="100"></progress>
+                        </div>
+                    ` : ''}
+                </div>
             </div>
         `
     }
 
-
     _fileSelectHandler(e) {
-        // ESP32 expects .bin, ESP8285 RX expect .bin.gz
         const files = e.detail.files
         const fileExt = files[0].name.split('.').pop()
-        let expectedFileExt
-        let expectedFileExtDesc
+        let expectedFileExt, expectedFileExtDesc
         if (FEATURES.IS_8285 && !FEATURES.IS_TX) {
             expectedFileExt = 'gz'
-            expectedFileExtDesc = '.bin.gz file. <br />Do NOT decompress/unzip/extract the file!'
+            expectedFileExtDesc = '.bin.gz file. Do NOT decompress the file.'
         } else {
             expectedFileExt = 'bin'
             expectedFileExtDesc = '.bin file.'
@@ -53,7 +69,7 @@ class UpdatePanel extends LitElement {
             cuteAlert({
                 type: 'error',
                 title: 'Incorrect File Format',
-                message: 'You selected the file &quot;' + files[0].name.toString() + '&quot;.<br />The firmware file must be a ' + expectedFileExtDesc
+                message: 'Selected "' + files[0].name + '" — must be a ' + expectedFileExtDesc
             })
         }
     }
@@ -74,7 +90,7 @@ class UpdatePanel extends LitElement {
     _progressHandler(event) {
         const percent = Math.round((event.loaded / event.total) * 100)
         this.progress = percent
-        this.progressText = percent + '% uploaded... please wait'
+        this.progressText = percent + '% uploaded'
         this.requestUpdate()
     }
 
@@ -85,22 +101,13 @@ class UpdatePanel extends LitElement {
         const data = JSON.parse(event.target.responseText)
         if (data.status === 'ok') {
             function showMessage() {
-                cuteAlert({
-                    type: 'success',
-                    title: 'Update Succeeded',
-                    message: data.msg
-                })
+                cuteAlert({ type: 'success', title: 'Update Succeeded', message: data.msg })
             }
-            // This is basically a delayed display of the success dialog with a fake progress
             let percent = 0
-            const interval = setInterval(()=>{
-                if (FEATURES.IS_8285)
-                    percent = percent + 1
-                else
-                    percent = percent + 2
-
+            const interval = setInterval(() => {
+                percent = percent + (FEATURES.IS_8285 ? 1 : 2)
                 self.progress = percent
-                self.progressText = percent + '% flashed... please wait'
+                self.progressText = percent + '% flashed'
                 if (percent === 100) {
                     clearInterval(interval)
                     self.progressText = ''
@@ -116,27 +123,18 @@ class UpdatePanel extends LitElement {
                 message: data.msg,
                 confirmText: 'Flash anyway',
                 cancelText: 'Cancel'
-            }).then((e)=>{
+            }).then((e) => {
                 const xmlhttp = new XMLHttpRequest()
                 xmlhttp.onreadystatechange = function() {
                     if (this.readyState === 4) {
                         self.progressText = ''
                         self.progress = 0
                         self.requestUpdate()
-                        if (this.status === 200) {
-                            const data = JSON.parse(this.responseText)
-                            cuteAlert({
-                                type: 'info',
-                                title: 'Force Update',
-                                message: data.msg
-                            })
-                        } else {
-                            cuteAlert({
-                                type: 'error',
-                                title: 'Force Update',
-                                message: 'An error occurred trying to force the update'
-                            })
-                        }
+                        cuteAlert({
+                            type: this.status === 200 ? 'info' : 'error',
+                            title: 'Force Update',
+                            message: this.status === 200 ? JSON.parse(this.responseText).msg : 'An error occurred'
+                        })
                     }
                 }
                 xmlhttp.open('POST', '/forceupdate', true)
@@ -145,11 +143,7 @@ class UpdatePanel extends LitElement {
                 xmlhttp.send(data)
             })
         } else {
-            cuteAlert({
-                type: 'error',
-                title: 'Update Failed',
-                message: data.msg
-            })
+            cuteAlert({ type: 'error', title: 'Update Failed', message: data.msg })
         }
         this.requestUpdate()
     }
@@ -157,20 +151,12 @@ class UpdatePanel extends LitElement {
     _errorHandler(event) {
         this.progressText = ''
         this.progress = 0
-        return cuteAlert({
-            type: 'error',
-            title: 'Update Failed',
-            message: event.target.responseText
-        })
+        return cuteAlert({ type: 'error', title: 'Update Failed', message: event.target.responseText })
     }
 
     _abortHandler(event) {
         this.progressText = ''
         this.progress = 0
-        return cuteAlert({
-            type: 'info',
-            title: 'Update Aborted',
-            message: event.target.responseText
-        })
+        return cuteAlert({ type: 'info', title: 'Update Aborted', message: event.target.responseText })
     }
 }

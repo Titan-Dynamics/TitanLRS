@@ -1,6 +1,5 @@
 import {html, LitElement, nothing} from 'lit'
 import {customElement, state} from 'lit/decorators.js'
-import '../assets/mui.js'
 import {postWithFeedback, saveJSONWithReboot} from '../utils/feedback.js'
 import '../components/filedrag.js'
 import HARDWARE_SCHEMA from '../utils/hardware-schema.js'
@@ -19,47 +18,63 @@ export class HardwareLayout extends LitElement {
 
     render() {
         return html`
-            <div class="hardware-layout">
-                <div class="mui-panel mui--text-title">Hardware Layout</div>
-                <div class="mui-panel">
-                    Upload target configuration (remember to press "Save Target Configuration" at the bottom of the page):
-                    <p>
+            <div class="td-h2" style="margin-bottom: var(--td-s-4);">Hardware Layout</div>
+
+            <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                <div class="td-card-header">
+                    <span class="td-h4">Upload configuration</span>
+                </div>
+                <div class="td-card-body">
+                    <p class="td-small td-mute" style="margin-bottom: var(--td-s-3);">
+                        Upload target configuration file, then press "Save" below.
+                    </p>
                     <file-drop id="filedrag" label="Upload" @file-drop=${this._onFileDrop}>or drop files here</file-drop>
                 </div>
-                <div class="mui-panel">
-                    <div class="mui-panel"
-                         style="display:${this.customised ? 'block' : 'none'}; background-color: #FFC107;">
-                        This hardware configuration has been customized. This can be safely ignored if this is a custom hardware
-                        build or for testing purposes.<br>
-                        You can <a download href="/hardware.json">download</a> the configuration or
-                        <a href="/reset?hardware" @click="${postWithFeedback('Hardware Configuration Reset', 'Reset failed', '/reset?hardware')}">reset</a>
-                        to pre-configured defaults and reboot.
-                    </div>
-                    <form id="upload_hardware" class="mui-form">
-                        ${this._renderTable()}
-                        <br>
-                        <input type="button" name="_ignore" value="Save Target Configuration"
-                               class="mui-btn mui-btn--primary" @click=${this._submitConfig} />
-                    </form>
+            </div>
+
+            <div class="td-card">
+                <div class="td-card-header">
+                    <span class="td-h4">Pin configuration</span>
+                    ${this.customised ? html`<span class="td-chip td-chip-warn">Customised</span>` : ''}
                 </div>
+
+                ${this.customised ? html`
+                    <div class="td-card-body td-warning-banner">
+                        This hardware configuration has been customised. Safe to ignore for custom hardware builds.
+                        <a download href="/hardware.json" style="color: var(--td-brand);">Download</a> or
+                        <a href="/reset?hardware" style="color: var(--td-bad);"
+                           @click="${postWithFeedback('Hardware Configuration Reset', 'Reset failed', '/reset?hardware')}">reset</a>
+                        to defaults.
+                    </div>
+                ` : ''}
+
+                <form id="upload_hardware">
+                    ${this._renderTable()}
+                    <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line);">
+                        <button type="button" class="td-btn td-btn-primary" @click=${this._submitConfig}>
+                            Save Target Configuration
+                        </button>
+                    </div>
+                </form>
             </div>
         `
     }
 
     _renderTable() {
         return html`
-            <table>
+            <table class="td-table">
                 <tbody>
                 ${this.constructor.SCHEMA.map(section => html`
-                    <tr>
-                        <td colspan="4"><b>${section.title}</b></td>
+                    <tr class="td-table-section-header">
+                        <td colspan="3">
+                            <span class="td-xs">${section.title}</span>
+                        </td>
                     </tr>
                     ${section.rows.map(row => html`
                         <tr>
-                            <td width="30"></td>
-                            <td>${row.label}${this._renderIcon(row.icon)}</td>
+                            <td style="color: var(--td-fg-mute);">${row.label}${this._renderIcon(row.icon)}</td>
                             <td>${this._renderField(row)}</td>
-                            <td>${row.desc || ''}</td>
+                            <td class="td-small td-mute">${row.desc || ''}</td>
                         </tr>
                     `)}
                 `)}
@@ -79,32 +94,36 @@ export class HardwareLayout extends LitElement {
     _renderField(row) {
         switch (row.type) {
             case 'checkbox':
-                return html`<input id="${row.id}" name="${row.id}" type="checkbox"/>`
+                return html`<input id="${row.id}" name="${row.id}" type="checkbox" class="td-check"/>`
             case 'select':
-                return html`<select id="${row.id}" name="${row.id}">
+                return html`<select id="${row.id}" name="${row.id}" class="td-select" style="width: auto;">
                     ${row.options?.map(opt => html`
                         <option value="${opt.value}">${opt.label}</option>`)}
                 </select>`
             case 'int':
-                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3} type="text" @keypress="${_intInput}"/>`
+                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
+                                   type="text" class="td-input td-input-mono" style="width: 60px;"
+                                   @keypress="${_intInput}"/>`
             case 'uint':
-                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3} type="text" @keypress="${_uintInput}"/>`
+                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
+                                   type="text" class="td-input td-input-mono" style="width: 60px;"
+                                   @keypress="${_uintInput}"/>`
             case 'array':
-                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? nothing} maxlength=${row.size ?? nothing} type="text" class="array"  @keypress="${_arrayInput}"/>`
+                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? nothing}
+                                   maxlength=${row.size ?? nothing} type="text" class="td-input td-input-mono array"
+                                   @keypress="${_arrayInput}"/>`
         }
     }
 
     connectedCallback() {
         super.connectedCallback()
-        // Add tooltips to icon classes after first paint
         setTimeout(() => this._initTooltips(), 0)
         this._loadData()
     }
 
     _initTooltips() {
         const add = (cls, label) => {
-            const images = document.querySelectorAll('.' + cls)
-            images.forEach(i => i.setAttribute('title', label))
+            document.querySelectorAll('.' + cls).forEach(i => i.setAttribute('title', label))
         }
         add('icon-input', 'Digital Input')
         add('icon-output', 'Digital Output')
@@ -147,8 +166,7 @@ export class HardwareLayout extends LitElement {
                 if (el.type === 'checkbox') {
                     el.checked = !!value
                 } else {
-                    if (Array.isArray(value)) el.value = value.toString()
-                    else el.value = value
+                    el.value = Array.isArray(value) ? value.toString() : value
                 }
             }
         }
@@ -157,20 +175,16 @@ export class HardwareLayout extends LitElement {
     _submitConfig() {
         const form = document.getElementById('upload_hardware')
         const formData = new FormData(form)
-        // rebuild using original serializer logic
         const body = JSON.stringify(Object.fromEntries(formData), (k, v) => {
             if (v === '') return undefined
             const el = document.getElementById(k)
-            if (el && el.type === 'checkbox') {
-                return v === 'on'
-            }
+            if (el && el.type === 'checkbox') return v === 'on'
             if (el && el.classList.contains('array')) {
                 const arr = v.split(',').map((element) => Number(element))
                 return arr.length === 0 ? undefined : arr
             }
             return isNaN(v) ? v : +v
         })
-        // Use shared helper that prompts for reboot on success
         saveJSONWithReboot('Upload Succeeded', 'Upload Failed', '/hardware.json', {...JSON.parse(body), "customised": true})
         return false
     }
