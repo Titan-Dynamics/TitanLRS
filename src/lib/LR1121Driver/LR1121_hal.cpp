@@ -30,11 +30,11 @@ void LR1121Hal::init()
 
     if (GPIO_PIN_BUSY != UNDEF_PIN)
     {
-        pinMode(GPIO_PIN_BUSY, INPUT);
+        pinMode(GPIO_PIN_BUSY, INPUT_PULLDOWN);
     }
     if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
     {
-        pinMode(GPIO_PIN_BUSY_2, INPUT);
+        pinMode(GPIO_PIN_BUSY_2, INPUT_PULLDOWN);
     }
 
     pinMode(GPIO_PIN_DIO1, INPUT);
@@ -132,20 +132,28 @@ void LR1121Hal::reset(bool bootloader)
         {
             if (GPIO_PIN_BUSY != UNDEF_PIN)
             {
-                pinMode(GPIO_PIN_BUSY, INPUT);
+                pinMode(GPIO_PIN_BUSY, INPUT_PULLDOWN);
             }
             if (GPIO_PIN_RST_2 != UNDEF_PIN)
             {
                 if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
                 {
-                    pinMode(GPIO_PIN_BUSY_2, INPUT);
+                    pinMode(GPIO_PIN_BUSY_2, INPUT_PULLDOWN);
                 }
             }
             delay(100);
         }
     }
 
-    WaitOnBusy(SX12XX_Radio_All);
+    // Poll until BUSY goes low with a generous timeout to handle chips whose
+    // POR takes slightly longer than the fixed delay above.
+    {
+        uint32_t deadline = millis() + 500;
+        while (!WaitOnBusy(SX12XX_Radio_All))
+        {
+            if ((int32_t)(millis() - deadline) >= 0) break;
+        }
+    }
 }
 
 void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
@@ -157,7 +165,7 @@ void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, uint8_t *buffer, 
 
     memcpy(OutBuffer + 2, buffer, size);
 
-    WaitOnBusy(radioNumber);
+    if (!WaitOnBusy(radioNumber)) return;
     SPIEx.write(radioNumber, OutBuffer, size + 2);
 }
 
@@ -168,7 +176,7 @@ void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, SX12XX_Radio_Numb
         (uint8_t)(command & 0x00FF)
     };
 
-    WaitOnBusy(radioNumber);
+    if (!WaitOnBusy(radioNumber)) return;
     SPIEx.write(radioNumber, OutBuffer, 2);
 }
 
@@ -178,7 +186,7 @@ void ICACHE_RAM_ATTR LR1121Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12X
 
     memcpy(InBuffer, buffer, size);
 
-    WaitOnBusy(radioNumber);
+    if (!WaitOnBusy(radioNumber)) return;
     SPIEx.read(radioNumber, InBuffer, size);
 
     memcpy(buffer, InBuffer, size);
