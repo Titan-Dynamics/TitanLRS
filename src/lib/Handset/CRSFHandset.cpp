@@ -17,7 +17,7 @@ HardwareSerial CRSFHandset::Port(0);
 #elif defined(PLATFORM_ESP8266)
 HardwareSerial CRSFHandset::Port(0);
 #elif defined(PLATFORM_STM32)
-HardwareSerial CRSFHandset::Port(USART1, HALF_DUPLEX_ENABLED);
+HardwareSerial CRSFHandset::Port(USART3, HALF_DUPLEX_ENABLED);
 #elif defined(TARGET_NATIVE)
 HardwareSerial CRSFHandset::Port = Serial;
 #endif
@@ -47,11 +47,16 @@ static void CRSF_configure_stm32_halfduplex_pin(const uint32_t pullMode, const b
 
     port->PUPDR = (port->PUPDR & ~pullMask) | (pullMode << pullShift);
 }
-#endif
 
-// JR-bay CRSF is inverted on the wire. RXINV + TXINV plus STM32 RX-mode open-drain on the shared
-// PB6 line produces valid bidirectional CRSF on H743. In RX mode we bias the one-wire line to
-// its idle-low state and release the pad with open-drain; in TX mode we restore push-pull output.
+static void CRSF_configure_stm32_handset_uart()
+{
+    USART3->CR1 &= ~USART_CR1_UE;
+    USART3->CR3 |= USART_CR3_HDSEL;
+    USART3->CR2 &= ~(USART_CR2_SWAP);
+    USART3->CR2 |= USART_CR2_RXINV | USART_CR2_TXINV;
+    USART3->CR1 |= USART_CR1_UE;
+}
+#endif
 
 static constexpr int HANDSET_TELEMETRY_FIFO_SIZE = 128; // this is the smallest telemetry FIFO size in ETX with CRSF defined
 
@@ -117,13 +122,9 @@ void CRSFHandset::Begin()
 #elif defined(PLATFORM_STM32)
     halfDuplex = true;
     UARTinverted = true;
-    // On WeAct H743, PB6 maps to LPUART1 by default in the pin table.
-    // ALT2 (0x200) selects the USART1 alternate function instead (AF7).
-    CRSFHandset::Port.setTx(GPIO_PIN_RCSIGNAL_TX | ALT2);
-    // The dedicated USART1 half-duplex constructor already sets pin_rx=NC and enables HDSEL.
-    CRSFHandset::Port.setRxInvert();
-    CRSFHandset::Port.setTxInvert();
+    CRSFHandset::Port.setTx(GPIO_PIN_RCSIGNAL_TX);
     CRSFHandset::Port.begin(UARTrequestedBaud); // HAL applies inversion + arms interrupt internally
+    CRSF_configure_stm32_handset_uart();
     duplex_set_RX();
     flush_port_input();
 #endif
@@ -301,7 +302,7 @@ void CRSFHandset::handleInput()
             return;
         }
 #elif defined(PLATFORM_STM32)
-        if (Port.availableForWrite() != SERIAL_TX_BUFFER_SIZE - 1)
+    if (Port.availableForWrite() != SERIAL_TX_BUFFER_SIZE - 1)
             return;
         Port.flush();
 #endif
@@ -640,6 +641,7 @@ bool CRSFHandset::UARTwdt()
                 Port.flush();
 #if defined(PLATFORM_STM32)
                 Port.begin(UARTrequestedBaud);
+                CRSF_configure_stm32_handset_uart();
                 if (halfDuplex) duplex_set_RX();
 #else
                 Port.updateBaudRate(UARTrequestedBaud);

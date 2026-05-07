@@ -20,9 +20,9 @@
 // On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
 #define FLASH_CS_PIN         PD6
 
-// CRSF UART — half-duplex single-wire on PB6 (USART1_TX)
-#define GPIO_PIN_RCSIGNAL_RX PB6
-#define GPIO_PIN_RCSIGNAL_TX PB6
+// CRSF UART — half-duplex single-wire on PB10 (USART3_TX)
+#define GPIO_PIN_RCSIGNAL_RX PB10
+#define GPIO_PIN_RCSIGNAL_TX PB10
 
 // USB CDC descriptors (needed for Serial over USB)
 #ifdef USBCON
