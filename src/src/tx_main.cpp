@@ -1294,13 +1294,16 @@ static void setupSerial()
     serialPort = new NullStream();
   }
 #elif defined(PLATFORM_STM32)
-  // Serial.begin(115200); // CDC serial logging on STM32
   Stream *serialPort = new NullStream();
 #endif
   BackpackOrLogStrm = serialPort;
 
 // Setup TxUSB
-#if defined(PLATFORM_ESP32_S3)
+#if defined(PLATFORM_STM32)
+  Serial.begin(460800); // CDC serial logging on STM32
+  Serial.dtr(false); // keep CDC active even without a host asserting DTR
+  TxUSB = &Serial;
+#elif defined(PLATFORM_ESP32_S3)
   // Because we have ARDUINO_USB_MODE enabled, we use USBSerial as the USB device.
   USBSerial.begin(firmwareOptions.uart_baud);
   TxUSB = &USBSerial;
