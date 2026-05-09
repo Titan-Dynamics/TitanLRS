@@ -12,19 +12,28 @@
 #include "AutoDetect.h"
 #endif
 
+#if defined(USE_USB_CRSF_HANDSET)
+#include "USBHandset.h"
+#endif
+
 Handset *handset;
 
 static bool initialize()
 {
-#if defined(PLATFORM_ESP32)
+#if defined(USE_USB_CRSF_HANDSET)
+    handset = new USBHandset();
+    return true;
+#else
+#  if defined(PLATFORM_ESP32)
     if (GPIO_PIN_RCSIGNAL_RX == GPIO_PIN_RCSIGNAL_TX)
     {
         handset = new AutoDetect();
         return true;
     }
-#endif
+#  endif
     handset = new CRSFHandset();
     return true;
+#endif
 }
 
 static int start()

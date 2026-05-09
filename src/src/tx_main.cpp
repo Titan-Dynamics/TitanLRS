@@ -1,5 +1,9 @@
 #include "rxtx_common.h"
 
+#if defined(USE_USB_CRSF_HANDSET) && defined(USE_AIRPORT_AT_BAUD)
+#error "USE_USB_CRSF_HANDSET cannot be combined with airport mode (USE_AIRPORT_AT_BAUD)"
+#endif
+
 #include "CRSFHandset.h"
 #include "CRSFParameters.h"
 #include "dynpower.h"
@@ -1120,6 +1124,7 @@ void ParseMSPData(uint8_t *buf, uint8_t size)
 
 static void HandleUARTout()
 {
+#if !defined(USE_USB_CRSF_HANDSET)
   if (firmwareOptions.is_airport)
   {
     auto size = apOutputBuffer.size();
@@ -1132,10 +1137,16 @@ static void HandleUARTout()
       TxUSB->write(buf, size);
     }
   }
+#endif
 }
 
 static void HandleUARTin()
 {
+#if defined(USE_USB_CRSF_HANDSET)
+  // USB bytes are consumed by USBHandset::handleInput(); nothing to do here.
+  return;
+#endif
+
   if (firmwareOptions.is_airport)
   {
     auto size = std::min(apInputBuffer.free(), (uint16_t)TxUSB->available());
@@ -1247,6 +1258,23 @@ static void setupSerial()
    * Setup the logging/backpack serial port, and the USB serial port.
    * This is always done because we need a place to send data even if there is no backpack!
    */
+
+#if defined(USE_USB_CRSF_HANDSET)
+  // USB port is owned by USBHandset for CRSF. Silence all logging to avoid corrupting CRSF framing.
+  BackpackOrLogStrm = new NullStream();
+#  if defined(PLATFORM_ESP8266)
+#    error "USE_USB_CRSF_HANDSET is not supported on ESP8266 (no USB CDC)"
+#  elif defined(PLATFORM_ESP32_S3)
+  USBSerial.begin(firmwareOptions.uart_baud);
+  TxUSB = &USBSerial;
+#  elif defined(PLATFORM_ESP32)
+  TxUSB = new HardwareSerial(1);
+  ((HardwareSerial *)TxUSB)->begin(firmwareOptions.uart_baud, SERIAL_8N1, U0RXD_GPIO_NUM, U0TXD_GPIO_NUM);
+#  else
+  TxUSB = new NullStream();
+#  endif
+  return;
+#endif
 
 // Setup BackpackOrLogStrm
 #if defined(PLATFORM_ESP32)
@@ -1429,8 +1457,10 @@ void setup()
     crsfTransmitter.begin();
     crsfRouter.addConnector(&otaConnector);
     crsfRouter.addEndpoint(&crsfTransmitter);
+#if !defined(USE_USB_CRSF_HANDSET)
     crsfRouter.addConnector(&usbConnector);
     crsfRouter.addConnector(&backpackConnector);
+#endif
     // When a CRSF handset is detected, it will add itself to the router
 
     handset->registerCallbacks(UARTconnected, firmwareOptions.is_airport ? nullptr : UARTdisconnected);
