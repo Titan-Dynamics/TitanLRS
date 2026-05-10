@@ -1126,7 +1126,7 @@ void ParseMSPData(uint8_t *buf, uint8_t size)
 
 static void HandleUARTout()
 {
-  if (handsetSource != HANDSET_SOURCE_USB && firmwareOptions.is_airport)
+  if (firmwareOptions.is_airport)
   {
     auto size = apOutputBuffer.size();
     if (size)
