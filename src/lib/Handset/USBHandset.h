@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(TARGET_TX) && defined(USE_USB_CRSF_HANDSET)
+#if defined(TARGET_TX)
 
 #include "handset.h"
 #include "CRSFConnector.h"
@@ -41,4 +41,4 @@ private:
     void sendSyncPacketToTX();
 };
 
-#endif // TARGET_TX && USE_USB_CRSF_HANDSET
+#endif // TARGET_TX

@@ -1,4 +1,4 @@
-#if defined(TARGET_TX) && defined(USE_USB_CRSF_HANDSET)
+#if defined(TARGET_TX)
 
 #include "USBHandset.h"
 #include "CRSFRouter.h"
@@ -134,4 +134,4 @@ void USBHandset::sendSyncPacketToTX()
     }
 }
 
-#endif // TARGET_TX && USE_USB_CRSF_HANDSET
+#endif // TARGET_TX

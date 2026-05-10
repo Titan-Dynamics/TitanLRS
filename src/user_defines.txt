@@ -98,8 +98,3 @@
 # Use an ELRS TX and RX as a transparent UART over the air
 #-DUSE_AIRPORT_AT_BAUD=9600
 
-# Use the USB serial port as the CRSF handset link. The PC speaks CRSF
-# directly to the TX over USB, replacing the handset. Mutually exclusive
-# with MAVLink-over-USB and Backpack-over-USB. Logging is silenced when
-# this is enabled.
-#-DUSE_USB_CRSF_HANDSET
