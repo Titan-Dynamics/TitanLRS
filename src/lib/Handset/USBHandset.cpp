@@ -1,6 +1,7 @@
 #if defined(TARGET_TX)
 
 #include "USBHandset.h"
+#include "CRSFHandset.h"
 #include "CRSFRouter.h"
 #include "helpers.h"
 
@@ -50,16 +51,21 @@ void USBHandset::handleInput()
         int n = port->readBytes(buf, toRead);
         if (n > 0)
         {
-            parser.processBytes(this, buf, n, [this](const crsf_header_t *msg) {
-                dataLastRecv = micros();
-                lastRxMillis = millis();
-                if (!controllerConnected)
-                {
-                    controllerConnected = true;
-                    if (connected) connected();
-                }
-                crsfRouter.processMessage(this, msg);
-            });
+            parser.processBytes(this, buf, n,
+                [this](const crsf_header_t *msg) {
+                    GoodPktsCount++;
+                    dataLastRecv = micros();
+                    lastRxMillis = millis();
+                    if (!controllerConnected)
+                    {
+                        controllerConnected = true;
+                        if (connected) connected();
+                    }
+                    crsfRouter.processMessage(this, msg);
+                },
+                [this]() {
+                    BadPktsCount++;
+                });
         }
     }
 
@@ -67,6 +73,19 @@ void USBHandset::handleInput()
     if (controllerConnected)
     {
         sendSyncPacketToTX();
+    }
+
+    // Latch packet stats for LUA polling (mirrors CRSFHandset::UARTwdt behaviour)
+    {
+        const uint32_t now = millis();
+        if (now - pktStatsLastLatched >= PKT_STATS_LATCH_INTERVAL_MS)
+        {
+            CRSFHandset::GoodPktsCountResult = GoodPktsCount;
+            CRSFHandset::BadPktsCountResult  = BadPktsCount;
+            GoodPktsCount = 0;
+            BadPktsCount  = 0;
+            pktStatsLastLatched = now;
+        }
     }
 
     // Disconnection watchdog
