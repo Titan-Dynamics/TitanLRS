@@ -1188,6 +1188,11 @@ static void HandleUARTin()
     break;
 
   case HANDSET_SOURCE_UNKNOWN:
+    // Match the legacy standalone-USB behavior: don't let stale MAVLink bytes
+    // block fresh USB sniffing before we've committed to a handset source.
+    if (connectionState != connected)
+      uartInputBuffer.flush();
+
     if (TxUSB->available())
     {
       auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
