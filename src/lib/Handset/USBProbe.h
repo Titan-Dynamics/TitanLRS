@@ -11,6 +11,7 @@ public:
     void Begin();
     void End();
     void handleInput();
+    bool processBytes(const uint8_t *buf, int size);
 
 private:
     Stream *port = nullptr;

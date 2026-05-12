@@ -1140,6 +1140,31 @@ static void HandleUARTout()
   }
 }
 
+static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
+{
+  if (size == 0)
+    return;
+
+  if (connectionState == noCrossfire)
+  {
+    if (isThisAMavPacket(buf, size))
+    {
+      config.SetLinkMode(TX_MAVLINK_MODE);
+      UARTconnected();
+    }
+  }
+
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+  {
+    uartInputBuffer.lock();
+    uartInputBuffer.pushBytes(buf, size);
+    uartInputBuffer.unlock();
+  }
+
+  // Always try to parse any CRSF packets from the USB serial input
+  crsfParser.processBytes(&usbConnector, buf, size);
+}
+
 static void HandleUARTin()
 {
   if (firmwareOptions.is_airport)
@@ -1163,15 +1188,31 @@ static void HandleUARTin()
     break;
 
   case HANDSET_SOURCE_UNKNOWN:
-    // USB probe passively watches TxUSB for the first RC_CHANNELS_PACKED frame
-    if (usbProbe)
+    if (TxUSB->available())
     {
-      USBProbe *probe = usbProbe;
-      probe->handleInput();
-      if (usbProbe == nullptr) // commitUSB() cleared it — safe to free
+      auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+      if (size > 0)
       {
-        crsfRouter.removeConnector(&usbConnector);
-        delete probe;
+        uint8_t buf[size];
+        TxUSB->readBytes(buf, size);
+
+        bool committed = false;
+        USBProbe *probe = usbProbe;
+        if (probe)
+        {
+          committed = probe->processBytes(buf, size);
+        }
+
+        if (!committed)
+        {
+          HandleUSBSerialData(buf, size);
+        }
+
+        if (committed && usbProbe == nullptr) // commitUSB() cleared it — safe to free
+        {
+          crsfRouter.removeConnector(&usbConnector);
+          delete probe;
+        }
       }
     }
     break;
@@ -1189,22 +1230,7 @@ static void HandleUARTin()
       uint8_t buf[size];
       TxUSB->readBytes(buf, size);
 
-      if (connectionState == noCrossfire)
-      {
-        if (isThisAMavPacket(buf, size))
-        {
-          config.SetLinkMode(TX_MAVLINK_MODE);
-          UARTconnected();
-        }
-      }
-      if (config.GetLinkMode() == TX_MAVLINK_MODE)
-      {
-        uartInputBuffer.lock();
-        uartInputBuffer.pushBytes(buf, size);
-        uartInputBuffer.unlock();
-      }
-      // Always try to parse any CRSF packets from the USB serial input
-      crsfParser.processBytes(&usbConnector, buf, size);
+      HandleUSBSerialData(buf, size);
     }
     break;
   }
@@ -1242,7 +1268,7 @@ static void HandleUARTin()
     }
   }
 
-  if (config.GetLinkMode() == TX_MAVLINK_MODE && handsetSource != HANDSET_SOURCE_USB)
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
   {
     // Use DataUlSender for MAVLINK uplink data
     uint8_t *nextPayload = 0;

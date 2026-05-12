@@ -28,14 +28,23 @@ void USBProbe::handleInput()
     int n = port->readBytes(buf, toRead);
     if (n <= 0) return;
 
+    processBytes(buf, n);
+}
+
+bool USBProbe::processBytes(const uint8_t *buf, int size)
+{
+    if (size <= 0) return false;
+
     bool committed = false;
-    parser.processBytes(nullptr, buf, n, [this, &committed](const crsf_header_t *msg) {
+    parser.processBytes(nullptr, buf, size, [this, &committed](const crsf_header_t *msg) {
         if (!committed && msg->type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED)
         {
             committed = true;
             commitUSB();
         }
     });
+
+    return committed;
 }
 
 void USBProbe::commitUSB()
