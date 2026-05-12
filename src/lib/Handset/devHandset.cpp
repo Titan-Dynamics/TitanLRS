@@ -35,7 +35,6 @@ static bool initialize()
 static int start()
 {
     handset->Begin();
-    if (usbProbe) usbProbe->Begin();
 #if defined(DEBUG_TX_FREERUN)
     handset->forceConnection();
 #endif

@@ -729,7 +729,7 @@ static void UARTconnected()
   if (handsetSource == HANDSET_SOURCE_UNKNOWN)
   {
     handsetSource = HANDSET_SOURCE_UART;
-    if (usbProbe) { usbProbe->End(); delete usbProbe; usbProbe = nullptr; }
+    if (usbProbe) { delete usbProbe; usbProbe = nullptr; }
   }
   webserverPreventAutoStart = true;
   rfModeLastChangedMS = millis(); // force syncspam on first packets
