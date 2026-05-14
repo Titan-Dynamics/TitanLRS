@@ -9,8 +9,12 @@
 
 class CRSFParser {
 public:
-    void processBytes(CRSFConnector *origin, const uint8_t *inputBytes, uint16_t size, const std::function<void(const crsf_header_t *)> &foundMessage = nullptr);
-    bool processByte(CRSFConnector *origin, uint8_t inputByte, const std::function<void(const crsf_header_t *)>& foundMessage = nullptr);
+    void processBytes(CRSFConnector *origin, const uint8_t *inputBytes, uint16_t size,
+        const std::function<void(const crsf_header_t *)> &foundMessage = nullptr,
+        const std::function<void()> &badPacket = nullptr);
+    bool processByte(CRSFConnector *origin, uint8_t inputByte,
+        const std::function<void(const crsf_header_t *)>& foundMessage = nullptr,
+        const std::function<void()>& badPacket = nullptr);
 
     // unit testing
     void Reset()

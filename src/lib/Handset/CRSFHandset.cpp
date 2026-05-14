@@ -83,6 +83,7 @@ void CRSFHandset::Begin()
 
 void CRSFHandset::End()
 {
+    crsfRouter.removeConnector(this);
     uint32_t startTime = millis();
     while (SerialOutFIFO.peek() > 0)
     {

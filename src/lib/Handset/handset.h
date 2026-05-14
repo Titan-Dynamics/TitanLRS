@@ -51,6 +51,14 @@ public:
         disconnected = disconnectedCallback;
     }
 
+    void migrateCallbacksTo(Handset *that) const
+    {
+        that->setRcChannelsOverrideCallback(RcChannelsOverrideCallback);
+        that->setRCDataCallback(RCdataCallback);
+        that->registerCallbacks(connected, disconnected);
+        that->setPacketInterval(RequestedRCpacketInterval);
+    }
+
     /**
      * @brief Process any pending input data from the handset
      */
@@ -126,9 +134,9 @@ public:
     void forceConnection() { if (connected) connected(); }
 #endif
 
-protected:
     virtual ~Handset() = default;
 
+protected:
     bool controllerConnected = false;
     RcChannelsOverrideCallback_fn RcChannelsOverrideCallback = nullptr;
     void (*RCdataCallback)() = nullptr;  // called when there is new RC data

@@ -9,6 +9,7 @@
 #include "stubborn_sender.h"
 
 #include "devHandset.h"
+#include "USBProbe.h"
 #include "devADC.h"
 #include "devLED.h"
 #include "devTXLUA.h"
@@ -725,6 +726,11 @@ static void UARTdisconnected()
 
 static void UARTconnected()
 {
+  if (handsetSource == HANDSET_SOURCE_UNKNOWN)
+  {
+    handsetSource = HANDSET_SOURCE_UART;
+    if (usbProbe) { delete usbProbe; usbProbe = nullptr; }
+  }
   webserverPreventAutoStart = true;
   rfModeLastChangedMS = millis(); // force syncspam on first packets
 
@@ -1134,6 +1140,31 @@ static void HandleUARTout()
   }
 }
 
+static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
+{
+  if (size == 0)
+    return;
+
+  if (connectionState == noCrossfire)
+  {
+    if (isThisAMavPacket(buf, size))
+    {
+      config.SetLinkMode(TX_MAVLINK_MODE);
+      UARTconnected();
+    }
+  }
+
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+  {
+    uartInputBuffer.lock();
+    uartInputBuffer.pushBytes(buf, size);
+    uartInputBuffer.unlock();
+  }
+
+  // Always try to parse any CRSF packets from the USB serial input
+  crsfParser.processBytes(&usbConnector, buf, size);
+}
+
 static void HandleUARTin()
 {
   if (firmwareOptions.is_airport)
@@ -1150,42 +1181,67 @@ static void HandleUARTin()
     return;
   }
 
-  // If not connected, flush any stale data in the mavlink input buffer
-  if (connectionState != connected)
+  switch (handsetSource)
   {
-    uartInputBuffer.flush();
-  }
+  case HANDSET_SOURCE_USB:
+    // USBHandset owns TxUSB; nothing to drain here
+    break;
 
-  // USB serial input
-  // If a mavlink packet is received on the USB input, automatically switch the link mode to and process as mavlink
-  // Otherwise, USB serial data is processed as CRSF
-  auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
-  if (size > 0)
-  {
-    uint8_t buf[size];
-    TxUSB->readBytes(buf, size);
+  case HANDSET_SOURCE_UNKNOWN:
+    // Match the legacy standalone-USB behavior: don't let stale MAVLink bytes
+    // block fresh USB sniffing before we've committed to a handset source.
+    if (connectionState != connected)
+      uartInputBuffer.flush();
 
-    // If the data is MAVLink, then auto change LinkMode and start the radio link
-    // since the user might be operating the module as a standalone unit without a handset.
-    if (connectionState == noCrossfire)
+    if (TxUSB->available())
     {
-      if (isThisAMavPacket(buf, size))
+      auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+      if (size > 0)
       {
-        config.SetLinkMode(TX_MAVLINK_MODE);
-        UARTconnected();
+        uint8_t buf[size];
+        TxUSB->readBytes(buf, size);
+
+        bool committed = false;
+        USBProbe *probe = usbProbe;
+        if (probe)
+        {
+          committed = probe->processBytes(buf, size);
+        }
+
+        if (!committed)
+        {
+          HandleUSBSerialData(buf, size);
+        }
+
+        if (committed && usbProbe == nullptr) // commitUSB() cleared it — safe to free
+        {
+          crsfRouter.removeConnector(&usbConnector);
+          delete probe;
+        }
       }
     }
-    if (config.GetLinkMode() == TX_MAVLINK_MODE)
+    break;
+
+  case HANDSET_SOURCE_UART:
+  {
+    // If not connected, flush any stale data in the mavlink input buffer
+    if (connectionState != connected)
+      uartInputBuffer.flush();
+
+    // USB serial input: MAVLink auto-detect and CRSF parse
+    auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+    if (size > 0)
     {
-      uartInputBuffer.lock();
-      uartInputBuffer.pushBytes(buf, size);
-      uartInputBuffer.unlock();
+      uint8_t buf[size];
+      TxUSB->readBytes(buf, size);
+
+      HandleUSBSerialData(buf, size);
     }
-    // Always try to parse any CRSF packets from the USB serial input
-    crsfParser.processBytes(&usbConnector, buf, size);
+    break;
+  }
   }
 
-  // Backpack serial input
+  // Backpack serial input — always runs independent of handset source
   // Backpack will not switch modes, but will process data as mavlink if the link mode is already set to mavlink
   // Backpack serial data is ALSO always processed as backpack MSP
   if (BackpackOrLogStrm != TxUSB && BackpackOrLogStrm->available())
@@ -1196,15 +1252,12 @@ static void HandleUARTin()
       uint8_t buf[size];
       BackpackOrLogStrm->readBytes(buf, size);
 
-      // If the TX is in Mavlink mode, push the bytes into the fifo buffer
       if (config.GetLinkMode() == TX_MAVLINK_MODE)
       {
         uartInputBuffer.lock();
         uartInputBuffer.pushBytes(buf, size);
         uartInputBuffer.unlock();
 
-        // The TX is in MAVLink mode and receiving data from the Backpack,
-        // start the radio since the user might be operating the module as a standalone unit without a handset.
         if (connectionState == noCrossfire)
         {
           if (isThisAMavPacket(buf, size))
@@ -1429,7 +1482,7 @@ void setup()
     crsfTransmitter.begin();
     crsfRouter.addConnector(&otaConnector);
     crsfRouter.addEndpoint(&crsfTransmitter);
-    crsfRouter.addConnector(&usbConnector);
+    crsfRouter.addConnector(&usbConnector);     // removed by commitUSB() if USB wins
     crsfRouter.addConnector(&backpackConnector);
     // When a CRSF handset is detected, it will add itself to the router
 
