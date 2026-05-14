@@ -47,12 +47,25 @@ export class ContinuousWave extends LitElement {
 
                         <!-- FEATURE:HAS_LR1121 -->
                         ${elrsState.settings.has_high_band && elrsState.settings.has_low_band ? html`
+<<<<<<< HEAD
                             <div class="td-card-row" style="border-bottom: none; padding-bottom: 0;">
                                 <span class="td-label">Set 915 MHz</span>
                                 <span class="td-toggle ${this.optionsSetSubGHz?.checked ? 'is-on' : ''}"
                                       id="optionsSetSubGHz"
                                       ?disabled=${this.started}
                                       @click="${this._updateFreq}"></span>
+=======
+                            <br>
+                            Basic support is available for the LR1121 and setting ${(this.data.center / 1000000)} MHz.
+                            <br>
+                            <div class="mui-checkbox">
+                                <input type="checkbox"
+                                       name="setSubGHz"
+                                       id="optionsSetSubGHz"
+                                       ?disabled=${this.started}
+                                       @click="${this._updateFreq}">
+                                <label for="optionsSetSubGHz">Set ${(this.data.center / 1000000)} MHz</label>
+>>>>>>> upstream/4.x-maint
                             </div>
                         ` : ''}
                         <!-- /FEATURE:HAS_LR1121 -->
