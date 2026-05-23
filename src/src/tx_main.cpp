@@ -1455,6 +1455,13 @@ static void checkSendLinkStatsToHandset(uint32_t now)
 
 void setup()
 {
+#ifdef GPIO_PIN_LCD_CS
+  // LCD shares SPI4 with the LR1121 on the WeAct target. Deassert LCD_CS and
+  // kill the backlight before any SPI4 traffic so the panel ignores the bus.
+  // LCD_RESET is tied to SYS_RESET so the panel is in reset at this point.
+  pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
+  pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
+#endif
   if (setupHardwareFromOptions())
   {
     setupTarget();

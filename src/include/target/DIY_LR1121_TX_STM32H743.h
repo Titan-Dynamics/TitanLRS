@@ -10,15 +10,27 @@
 
 // GPIO pin definitions
 #define GPIO_PIN_NSS         PE0   // Chip Select
-#define GPIO_PIN_MOSI        PA7   // SPI1_SDO (SPI1_MOSI)
-#define GPIO_PIN_MISO        PA6   // SPI1_SDI (SPI1_MISO)
-#define GPIO_PIN_SCK         PA5   // SPI1_SCK
+#define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
+#define GPIO_PIN_MISO        PE13  // SPI4_MISO
+#define GPIO_PIN_SCK         PE12  // SPI4_SCK
 #define GPIO_PIN_RST         PE7   // Radio Reset
 #define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
 #define GPIO_PIN_BUSY        PE9   // BUSY
 
-// On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
-#define FLASH_CS_PIN         PD6
+// LCD shares SPI4 (PE12/PE13/PE14). Mute it at boot:
+//   PE11 = LCD_CS  -> hold HIGH (deassert, ignore bus)
+//   PE10 = LCD_LED -> hold LOW  (backlight off)
+// LCD_RESET is tied to SYS_RESET so the panel is held in reset at boot.
+#define GPIO_PIN_LCD_CS         PE11
+#define GPIO_PIN_LCD_BACKLIGHT  PE10
+
+// On-board W25Q64 SPI NOR flash on SPI1 (PB3 SCK, PB4 MISO, PD7 MOSI, PD6 CS)
+// Used as the config store on this target.
+#define HAS_W25Q64_CONFIG
+#define W25Q64_SCK_PIN       PB3
+#define W25Q64_MISO_PIN      PB4
+#define W25Q64_MOSI_PIN      PD7
+#define W25Q64_CS_PIN        PD6
 
 // CRSF UART — half-duplex single-wire on PB10 (USART3_TX)
 #define GPIO_PIN_RCSIGNAL_RX PB10
@@ -49,8 +61,8 @@
 #define GPIO_PIN_BUTTON                 PC13
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
-// Use flash-emulated EEPROM (no external I2C EEPROM)
-#define STM32_USE_FLASH
+// Config storage lives on the on-board W25Q64 via HAS_W25Q64_CONFIG above.
+// (STM32_USE_FLASH is intentionally not defined here.)
 
 #ifndef RADIO_LR1121
 #define RADIO_LR1121
@@ -59,8 +71,8 @@
 // LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
-#define OPT_USE_LR1121_TCXO        1
-#define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
+// #define OPT_USE_LR1121_TCXO        1
+// #define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
 
 // RF switch control — default config for standard LR1121 modules
 // [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]
