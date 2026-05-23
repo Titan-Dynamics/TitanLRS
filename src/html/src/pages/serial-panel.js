@@ -1,6 +1,5 @@
 import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
-import '../assets/mui.js'
 import {_renderOptions} from "../utils/libs.js"
 import {elrsState, saveOptionsAndConfig} from "../utils/state.js"
 import {PWM_MODE_SERIAL, PWM_MODE_SERIAL2RX, PWM_MODE_SERIAL2TX} from "./connections-panel.js";
@@ -31,95 +30,91 @@ class SerialPanel extends LitElement {
 
     render() {
         return html`
-            <div class="mui-panel mui--text-title">Serial/UART Options</div>
+            <div class="td-h2" style="margin-bottom: var(--td-s-4);">Serial / UART Options</div>
+
             ${this._hasSerial1() || this._hasSerial2() ? html`
-            <div class="mui-panel">
-                <p>Set the protocol(s) used to communicate with the flight controller or other external devices.</p>
-                <form>
+                <div class="td-card">
+                    <div class="td-card-header">
+                        <span class="td-h4">Protocol</span>
+                    </div>
+
                     ${this._hasSerial1() ? html`
-                    <div class="mui-select">
-                        <select name='serial-protocol' @change=${this._updateSerial1}>
-                            ${_renderOptions(SERIAL_OPTIONS1, this.serial1Protocol)}
-                        </select>
-                        <label>Serial 1 Protocol</label>
-                    </div>
-                    ` : ''}
-                    ${this._hasSerial2() ? html`
-                    <div class="mui-select">
-                        <select name='serial1-protocol' @change=${this._updateSerial2}>
-                            ${_renderOptions(SERIAL_OPTIONS2, this.serial2Protocol)}
-                        </select>
-                        <label>Serial 2 Protocol</label>
-                    </div>
-                    ` : ''}
-                    ${this._displayBaudRate() ? html`
-                    <div class="mui-textfield">
-                        <input size='7' type='number'
-                               @input=${(e) => this.baudRate = parseInt(e.target.value)}
-                               .value="${this.baudRate}" />
-                        <label>CRSF/Airport baud</label>
-                    </div>
-                    ` : ''}
-                    ${this._sbusSelected() ? html`
-                    <div id="sbus-config">
-                        <div class="mui--text-title">SBUS Failsafe</div>
-                        Set the failsafe behaviour when using the SBUS protocol:<br/>
-                        <ul>
-                            <li>"No Pulses" stops sending SBUS data when a connection to the transmitter is lost
-                            </li>
-                            <li>"Last Position" continues to send the last received channel data along with the
-                                FAILSAFE
-                                bit set
-                            </li>
-                        </ul>
-                        <br/>
-                        <div class="mui-select">
-                            <select name='serial-failsafe'>
-                                <option value='0'>No Pulses</option>
-                                <option value='1'>Last Position</option>
+                        <div class="td-card-row">
+                            <span class="td-label">Serial 1 Protocol</span>
+                            <select class="td-select" name="serial-protocol" @change=${this._updateSerial1}>
+                                ${_renderOptions(SERIAL_OPTIONS1, this.serial1Protocol)}
                             </select>
-                            <label>SBUS Failsafe</label>
                         </div>
-                    </div>
                     ` : ''}
+
+                    ${this._hasSerial2() ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">Serial 2 Protocol</span>
+                            <select class="td-select" name="serial1-protocol" @change=${this._updateSerial2}>
+                                ${_renderOptions(SERIAL_OPTIONS2, this.serial2Protocol)}
+                            </select>
+                        </div>
+                    ` : ''}
+
+                    ${this._displayBaudRate() ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">CRSF / Airport baud</span>
+                            <div class="td-input-group" style="width: 140px;">
+                                <input class="td-input td-input-mono" type="number" size="7"
+                                       @input=${(e) => this.baudRate = parseInt(e.target.value)}
+                                       .value="${this.baudRate}"/>
+                                <span class="td-btn" style="cursor:default; background: var(--td-bg-3);">baud</span>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${this._sbusSelected() ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">SBUS Failsafe</span>
+                            <select class="td-select" name="serial-failsafe" style="width: 160px;">
+                                <option value="0">No Pulses</option>
+                                <option value="1">Last Position</option>
+                            </select>
+                        </div>
+                    ` : ''}
+
                     ${this._displayPortSelected() ? html`
-                    <div class="mui-checkbox">
-                        <input id="dji" type='checkbox'
-                               ?checked="${this.djiArmed}"
-                               @change="${(e) => {this.djiArmed = e.target.checked}}"/>
-                        <label for="dji">Permanently arm DJI air units</label>
-                    </div>
+                        <div class="td-card-row">
+                            <span class="td-label">Permanently arm DJI</span>
+                            <span class="td-toggle ${this.djiArmed ? 'is-on' : ''}"
+                                  @click="${() => { this.djiArmed = !this.djiArmed; this.requestUpdate() }}"></span>
+                        </div>
                     ` : ''}
-                    <button class="mui-btn mui-btn--small mui-btn--primary"
-                            ?disabled="${!this.checkChanged()}"
-                            @click="${this._saveSerial}"
-                    >Save</button>
-                </form>
-            </div>
-            `: html`
-            <div class="mui-panel info-bg">
-                This is a PWM receiver and none of the pins have been configured as serial IO pins.<br>
-                To enable serial IO, go to the <a href="#connections">connections</a> menu and configure one or more pins as Serial RX or TX.
-            </div>
+
+                    <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center;">
+                        <div style="flex: 1;"></div>
+                        <button class="td-btn td-btn-primary"
+                                ?disabled="${!this.checkChanged()}"
+                                @click="${this._saveSerial}">Save</button>
+                    </div>
+                </div>
+            ` : html`
+                <div class="td-card">
+                    <div class="td-card-body">
+                        <span class="td-chip td-chip-info" style="margin-right: 8px;">PWM Receiver</span>
+                        <span class="td-body td-mute">No serial pins configured. Go to
+                            <a href="#connections" style="color: var(--td-brand);">Connections</a> to enable serial IO pins.
+                        </span>
+                    </div>
+                </div>
             `}
         `
     }
 
     _hasSerial1() {
-        // If there's no PWM pins then serial must be enabled
         if (!elrsState.config['pwm']) return true
-        // If a PWM pin is defined as serial, then it should be enabled
-        for(const pwm of elrsState.config.pwm) {
+        for (const pwm of elrsState.config.pwm) {
             const mode = (pwm.config >> 16) & 0xF
-            if (mode === PWM_MODE_SERIAL)
-                return true
+            if (mode === PWM_MODE_SERIAL) return true
         }
-        // If any of the PWM pins are defined to support serial (but it's not selected) then disabled serial
-        for(const pwm of elrsState.config.pwm) {
-            if (pwm.features & 3 !== 0)
-                return false
+        for (const pwm of elrsState.config.pwm) {
+            if (pwm.features & 3 !== 0) return false
         }
-        // No PWM pins are defined as serial so use what the hardware dictates
         return !!elrsState.settings.has_serial_pins
     }
 
@@ -127,10 +122,9 @@ class SerialPanel extends LitElement {
         if (!elrsState.config['pwm']) {
             return elrsState.config['serial1-protocol'] !== undefined
         }
-        for(const pwm of elrsState.config.pwm) {
+        for (const pwm of elrsState.config.pwm) {
             const mode = (pwm.config >> 16) & 15
-            if (mode === PWM_MODE_SERIAL2RX || mode === PWM_MODE_SERIAL2TX)
-                return true
+            if (mode === PWM_MODE_SERIAL2RX || mode === PWM_MODE_SERIAL2TX) return true
         }
         return false
     }
@@ -149,11 +143,13 @@ class SerialPanel extends LitElement {
     }
 
     _displayBaudRate() {
-        return this.isAirport || this.serial1Protocol === 0 || this.serial1Protocol === 1 || this.serial2Protocol === 1 || this.serial2Protocol === 2
+        return this.isAirport || this.serial1Protocol === 0 || this.serial1Protocol === 1 ||
+               this.serial2Protocol === 1 || this.serial2Protocol === 2
     }
 
     _sbusSelected() {
-        return this.serial1Protocol === 2 || this.serial1Protocol === 3 || this.serial2Protocol === 3 || this.serial2Protocol === 4
+        return this.serial1Protocol === 2 || this.serial1Protocol === 3 ||
+               this.serial2Protocol === 3 || this.serial2Protocol === 4
     }
 
     _displayPortSelected() {
@@ -165,6 +161,7 @@ class SerialPanel extends LitElement {
             this.serial2Protocol !== elrsState.config['serial1-protocol'] ||
             this.sbusFailsafe !== elrsState.config['sbus-failsafe']
     }
+
     _optionsChanged() {
         return this.isAirport !== elrsState.options['is-airport'] ||
             this.baudRate !== elrsState.options['rcvr-uart-baud'] ||
@@ -178,18 +175,16 @@ class SerialPanel extends LitElement {
     _saveSerial(e) {
         e.preventDefault()
         saveOptionsAndConfig({
-                options: {
-                    'is-airport': this.isAirport,
-                    'rcvr-uart-baud': this.baudRate,
-                    'dji-permanently-armed': this.djiArmed,
-                },
-                config: {
-                    'serial-protocol': this.isAirport ? 0 : this.serial1Protocol,
-                    'serial1-protocol': this.serial2Protocol,
-                    'sbus-failsafe': this.sbusFailsafe
-                }
+            options: {
+                'is-airport': this.isAirport,
+                'rcvr-uart-baud': this.baudRate,
+                'dji-permanently-armed': this.djiArmed,
             },
-            () => {this.requestUpdate()}
-        )
+            config: {
+                'serial-protocol': this.isAirport ? 0 : this.serial1Protocol,
+                'serial1-protocol': this.serial2Protocol,
+                'sbus-failsafe': this.sbusFailsafe
+            }
+        }, () => { this.requestUpdate() })
     }
 }

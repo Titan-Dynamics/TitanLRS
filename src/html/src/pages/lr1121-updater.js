@@ -1,6 +1,5 @@
 import {html, LitElement} from 'lit'
 import {customElement, query, state} from 'lit/decorators.js'
-import '../assets/mui.js'
 import '../components/filedrag.js'
 import {cuteAlert, postWithFeedback} from "../utils/feedback.js"
 
@@ -19,37 +18,57 @@ export class LR1121Updater extends LitElement {
 
     render() {
         return html`
-            <div class="mui-panel mui--text-title">LR1121 Firmware Flashing</div>
-            <div class="mui-panel" style="display: ${this.manual ? 'block' : 'none'}; background-color: #FFC107;">
-                LR1121 firmware has been manually flashed before, to revert to the ExpressLRS provided version you can
-                click the button below.<br>
-                <button class="mui-btn mui-btn--small" @click=${this._reset}>Reset and reboot</button>
+            <div class="td-h2" style="margin-bottom: var(--td-s-4);">LR1121 Firmware</div>
+
+            ${this.manual ? html`
+                <div class="td-card" style="margin-bottom: var(--td-s-4); background: var(--td-warn-soft); border-color: var(--td-warn);">
+                    <div class="td-card-body td-small" style="color: var(--td-warn);">
+                        LR1121 firmware has been manually flashed. Click below to revert to the TitanLRS provided version.
+                        <div style="margin-top: var(--td-s-3);">
+                            <button class="td-btn" @click=${this._reset}>Reset and reboot</button>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+
+            <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                <div class="td-card-header">
+                    <span class="td-h4">Flash firmware</span>
+                    ${this.status ? html`<span class="td-chip td-chip-info">${this.status}</span>` : ''}
+                </div>
+                <div class="td-card-body">
+                    ${this._renderRadios()}
+                    <p class="td-small td-mute" style="margin-bottom: var(--td-s-3);">Upload LR1121 firmware binary:</p>
+                    <file-drop label="Upload and Flash" @file-drop=${this._fileSelected}>or drop firmware file here</file-drop>
+                    ${this.status ? html`
+                        <div class="td-progress-wrap">
+                            <div class="td-progress-label">${this.status}</div>
+                            <progress class="td-progress" .value="${this.progress}" max="100"></progress>
+                        </div>
+                    ` : ''}
+                </div>
             </div>
-            <div class="mui-panel">
-                ${this._renderRadios()}
-                <label>Upload LR1121 firmware binary:</label>
-                <br>
-                <file-drop label="Upload and Flash" @file-drop=${this._fileSelected}>or drop firmware file here</file-drop>
-                <br/>
-                <h3>${this.status}</h3>
-                <progress .value="${this.progress}" max="100" style="width:100%;"></progress>
-            </div>
-            <div class="mui-panel">
-                ${this._renderInfoTable()}
-            </div>
+
+            ${this.data ? html`
+                <div class="td-card">
+                    <div class="td-card-header">
+                        <span class="td-h4">Radio information</span>
+                    </div>
+                    ${this._renderInfoTable()}
+                </div>
+            ` : ''}
         `
     }
 
     _renderRadios() {
         if (!this.data?.radio2) return html``
         return html`
-            <div class="mui-radio">
-                <input id="radio1" type="radio" name="optionsRadio" value="1" checked>
-                <label for="radio1">Update Radio 1</label>
-            </div>
-            <div class="mui-radio">
-                <input id="radio2" type="radio" name="optionsRadio" value="2">
-                <label for="radio2">Update Radio 2</label>
+            <div class="td-card-row" style="border-bottom: none; padding-bottom: 0; margin-bottom: var(--td-s-3);">
+                <span class="td-label">Target radio</span>
+                <div class="td-segment" style="width: fit-content;">
+                    <button id="radio1" type="button" class="is-active">Radio 1</button>
+                    <button id="radio2" type="button">Radio 2</button>
+                </div>
             </div>
         `
     }
@@ -59,30 +78,30 @@ export class LR1121Updater extends LitElement {
         const r1 = this.data.radio1
         const r2 = this.data.radio2
         return html`
-            <table class="mui-table mui-table--bordered">
+            <table class="td-table">
                 <thead>
-                <tr>
-                    <th>Parameter</th>
-                    <th>Radio 1</th>
-                    <th>Radio 2</th>
-                </tr>
+                    <tr>
+                        <th>Parameter</th>
+                        <th>Radio 1</th>
+                        ${r2 ? html`<th>Radio 2</th>` : ''}
+                    </tr>
                 </thead>
                 <tbody>
-                <tr>
-                    <td>Type</td>
-                    <td><span>${this._dec2hex(r1?.type, 2)}</span></td>
-                    <td><span>${r2 ? this._dec2hex(r2.type, 2) : ''}</span></td>
-                </tr>
-                <tr>
-                    <td>Hardware</td>
-                    <td><span>${this._dec2hex(r1?.hardware, 2)}</span></td>
-                    <td><span>${r2 ? this._dec2hex(r2.hardware, 2) : ''}</span></td>
-                </tr>
-                <tr>
-                    <td>Firmware</td>
-                    <td><span>${this._dec2hex(r1?.firmware, 4)}</span></td>
-                    <td><span>${r2 ? this._dec2hex(r2.firmware, 4) : ''}</span></td>
-                </tr>
+                    <tr>
+                        <td class="td-mute">Type</td>
+                        <td class="td-mono">${this._dec2hex(r1?.type, 2)}</td>
+                        ${r2 ? html`<td class="td-mono">${this._dec2hex(r2.type, 2)}</td>` : ''}
+                    </tr>
+                    <tr>
+                        <td class="td-mute">Hardware</td>
+                        <td class="td-mono">${this._dec2hex(r1?.hardware, 2)}</td>
+                        ${r2 ? html`<td class="td-mono">${this._dec2hex(r2.hardware, 2)}</td>` : ''}
+                    </tr>
+                    <tr>
+                        <td class="td-mute">Firmware</td>
+                        <td class="td-mono">${this._dec2hex(r1?.firmware, 4)}</td>
+                        ${r2 ? html`<td class="td-mono">${this._dec2hex(r2.firmware, 4)}</td>` : ''}
+                    </tr>
                 </tbody>
             </table>
         `
@@ -124,31 +143,25 @@ export class LR1121Updater extends LitElement {
     }
 
     _uploadFile(file) {
-        try {
-            // Show overlay
-            mui.overlay('on', {keyboard: false, static: true})
-            const ajax = new XMLHttpRequest()
-            ajax.upload.addEventListener('progress', (event) => this._progressHandler(event), false)
-            ajax.addEventListener('load', (event) => this._completeHandler(event), false)
-            ajax.addEventListener('error', (event) => this._errorHandler(event), false)
-            ajax.addEventListener('abort', (event) => this._abortHandler(event), false)
-            ajax.open('POST', '/lr1121')
-            ajax.setRequestHeader('X-FileSize', file.size)
-            const radio = document.querySelector('input[name=optionsRadio]:checked')?.value || '1'
-            ajax.setRequestHeader('X-Radio', radio)
-            const formdata = new FormData()
-            formdata.append('upload', file, file.name)
-            ajax.send(formdata)
-        } catch (e) {
-            this._resetProgress()
-            mui.overlay('off')
-        }
+        const ajax = new XMLHttpRequest()
+        ajax.upload.addEventListener('progress', (event) => this._progressHandler(event), false)
+        ajax.addEventListener('load', (event) => this._completeHandler(event), false)
+        ajax.addEventListener('error', (event) => this._errorHandler(event), false)
+        ajax.addEventListener('abort', (event) => this._abortHandler(event), false)
+        ajax.open('POST', '/lr1121')
+        ajax.setRequestHeader('X-FileSize', file.size)
+        const radio = document.querySelector('input[name=optionsRadio]:checked')?.value || '1'
+        ajax.setRequestHeader('X-Radio', radio)
+        const formdata = new FormData()
+        formdata.append('upload', file, file.name)
+        ajax.send(formdata)
     }
 
     _progressHandler(event) {
         const percent = Math.round((event.loaded / event.total) * 100)
         this.progress = percent
-        this.status = percent + '% uploaded... please wait'
+        this.status = percent + '% uploaded'
+        this.requestUpdate()
     }
 
     async _completeHandler(event) {
@@ -156,41 +169,36 @@ export class LR1121Updater extends LitElement {
         this.progress = 0
         const data = JSON.parse(event.target.responseText || '{}')
         if (data.status === 'ok') {
-            // Simulate flashing progress
             let percent = 0
             const interval = setInterval(async () => {
                 percent = percent + 2
                 this.progress = percent
-                this.status = percent + '% flashed... please wait'
+                this.status = percent + '% flashed'
+                this.requestUpdate()
                 if (percent >= 100) {
                     clearInterval(interval)
-                    await this._showAlert('success', 'Update Succeeded', data.msg)
+                    this._resetProgress()
+                    await cuteAlert({type: 'success', title: 'Update Succeeded', message: data.msg})
                 }
             }, 100)
         } else {
-            await this._showAlert('error', 'Update Failed', data.msg || '')
+            await cuteAlert({type: 'error', title: 'Update Failed', message: data.msg || ''})
         }
     }
 
     _errorHandler(event) {
-        return this._showAlert('error', 'Update Failed', event?.target?.responseText || '')
+        this._resetProgress()
+        return cuteAlert({type: 'error', title: 'Update Failed', message: event?.target?.responseText || ''})
     }
 
     _abortHandler(event) {
-        return this._showAlert('info', 'Update Aborted', event?.target?.responseText || '')
+        this._resetProgress()
+        return cuteAlert({type: 'info', title: 'Update Aborted', message: event?.target?.responseText || ''})
     }
 
     _resetProgress() {
         this.status = ''
         this.progress = 0
-    }
-
-    _showAlert(type, title, message) {
-        this._resetProgress()
-        try {
-            mui.overlay('off')
-        } catch (e) {
-        }
-        return cuteAlert({type, title, message})
+        this.requestUpdate()
     }
 }

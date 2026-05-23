@@ -7,23 +7,28 @@
 #include "devHandset.h"
 
 #include "CRSFEndpoint.h"
+#include "USBProbe.h"
 
 #if defined(PLATFORM_ESP32)
 #include "AutoDetect.h"
 #endif
 
 Handset *handset;
+HandsetSource handsetSource = HANDSET_SOURCE_UNKNOWN;
+USBProbe *usbProbe = nullptr;
 
 static bool initialize()
 {
 #if defined(PLATFORM_ESP32)
     if (GPIO_PIN_RCSIGNAL_RX == GPIO_PIN_RCSIGNAL_TX)
-    {
         handset = new AutoDetect();
-        return true;
-    }
+    else
 #endif
-    handset = new CRSFHandset();
+        handset = new CRSFHandset();
+
+    if (!firmwareOptions.is_airport)
+        usbProbe = new USBProbe();
+
     return true;
 }
 

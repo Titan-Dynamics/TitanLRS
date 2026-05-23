@@ -1,6 +1,5 @@
 import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
-import '../assets/mui.js';
 import {elrsState, saveConfig} from "../utils/state.js";
 import {_} from "../utils/libs.js";
 import {postWithFeedback} from "../utils/feedback.js";
@@ -23,16 +22,13 @@ class ConnectionsPanel extends LitElement {
         return html`
             <style>
                 .connections-panel-root { container-type: inline-size; }
-
                 .connections-panel-root .connections-mobile-warning { display: none; }
-
-                /* If the container is too narrow in terms of characters, show the warning and hide the table */
+                .connections-panel-root select:disabled,
+                .connections-panel-root input:disabled { opacity: 0.3; cursor: not-allowed; }
                 @container (max-width: 80ch) {
                     .connections-panel-root .connections-mobile-warning { display: block; }
                     .connections-panel-root .connections-panel { display: none !important; }
                 }
-
-                /* Fallback for browsers without container queries: use an em-based viewport rule */
                 @supports not (container-type: inline-size) {
                     @media (max-width: 48em) {
                         .connections-panel-root .connections-mobile-warning { display: block; }
@@ -41,75 +37,60 @@ class ConnectionsPanel extends LitElement {
                 }
             </style>
             <div class="connections-panel-root">
-                <div class="mui-panel mui--text-title">PWM Pin Functions</div>
-                <div class="mui-panel warning-bg connections-mobile-warning">
-                    <div class="mui--text-title" style="margin-bottom: 8px;">Rotate to landscape</div>
-                    <p>
-                        The connections panel is too wide for small screens in portrait mode. Please rotate your device to
-                        landscape mode to view and edit the settings.
-                    </p>
+                <div class="td-h2" style="margin-bottom: var(--td-s-4);">PWM Pin Functions</div>
+                <div class="connections-mobile-warning td-card" style="margin-bottom: var(--td-s-4);">
+                    <div class="td-card-header">
+                        <span class="td-h4">Rotate to landscape</span>
+                        <span class="td-chip td-chip-warn">Screen too narrow</span>
+                    </div>
+                    <div class="td-card-body td-mute td-small">
+                        The connections panel requires landscape orientation on small screens.
+                    </div>
                 </div>
-                <div class="mui-panel connections-panel">
-                    Set PWM output mode and failsafe positions.
-                    <form>
-                        <div class="mui-panel pwmpnl">
-                            <table class="pwmtbl mui-table">
-                                <thead>
+                <div class="td-card connections-panel">
+                    <div class="td-card-header">
+                        <span class="td-h4">PWM output configuration</span>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="td-table td-table-roomy" style="min-width: 700px;">
+                            <thead>
                                 <tr>
-                                    <th class="fixed-column">Output</th><th class="mui--text-center fixed-column">Features</th><th>Mode</th><th>Input</th><th class="mui--text-center fixed-column">Invert</th><th class="mui--text-center fixed-column">Stretch</th><th class="mui--text-center fixed-column pwmitm">Failsafe Mode</th><th class="mui--text-center fixed-column pwmitm">Failsafe Pos</th>
+                                    <th>Output</th>
+                                    <th>Features</th>
+                                    <th>Mode</th>
+                                    <th>Input</th>
+                                    <th style="text-align:center;">Invert</th>
+                                    <th style="text-align:center;">Stretch</th>
+                                    <th>Failsafe Mode</th>
+                                    <th>Failsafe Pos</th>
                                 </tr>
-                                </thead>
-                                <tbody>
-                                    ${this._renderConnectionPins()}
-                                </tbody>
-                            </table>
-                        </div>
-                        <div>
-                            <button class="mui-btn mui-btn--small mui-btn--primary" @click="${this._savePwmConfig}">Save</button>
-                            ${elrsState.options.customised ? html`
-                                <button class="mui-btn mui-btn--small mui-btn--danger mui--pull-right"
-                                        @click="${postWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', '/reset?config', null)}"
-                                >
-                                    Reset to defaults
-                                </button>
-                            ` : ''}
-                        </div>
-                    </form>
-                    <div class="mui-divider"></div>
-                    <ul>
-                        <li><b>Output:</b> Receiver output pin</li>
-                        <li><b>Features:</b> If an output is capable of supporting another function, that is indicated
-                            here
-                        </li>
-                        <li><b>Mode:</b> Output frequency, 10KHz 0-100% duty cycle, binary On/Off, DShot, Serial, or I2C
-                            (some options are pin dependant)
-                        </li>
-                        <ul>
-                            <li>When enabling serial pins, be sure to select the <b>Serial Protocol</b> below and <b>UART
-                                baud</b> on the <b><a href="#serial">Serial</a></b> page in the menu
-                            </li>
+                            </thead>
+                            <tbody>
+                                ${this._renderConnectionPins()}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; gap: 8px; align-items: center;">
+                        <div style="flex: 1;"></div>
+                        ${elrsState.options.customised ? html`
+                            <button class="td-btn td-btn-danger"
+                                    @click="${postWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', '/reset?config', null)}">
+                                Reset to defaults
+                            </button>
+                        ` : ''}
+                        <button class="td-btn td-btn-primary" @click="${this._savePwmConfig}">Save</button>
+                    </div>
+                    <div class="td-divider"></div>
+                    <div style="padding: var(--td-s-3) var(--td-s-4);">
+                        <ul class="td-small td-mute" style="padding-left: 16px; margin: 0; line-height: 2;">
+                            <li><strong class="td-fg">Output</strong> — receiver output pin</li>
+                            <li><strong class="td-fg">Mode</strong> — output frequency, duty cycle, digital, DShot, Serial, or I2C</li>
+                            <li><strong class="td-fg">Input</strong> — handset channel</li>
+                            <li><strong class="td-fg">Invert</strong> — invert channel position</li>
+                            <li><strong class="td-fg">Stretch</strong> — widen pulse to 500–2500 us</li>
+                            <li><strong class="td-fg">Failsafe</strong> — Set Position / No Pulses / Last Position</li>
                         </ul>
-                        <li><b>Input:</b> Input channel from the handset</li>
-                        <li><b>Invert:</b> Invert input channel position</li>
-                        <li><b>Stretch:</b> Stretch pulse width from mode limits to 500-2500us</li>
-                        <li><b>Failsafe</b>
-                            <ul>
-                                <li>"Set Position" sets the servo to an absolute "Failsafe Pos"
-                                    <ul>
-                                        <li>Does not use "Invert" or "Stretch" flags</li>
-                                        <li>Will be converted to binary for "On/Off" mode (>1500us = HIGH)</li>
-                                    </ul>
-                                </li>
-                                <li>"No Pulses" stops sending pulses
-                                    <ul>
-                                        <li>Unpowers servos</li>
-                                        <li>May disarm ESCs</li>
-                                    </ul>
-                                </li>
-                                <li>"Last Position" continues sending last received channel position</li>
-                            </ul>
-                        </li>
-                    </ul>
+                    </div>
                 </div>
             </div>
         `;
@@ -126,32 +107,27 @@ class ConnectionsPanel extends LitElement {
 
     _enumSelectGenerate(id, val, arOptions, onchange) {
         return html`
-            <div class="mui-select compact">
-                <select id="${id}" class="pwmitm" @change="${onchange}">
-                    ${arOptions.map((item, idx) => {
-                        if (item) {
-                            return html`<option value="${idx}" ?selected=${idx === val}>${item}</option>`
-                        }
-                        return null
-                    })}
-                </select>
-            </div>
+            <select id="${id}" @change="${onchange}">
+                ${arOptions.map((item, idx) => {
+                    if (item) {
+                        return html`<option value="${idx}" ?selected=${idx === val}>${item}</option>`
+                    }
+                    return null
+                })}
+            </select>
         `
     }
 
     _generateFeatureBadges(features) {
         let str = []
-        if (!!(features & 1)) str.push(html`<span style="color: #696969; background-color: #a8dcfa" class="badge">TX</span>`)
-        else if (!!(features & 2)) str.push(html`<span style="color: #696969; background-color: #d2faa8" class="badge">RX</span>`)
-        if ((features & 12) === 12) str.push(html`<span style="color: #696969; background-color: #fab4a8" class="badge">I2C</span>`)
-        else if (!!(features & 4)) str.push(html`<span style="color: #696969; background-color: #fab4a8" class="badge">SCL</span>`)
-        else if (!!(features & 8)) str.push(html`<span style="color: #696969; background-color: #fab4a8" class="badge">SDA</span>`)
-
-        // Serial2
-        if ((features & 96) === 96) str.push(html`<span style="color: #696969; background-color: #36b5ff" class="badge">Serial2</span>`)
-        else if (!!(features & 32)) str.push(html`<span style="color: #696969; background-color: #36b5ff" class="badge">RX2</span>`)
-        else if (!!(features & 64)) str.push(html`<span style="color: #696969; background-color: #36b5ff" class="badge">TX2</span>`)
-
+        if (!!(features & 1)) str.push(html`<span class="td-chip td-chip-mono" style="font-size:10px; height:16px; padding: 0 5px;">TX</span>`)
+        else if (!!(features & 2)) str.push(html`<span class="td-chip td-chip-mono" style="font-size:10px; height:16px; padding: 0 5px;">RX</span>`)
+        if ((features & 12) === 12) str.push(html`<span class="td-chip" style="font-size:10px; height:16px; padding: 0 5px;">I2C</span>`)
+        else if (!!(features & 4)) str.push(html`<span class="td-chip" style="font-size:10px; height:16px; padding: 0 5px;">SCL</span>`)
+        else if (!!(features & 8)) str.push(html`<span class="td-chip" style="font-size:10px; height:16px; padding: 0 5px;">SDA</span>`)
+        if ((features & 96) === 96) str.push(html`<span class="td-chip td-chip-info" style="font-size:10px; height:16px; padding: 0 5px;">Serial2</span>`)
+        else if (!!(features & 32)) str.push(html`<span class="td-chip td-chip-info" style="font-size:10px; height:16px; padding: 0 5px;">RX2</span>`)
+        else if (!!(features & 64)) str.push(html`<span class="td-chip td-chip-info" style="font-size:10px; height:16px; padding: 0 5px;">TX2</span>`)
         return str
     }
 
@@ -161,12 +137,12 @@ class ConnectionsPanel extends LitElement {
         this.pinModes = []
         const htmlFields = []
         elrsState.config.pwm.forEach((item, index) => {
-            const failsafe = (item.config & 2047) + 476; // 11 bits
-            const ch = (item.config >> 11) & 15; // 4 bits
+            const failsafe = (item.config & 2047) + 476;
+            const ch = (item.config >> 11) & 15;
             const inv = (item.config >> 15) & 1;
-            const mode = (item.config >> 16) & 15; // 4 bits
+            const mode = (item.config >> 16) & 15;
             const stretch = (item.config >> 20) & 1;
-            const failsafeMode = (item.config >> 22) & 3; // 2 bits
+            const failsafeMode = (item.config >> 22) & 3;
             const features = item.features
             const modes = ['50Hz', '60Hz', '100Hz', '160Hz', '333Hz', '400Hz', '10KHzDuty', 'On/Off']
             if (features & 16) {
@@ -185,24 +161,26 @@ class ConnectionsPanel extends LitElement {
             }
             modes.push(features & 4 ? 'I2C SCL' : undefined)
             modes.push(features & 8 ? 'I2C SDA' : undefined)
-            modes.push(undefined)  // true PWM (not yet supported)
+            modes.push(undefined)
             modes.push(features & 32 ? 'Serial2 RX' : undefined)
             modes.push(features & 64 ? 'Serial2 TX' : undefined)
 
             htmlFields.push(html`
-                <tr><td class="mui--text-center mui--text-title">${index + 1}</td>
-                <td>${this._generateFeatureBadges(features)}</td>
-                <td>${this._enumSelectGenerate(`pwm_${index}_mode`, mode, modes, (e) => {this._pinModeChange(e.target, index)})}</td>
-                <td>${this._enumSelectGenerate(`pwm_${index}_ch`, ch,
-                        ['ch1', 'ch2', 'ch3', 'ch4',
-                            'ch5 (AUX1)', 'ch6 (AUX2)', 'ch7 (AUX3)', 'ch8 (AUX4)',
-                            'ch9 (AUX5)', 'ch10 (AUX6)', 'ch11 (AUX7)', 'ch12 (AUX8)',
-                            'ch13 (AUX9)', 'ch14 (AUX10)', 'ch15 (AUX11)', 'ch16 (AUX12)'])}</td>
-                <td><div class="mui-checkbox mui--text-center"><input type="checkbox" id="pwm_${index}_inv" ?checked="${inv}"></div></td>
-                <td><div class="mui-checkbox mui--text-center"><input type="checkbox" id="pwm_${index}_stretch" ?checked="${stretch}"}></div></td>
-                <td>${this._enumSelectGenerate(`pwm_${index}_fsmode`, failsafeMode, ['Set Position', 'No Pulses', 'Last Position'],
-                        (e) => {this._failsafeModeChange(e.target, index)})}</td>
-                <td><div class="mui-textfield compact"><input id="pwm_${index}_fs" value="${failsafe}" size="6" class="pwmitm" /></div></td></tr>
+                <tr>
+                    <td class="td-mono" style="text-align:center;">${index + 1}</td>
+                    <td>${this._generateFeatureBadges(features)}</td>
+                    <td>${this._enumSelectGenerate(`pwm_${index}_mode`, mode, modes, (e) => {this._pinModeChange(e.target, index)})}</td>
+                    <td>${this._enumSelectGenerate(`pwm_${index}_ch`, ch,
+                            ['ch1','ch2','ch3','ch4','ch5 (AUX1)','ch6 (AUX2)','ch7 (AUX3)','ch8 (AUX4)',
+                             'ch9 (AUX5)','ch10 (AUX6)','ch11 (AUX7)','ch12 (AUX8)',
+                             'ch13 (AUX9)','ch14 (AUX10)','ch15 (AUX11)','ch16 (AUX12)'])}</td>
+                    <td style="text-align:center;"><input type="checkbox" id="pwm_${index}_inv" ?checked="${inv}"></td>
+                    <td style="text-align:center;"><input type="checkbox" id="pwm_${index}_stretch" ?checked="${stretch}"></td>
+                    <td>${this._enumSelectGenerate(`pwm_${index}_fsmode`, failsafeMode,
+                            ['Set Position', 'No Pulses', 'Last Position'],
+                            (e) => {this._failsafeModeChange(e.target, index)})}</td>
+                    <td><input id="pwm_${index}_fs" type="number" value="${failsafe}" size="6" style="width:70px;"/></td>
+                </tr>
             `);
             this.pinModes[index] = mode
         });
@@ -217,41 +195,34 @@ class ConnectionsPanel extends LitElement {
             _(`pwm_${index}_fs`).disabled = onoff
             _(`pwm_${index}_fsmode`).disabled = onoff
         }
-
-        // disable extra fields for serial & i2c pins
         setDisabled(index, Number.parseInt(pinMode.value) >= PWM_MODE_SERIAL);
-
         const updateOthers = (value, enable) => {
-            if (value > PWM_MODE_SERIAL) { // disable others
+            if (value > PWM_MODE_SERIAL) {
                 elrsState.config.pwm.forEach((item, other) => {
                     if (other !== index) {
                         document.querySelectorAll(`#pwm_${other}_mode option`).forEach(opt => {
-                            if (opt.value === value) {
-                                opt.disabled = enable
-                            }
+                            if (opt.value === value) opt.disabled = enable
                         })
                     }
                 })
             }
         }
-        updateOthers(pinMode.value, true) // disable others
-        updateOthers(this.pinModes[index], false) // enable others
+        updateOthers(pinMode.value, true)
+        updateOthers(this.pinModes[index], false)
         this.pinModes[index] = pinMode.value
 
-        // put some constraints on pinRx/Tx mode selects
         if (this.pinRxIndex !== undefined && this.pinTxIndex !== undefined) {
             const pinRxMode = _(`pwm_${this.pinRxIndex}_mode`)
             const pinTxMode = _(`pwm_${this.pinTxIndex}_mode`)
             const pinRxModeValue = Number.parseInt(pinRxMode.value)
             const pinTxModeValue = Number.parseInt(pinTxMode.value)
             if (index === this.pinRxIndex) {
-                if (pinRxModeValue === PWM_MODE_SERIAL) { // Serial
+                if (pinRxModeValue === PWM_MODE_SERIAL) {
                     pinTxMode.value = PWM_MODE_SERIAL
                     setDisabled(this.pinRxIndex, true)
                     setDisabled(this.pinTxIndex, true)
                     pinTxMode.disabled = true
-                }
-                else if (pinTxModeValue === PWM_MODE_SERIAL) {
+                } else if (pinTxModeValue === PWM_MODE_SERIAL) {
                     pinTxMode.value = 0
                     setDisabled(this.pinRxIndex, false)
                     setDisabled(this.pinTxIndex, false)
@@ -259,7 +230,7 @@ class ConnectionsPanel extends LitElement {
                 }
             }
             if (index === this.pinTxIndex) {
-                if (pinTxModeValue === PWM_MODE_SERIAL) { // Serial
+                if (pinTxModeValue === PWM_MODE_SERIAL) {
                     pinRxMode.value = PWM_MODE_SERIAL
                     setDisabled(this.pinRxIndex, true)
                     setDisabled(this.pinTxIndex, true)
@@ -269,7 +240,6 @@ class ConnectionsPanel extends LitElement {
             const pinTx = pinTxMode.value
             if (pinRxModeValue !== PWM_MODE_SERIAL) pinTxMode.value = pinTx
         }
-
     }
 
     _failsafeModeChange(failsafeMode, index) {
@@ -302,9 +272,7 @@ class ConnectionsPanel extends LitElement {
             if (failsafe < 476) failsafe = 476;
             failsafeField.value = failsafe
             let failsafeMode = failsafeModeField.value
-
             const raw = (failsafeMode << 22) | (stretch << 20) | (mode << 16) | (invert << 15) | (inChannel << 11) | (failsafe - 476)
-            // console.log(`PWM ${ch} mode=${mode} input=${inChannel} fs=${failsafe} fsmode=${failsafeMode} inv=${invert} stretch=${stretch} raw=${raw}`)
             outData.push(raw)
             ++ch
         }
@@ -320,11 +288,8 @@ class ConnectionsPanel extends LitElement {
     checkChanged() {
         const data = this._getPwmFormData()
         for (let i = 0; i < data.length; i++) {
-            if (elrsState.config.pwm[i].config !== data[i]) {
-                return true
-            }
+            if (elrsState.config.pwm[i].config !== data[i]) return true
         }
         return false
     }
-
 }
