@@ -16,8 +16,6 @@ export class FileDrop extends LitElement {
     }
 
     connectedCallback() {
-        // Capture initial light-DOM children before Lit renders and replaces them
-        // This emulates <slot> when using light DOM (createRenderRoot returns `this`)
         if (this._projectedHTML === '' && this.innerHTML.trim() !== '') {
             this._projectedHTML = this.innerHTML;
             this.innerHTML = '';
@@ -27,17 +25,17 @@ export class FileDrop extends LitElement {
 
     render() {
         return html`
-            <button class="mui-btn mui-btn--small mui-btn--primary upload">
-                <label>
+            <div class="td-upload-btn">
+                <button class="td-btn td-btn-primary">
                     ${this.label}
-                    <input type="file" id="fileselect" name="fileselect[]" @change=${this._selectFiles} />
-                </label>
-            </button>
+                </button>
+                <input type="file" id="fileselect" name="fileselect[]" @change=${this._selectFiles} />
+            </div>
             <div
-                    class="drop-zone"
-                    @dragover=${this._handleDragOver}
-                    @dragleave=${this._handleDragLeave}
-                    @drop=${this._handleDrop}
+                class="td-drop-zone"
+                @dragover=${this._handleDragOver}
+                @dragleave=${this._handleDragLeave}
+                @drop=${this._handleDrop}
             >
                 ${this._projectedHTML}
             </div>
@@ -45,17 +43,17 @@ export class FileDrop extends LitElement {
     }
 
     _handleDragOver(event) {
-        event.preventDefault(); // This is necessary to allow a drop.
-        event.target.classList.add('dragover');
+        event.preventDefault();
+        event.currentTarget.classList.add('dragover');
     }
 
     _handleDragLeave(event) {
-        event.target.classList.remove('dragover');
+        event.currentTarget.classList.remove('dragover');
     }
 
     _handleDrop(event) {
-        event.preventDefault(); // Prevent file from being opened by the browser.
-        event.target.classList.remove('dragover');
+        event.preventDefault();
+        event.currentTarget.classList.remove('dragover');
         this._callback(event.dataTransfer.files);
     }
 
@@ -65,13 +63,11 @@ export class FileDrop extends LitElement {
 
     _callback(files) {
         if (files.length) {
-            // Dispatch a custom 'file-drop' event with the files in the detail property.
             this.dispatchEvent(new CustomEvent('file-drop', {
                 detail: {files},
                 bubbles: true,
                 composed: true
             }));
         }
-
     }
 }

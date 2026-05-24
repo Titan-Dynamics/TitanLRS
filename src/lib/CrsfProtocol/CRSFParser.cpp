@@ -2,15 +2,15 @@
 
 #include "CRSFRouter.h"
 
-void CRSFParser::processBytes(CRSFConnector *origin, const uint8_t *inputBytes, const uint16_t size, const std::function<void(const crsf_header_t *)>& foundMessage)
+void CRSFParser::processBytes(CRSFConnector *origin, const uint8_t *inputBytes, const uint16_t size, const std::function<void(const crsf_header_t *)>& foundMessage, const std::function<void()>& badPacket)
 {
     for (uint16_t i = 0; i < size; ++i)
     {
-        processByte(origin, inputBytes[i], foundMessage);
+        processByte(origin, inputBytes[i], foundMessage, badPacket);
     }
 }
 
-bool CRSFParser::processByte(CRSFConnector *origin, const uint8_t inputByte, const std::function<void(const crsf_header_t *)>& foundMessage)
+bool CRSFParser::processByte(CRSFConnector *origin, const uint8_t inputByte, const std::function<void(const crsf_header_t *)>& foundMessage, const std::function<void()>& badPacket)
 {
     switch(telemetry_state) {
         case TELEMETRY_IDLE:
@@ -57,6 +57,7 @@ bool CRSFParser::processByte(CRSFConnector *origin, const uint8_t inputByte, con
                     if (foundMessage) foundMessage(header);
                     return true;
                 }
+                if (badPacket) badPacket();
                 return false;
             }
             break;
