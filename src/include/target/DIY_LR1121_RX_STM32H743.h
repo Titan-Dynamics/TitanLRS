@@ -8,17 +8,29 @@
 
 #define TARGET_DIY_LR1121_RX_STM32H743
 
-// GPIO pin definitions
+// Radio on SPI4
 #define GPIO_PIN_NSS         PE0   // Chip Select
-#define GPIO_PIN_MOSI        PA7   // SPI1_SDO (SPI1_MOSI)
-#define GPIO_PIN_MISO        PA6   // SPI1_SDI (SPI1_MISO)
-#define GPIO_PIN_SCK         PA5   // SPI1_SCK
+#define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
+#define GPIO_PIN_MISO        PE13  // SPI4_MISO
+#define GPIO_PIN_SCK         PE12  // SPI4_SCK
 #define GPIO_PIN_RST         PE7   // Radio Reset
 #define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
 #define GPIO_PIN_BUSY        PE9   // BUSY
 
-// On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
-#define FLASH_CS_PIN         PD6
+// LCD shares SPI4 on the WeAct. Mute it at boot:
+//   PE11 = LCD_CS  -> hold HIGH (deassert, ignore bus)
+//   PE10 = LCD_LED -> hold HIGH  (backlight off)
+#define SUPPRESS_LCD            1
+#define GPIO_PIN_LCD_CS         PE11
+#define GPIO_PIN_LCD_BACKLIGHT  PE10
+
+// On-board W25Q64 SPI NOR flash on SPI1 (PB3 SCK, PB4 MISO, PD7 MOSI, PD6 CS)
+// Used as the EEPROM config on this target
+#define HAS_W25Q64_CONFIG
+#define W25Q64_SCK_PIN       PB3
+#define W25Q64_MISO_PIN      PB4
+#define W25Q64_MOSI_PIN      PD7
+#define W25Q64_CS_PIN        PD6
 
 // CRSF UART
 #define GPIO_PIN_RCSIGNAL_RX PB7   // USART1_RX
@@ -51,9 +63,6 @@
 // Button (boot button on WeAct Mini)
 #define GPIO_PIN_BUTTON                 PC13
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
-
-// Use flash-emulated EEPROM (no external I2C EEPROM)
-#define STM32_USE_FLASH
 
 #ifndef RADIO_LR1121
 #define RADIO_LR1121

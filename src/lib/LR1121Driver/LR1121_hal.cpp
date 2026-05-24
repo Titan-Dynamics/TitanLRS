@@ -72,13 +72,6 @@ void LR1121Hal::init()
     SPIEx.setFrequency(16000000);
 #elif defined(PLATFORM_STM32)
     DBGLN("Config LR1121 SPI (STM32)");
-    #if defined(FLASH_CS_PIN) && !defined(HAS_W25Q64_CONFIG)
-    // Defend an undriven on-board SPI NOR from spurious SWO clocking.
-    // When HAS_W25Q64_CONFIG is defined the W25Q64 driver owns this pin
-    // from its begin() (called before Radio.Begin()).
-    pinMode(FLASH_CS_PIN, OUTPUT);
-    digitalWrite(FLASH_CS_PIN, HIGH);
-    #endif
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setMOSI(GPIO_PIN_MOSI);

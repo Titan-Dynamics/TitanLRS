@@ -2021,6 +2021,10 @@ void resetConfigAndReboot()
 
 void setup()
 {
+#ifdef SUPPRESS_LCD
+    pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
+    pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
+#endif
     if (!options_init())
     {
         // In the failure case we set the logging to the null logger so nothing crashes

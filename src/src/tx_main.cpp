@@ -836,6 +836,9 @@ static void CheckConfigChangePending()
     if (syncSpamCounter > 0)
       return;
 
+#if defined(PLATFORM_STM32)
+    ConfigChangeCommit();
+#else
     // wait until no longer transmitting
     while (busyTransmitting);
     // Set the commitInProgress flag to prevent any other RF SPI traffic during the commit from RX or scheduled TX
@@ -850,6 +853,7 @@ static void CheckConfigChangePending()
       TelemetryRcvPhase = ttrpTransmitting;
     }
     ConfigChangeCommit();
+#endif
   }
 }
 
@@ -1508,10 +1512,7 @@ static void checkSendLinkStatsToHandset(uint32_t now)
 
 void setup()
 {
-#ifdef GPIO_PIN_LCD_CS
-  // LCD shares SPI4 with the LR1121 on the WeAct target. Deassert LCD_CS and
-  // kill the backlight before any SPI4 traffic so the panel ignores the bus.
-  // LCD_RESET is tied to SYS_RESET so the panel is in reset at this point.
+#ifdef SUPPRESS_LCD
   pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
   pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
 #endif
@@ -1605,6 +1606,28 @@ void setup()
 void loop()
 {
   uint32_t now = millis();
+
+#if defined(PLATFORM_STM32)
+  // LR1121 DIO appears to have a race condition on STM32
+  // This poll catches any unread IRQ CLEARs that may have been missed
+  // Resolves a issue where a config write was locking up the TX.
+  static uint32_t lastBusyTxClearMs = 0;
+  if (!busyTransmitting || commitInProgress)
+  {
+    lastBusyTxClearMs = now;
+  }
+  else if (now - lastBusyTxClearMs > 10)
+  {
+    // Drain both radios in Gemini mode — busyTransmitting is shared and
+    // we don't know which chip's DIO has stuck.
+    (void)Radio.GetIrqStatus(SX12XX_Radio_1);
+    if (GPIO_PIN_NSS_2 != UNDEF_PIN)
+    {
+      (void)Radio.GetIrqStatus(SX12XX_Radio_2);
+    }
+    lastBusyTxClearMs = now;
+  }
+#endif
 
   HandleUARTout(); // Only used for non-CRSF output
 

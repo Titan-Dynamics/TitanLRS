@@ -8,7 +8,7 @@
 
 #define TARGET_DIY_LR1121_TX_STM32H743
 
-// GPIO pin definitions
+// Radio on SPI4
 #define GPIO_PIN_NSS         PE0   // Chip Select
 #define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
 #define GPIO_PIN_MISO        PE13  // SPI4_MISO
@@ -17,15 +17,15 @@
 #define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
 #define GPIO_PIN_BUSY        PE9   // BUSY
 
-// LCD shares SPI4 (PE12/PE13/PE14). Mute it at boot:
+// LCD shares SPI4 on the WeAct. Mute it at boot:
 //   PE11 = LCD_CS  -> hold HIGH (deassert, ignore bus)
-//   PE10 = LCD_LED -> hold LOW  (backlight off)
-// LCD_RESET is tied to SYS_RESET so the panel is held in reset at boot.
+//   PE10 = LCD_LED -> hold HIGH  (backlight off)
+#define SUPPRESS_LCD            1
 #define GPIO_PIN_LCD_CS         PE11
 #define GPIO_PIN_LCD_BACKLIGHT  PE10
 
 // On-board W25Q64 SPI NOR flash on SPI1 (PB3 SCK, PB4 MISO, PD7 MOSI, PD6 CS)
-// Used as the config store on this target.
+// Used as the EEPROM config on this target
 #define HAS_W25Q64_CONFIG
 #define W25Q64_SCK_PIN       PB3
 #define W25Q64_MISO_PIN      PB4
@@ -36,12 +36,12 @@
 #define GPIO_PIN_RCSIGNAL_RX PB10
 #define GPIO_PIN_RCSIGNAL_TX PB10
 
-// USB CDC descriptors (needed for Serial over USB)
+// USB CDC descriptors (always-on for TX — Serial-over-USB / MAVLink forward)
 #ifdef USBCON
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD-DB STM32H7 TX"
 #endif
 
 // LEDs
@@ -61,14 +61,11 @@
 #define GPIO_PIN_BUTTON                 PC13
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
-// Config storage lives on the on-board W25Q64 via HAS_W25Q64_CONFIG above.
-// (STM32_USE_FLASH is intentionally not defined here.)
-
+// LR1121 configuration
 #ifndef RADIO_LR1121
 #define RADIO_LR1121
 #endif
 
-// LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
 // #define OPT_USE_LR1121_TCXO        1
