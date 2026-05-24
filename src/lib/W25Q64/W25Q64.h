@@ -1,5 +1,10 @@
 #pragma once
 
+// STM32-only — see comment in W25Q64.cpp. Header is also gated so non-STM32
+// builds don't pull in <SPI.h> when PIO's LDF indexes lib/W25Q64.
+#include "targets.h"
+#if defined(PLATFORM_STM32)
+
 #include <stdint.h>
 #include <SPI.h>
 
@@ -38,3 +43,5 @@ private:
     SPIClass _spi;
     SPISettings _settings;
 };
+
+#endif // PLATFORM_STM32

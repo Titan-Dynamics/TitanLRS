@@ -1,3 +1,8 @@
+// W25Q64 is STM32-only by design (used as the on-board SPI NOR config store
+// on our STM32H7 targets via HAS_W25Q64_CONFIG).
+#include "targets.h"
+#if defined(PLATFORM_STM32)
+
 #include "W25Q64.h"
 #include "logging.h"
 #include <Arduino.h>
@@ -134,3 +139,5 @@ void W25Q64::pageProgram(uint32_t addr, const uint8_t *buf, uint32_t len)
     deselectCs();
     waitWhileBusy();
 }
+
+#endif // PLATFORM_STM32
