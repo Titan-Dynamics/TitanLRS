@@ -48,10 +48,10 @@ bool W25Q64::begin()
 
     uint8_t id[3] = {0};
     readJedecId(id);
-    DBGLN("W25Q64 JEDEC ID: %02X %02X %02X", id[0], id[1], id[2]);
+    DBGLN("W25Q64 JEDEC ID: %u %u %u", (unsigned)id[0], (unsigned)id[1], (unsigned)id[2]);
 
-    // 0xEF = Winbond. Capacity byte 0x17 = W25Q64.
-    return id[0] == 0xEF;
+    // Accept any responding SPI-NOR
+    return id[0] != 0x00 && id[0] != 0xFF;
 }
 
 void W25Q64::selectCs()
