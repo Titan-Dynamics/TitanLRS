@@ -21,8 +21,8 @@
 #define FLASH_CS_PIN         PD6
 
 // CRSF UART
-#define GPIO_PIN_RCSIGNAL_RX PB7   // USART1_RX
-#define GPIO_PIN_RCSIGNAL_TX PB6   // USART1_TX
+#define GPIO_PIN_RCSIGNAL_RX PB11  // USART3_RX
+#define GPIO_PIN_RCSIGNAL_TX PB10  // USART3_TX
 
 // Debug logging via USB CDC (Serial)
 #ifdef DEBUG_LOG
