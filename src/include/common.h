@@ -6,6 +6,8 @@
 
 #if defined(RADIO_SX127X)
 #include "SX127xDriver.h"
+#elif defined(RADIO_LR2021)
+#include "LR2021Driver.h"
 #elif defined(RADIO_LR1121)
 #include "LR1121Driver.h"
 #elif defined(RADIO_SX128X)
@@ -171,7 +173,7 @@ typedef struct expresslrs_mod_settings_s
     uint8_t sf;
     uint8_t cr;
     uint8_t PreambleLen;
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     uint8_t bw2;
     uint8_t sf2;
     uint8_t cr2;
@@ -294,6 +296,13 @@ enum eAuxChannels : uint8_t
 
 extern SX127xDriver Radio;
 
+#elif defined(RADIO_LR2021)
+#define RATE_MAX 20
+#define RATE_BINDING RATE_LORA_900_50HZ
+#define RATE_DUALBAND_BINDING RATE_LORA_2G4_50HZ
+
+extern LR2021Driver Radio;
+
 #elif defined(RADIO_LR1121)
 #define RATE_MAX 20
 #define RATE_BINDING RATE_LORA_900_50HZ
@@ -342,7 +351,7 @@ uint32_t uidMacSeedGet();
 bool isDualRadio();
 void EnterBindingModeSafely(); // defined in rx_main/tx_main
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
 bool isSupportedRFRate(uint8_t index);
 #else
 inline bool isSupportedRFRate(uint8_t index) { return true; }

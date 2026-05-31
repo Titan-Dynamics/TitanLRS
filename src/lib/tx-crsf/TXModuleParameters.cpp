@@ -22,7 +22,7 @@
 #if defined(RADIO_SX127X)
 #define STR_LUA_PACKETRATES \
     "D50Hz(-112dBm);25Hz(-123dBm);50Hz(-120dBm);100Hz(-117dBm);100Hz Full(-112dBm);200Hz(-112dBm)"
-#elif defined(RADIO_LR1121)
+#elif defined(RADIO_LR11XX)
 #define STR_LUA_PACKETRATES \
     "100Hz Full(-112dBm);150Hz(-112dBm);" \
     "50Hz(-115dBm);100Hz Full(-112dBm);150Hz(-112dBm);250Hz(-108dBm);333Hz Full(-105dBm);500Hz(-105dBm);" \
@@ -42,7 +42,7 @@
 extern char backpackVersion[];
 
 #if defined(Regulatory_Domain_EU_CE_2400)
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
 char strPowerLevels[] = "10/10;25/25;25/50;25/100;25/250;25/500;25/1000;25/2000;MatchTX ";
 #else
 char strPowerLevels[] = "10;25;50;100;250;500;1000;2000;MatchTX ";
@@ -72,7 +72,7 @@ static constexpr char luastrHeadTrackingStart[] = "EdgeTX;" STR_LUA_ALLAUX;
 static constexpr char luastrOffOn[] = "Off;On";
 static char luastrPacketRates[] = STR_LUA_PACKETRATES;
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
 static char luastrRFBands[32];
 static enum RFMode : uint8_t
 {
@@ -131,7 +131,7 @@ static selectionParameter luaFanThreshold = {
 
 #if defined(Regulatory_Domain_EU_CE_2400)
 static stringParameter luaCELimit = {
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     {"25/100mW 868M/2G4 CE LIMIT", CRSF_INFO},
 #else
     {"100mW 2G4 CE LIMIT", CRSF_INFO},
@@ -756,7 +756,7 @@ static void recalculatePacketRateOptions(int minInterval)
         rate = RATE_MAX - 1 - rate;
         bool rateAllowed = (get_elrs_airRateConfig(rate)->interval * get_elrs_airRateConfig(rate)->numOfSends) >= minInterval;
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
         // Skip unsupported modes for hardware with only a single LR1121 or with a single RF path
         rateAllowed &= isSupportedRFRate(rate);
         if (rateAllowed)
@@ -804,7 +804,7 @@ void TXModuleEndpoint::registerParameters()
   auto sendCallback = [&](propertiesCommon *item, const uint8_t arg) { handleSimpleSendCmd(item, arg); };
 
   if (HAS_RADIO) {
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     // Only allow selection of the band if both bands have power values defined
     if (POWER_OUTPUT_VALUES_COUNT != 0 && POWER_OUTPUT_VALUES_DUAL_COUNT != 0)
     {
@@ -1027,7 +1027,7 @@ void TXModuleEndpoint::updateParameters()
 {
   bool isMavlinkMode = config.GetLinkMode() == TX_MAVLINK_MODE;
   uint8_t currentRate = adjustPacketRateForBaud(config.GetRate());
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
   // calculate RFMode from current packet-rate
   switch (get_elrs_airRateConfig(currentRate)->radio_type)
   {

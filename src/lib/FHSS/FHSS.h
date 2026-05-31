@@ -5,14 +5,14 @@
 
 #if defined(RADIO_SX127X)
 #define FreqCorrectionMax ((int32_t)(100000/FREQ_STEP))
-#elif defined(RADIO_LR1121)
+#elif defined(RADIO_LR11XX)
 #define FreqCorrectionMax ((int32_t)(100000/FREQ_STEP)) // TODO - This needs checking !!!
 #elif defined(RADIO_SX128X)
 #define FreqCorrectionMax ((int32_t)(200000/FREQ_STEP))
 #endif
 #define FreqCorrectionMin (-FreqCorrectionMax)
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
 #define FREQ_HZ_TO_REG_VAL(freq) (freq)
 #define FREQ_SPREAD_SCALE 1
 #else

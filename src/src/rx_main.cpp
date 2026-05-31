@@ -357,12 +357,12 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
 #if defined(RADIO_SX128X)
                  , uidMacSeedGet(), OtaCrcInitializer, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC)
 #endif
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
                , ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_900 || ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4, (uint8_t)UID[5], (uint8_t)UID[4]
 #endif
                  );
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     if (FHSSuseDualBand)
     {
         Radio.Config(ModParams->bw2, ModParams->sf2, ModParams->cr2, FHSSgetInitialGeminiFreq(),
@@ -1760,7 +1760,7 @@ static void ExitBindingMode()
 
 static void updateBindingMode(unsigned long now)
 {
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     static uint32_t BindingRateChangeMs;
     constexpr uint32_t BindingRateChangeCyclePeriodMs = 125U;
 #endif
@@ -1771,7 +1771,7 @@ static void updateBindingMode(unsigned long now)
         ExitBindingMode();
     }
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     // Change frequency domains every 500ms.  This will allow single LR1121 receivers to receive bind packets from SX12XX Tx modules.
     else if (InBindingMode && (now - BindingRateChangeMs) > BindingRateChangeCyclePeriodMs)
     {
