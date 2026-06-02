@@ -1607,28 +1607,6 @@ void loop()
 {
   uint32_t now = millis();
 
-#if defined(PLATFORM_STM32)
-  // LR1121 DIO appears to have a race condition on STM32
-  // This poll catches any unread IRQ CLEARs that may have been missed
-  // Resolves a issue where a config write was locking up the TX.
-  static uint32_t lastBusyTxClearMs = 0;
-  if (!busyTransmitting || commitInProgress)
-  {
-    lastBusyTxClearMs = now;
-  }
-  else if (now - lastBusyTxClearMs > 10)
-  {
-    // Drain both radios in Gemini mode — busyTransmitting is shared and
-    // we don't know which chip's DIO has stuck.
-    (void)Radio.GetIrqStatus(SX12XX_Radio_1);
-    if (GPIO_PIN_NSS_2 != UNDEF_PIN)
-    {
-      (void)Radio.GetIrqStatus(SX12XX_Radio_2);
-    }
-    lastBusyTxClearMs = now;
-  }
-#endif
-
   HandleUARTout(); // Only used for non-CRSF output
 
   #if defined(USE_BLE_JOYSTICK)

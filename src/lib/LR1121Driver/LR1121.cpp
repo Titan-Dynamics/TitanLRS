@@ -898,21 +898,6 @@ void ICACHE_RAM_ATTR LR1121Driver::IsrCallback(SX12XX_Radio_Number_t radioNumber
     {
         instance->RXnbISR(radioNumber);
     }
-
-    // Drain any IRQ that came in during this handler by re-issuing
-    // GetIrqStatus. In Gemini mode each radio has
-    // its own DIO line, so check the one belonging to the radio that
-    // just fired this ISR.
-    const uint32_t dioPin = (radioNumber == SX12XX_Radio_2 && GPIO_PIN_DIO1_2 != UNDEF_PIN)
-                            ? GPIO_PIN_DIO1_2
-                            : GPIO_PIN_DIO1;
-    if (dioPin != UNDEF_PIN)
-    {
-        for (int i = 0; i < 4 && digitalRead(dioPin) == HIGH; i++)
-        {
-            (void)instance->GetIrqStatus(radioNumber);
-        }
-    }
 }
 
 struct lr1121UpdateState_s {

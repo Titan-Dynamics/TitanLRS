@@ -78,7 +78,7 @@ void LR2021Hal::init()
     SPIEx.setMISO(GPIO_PIN_MISO);
     SPIEx.setSCLK(GPIO_PIN_SCK);
     SPIEx.begin();
-    SPIEx.setClockDivider(SPI_CLOCK_DIV16);
+    SPIEx.setClockDivider(SPI_CLOCK_DIV8); // SPI4 kernel clk (PLL2Q) is 80 MHz on the H7 -> 10 MHz SCK
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);

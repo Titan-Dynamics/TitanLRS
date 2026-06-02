@@ -78,7 +78,7 @@ void LR1121Hal::init()
     SPIEx.setMISO(GPIO_PIN_MISO);
     SPIEx.setSCLK(GPIO_PIN_SCK);
     SPIEx.begin();
-    SPIEx.setClockDivider(SPI_CLOCK_DIV16);
+    SPIEx.setClockDivider(SPI_CLOCK_DIV8); // SPI45 kernel = HSI 64 MHz -> /4 = 16 MHz SCK (LR1121 max)
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);
