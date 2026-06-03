@@ -82,6 +82,13 @@ void ICACHE_RAM_ATTR SPIExClass::_transfer(uint8_t cs_mask, uint8_t *data, uint3
         }
     }
 #elif defined(PLATFORM_STM32)
+    // Raise BASEPRI to the radio-EXTI level (mask prio >= 6) for the 
+    // transfer. Anything MORE urgent than prio 6
+    // (e.g. the CRSF UART) stays live.
+    const uint32_t bug3BasepriPrev = __get_BASEPRI();
+    __set_BASEPRI(6 << (8 - __NVIC_PRIO_BITS)); // mask NVIC priority >= 6 (radio EXTIs + hwTimer)
+    __DMB();
+
     if (cs_mask & 0x01)
         digitalWrite(GPIO_PIN_NSS, LOW);
     if ((cs_mask & 0x02) && GPIO_PIN_NSS_2 != UNDEF_PIN)
@@ -93,6 +100,9 @@ void ICACHE_RAM_ATTR SPIExClass::_transfer(uint8_t cs_mask, uint8_t *data, uint3
         digitalWrite(GPIO_PIN_NSS, HIGH);
     if ((cs_mask & 0x02) && GPIO_PIN_NSS_2 != UNDEF_PIN)
         digitalWrite(GPIO_PIN_NSS_2, HIGH);
+
+    __DMB();
+    __set_BASEPRI(bug3BasepriPrev);
 #endif
 }
 
