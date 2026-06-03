@@ -63,8 +63,11 @@
 #define WS2812_VTX_STATUS_LEDS_COUNT    0
 #define WS2812_BOOT_LEDS_COUNT          0
 
-// Button (boot button on WeAct Mini)
-#define GPIO_PIN_BUTTON                 PC13
+// BOOT0 on the STM32H7 is a strapping-only pin and can't be read as
+// a GPIO at runtime, so a custom board should route the (active-high) BOOT0 button net
+// to spare GPIO PE2 for the runtime user-button role
+#define GPIO_PIN_BUTTON                 PE2
+#define GPIO_BUTTON_ACTIVE_HIGH         1
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
 // LR2021 configuration
