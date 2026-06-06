@@ -16,8 +16,46 @@
 HardwareSerial CRSFHandset::Port(0);
 #elif defined(PLATFORM_ESP8266)
 HardwareSerial CRSFHandset::Port(0);
+#elif defined(PLATFORM_STM32)
+HardwareSerial CRSFHandset::Port(USART3, HALF_DUPLEX_ENABLED);
 #elif defined(TARGET_NATIVE)
 HardwareSerial CRSFHandset::Port = Serial;
+#endif
+
+#if defined(PLATFORM_STM32)
+static void CRSF_configure_stm32_halfduplex_pin(const uint32_t pullMode, const bool openDrain)
+{
+    GPIO_TypeDef *port = digitalPinToPort(GPIO_PIN_RCSIGNAL_TX);
+    const uint32_t pinMask = digitalPinToBitMask(GPIO_PIN_RCSIGNAL_TX);
+    if (port == nullptr || pinMask == 0)
+    {
+        return;
+    }
+
+    const uint32_t pinIndex = __builtin_ctz(pinMask);
+    const uint32_t pullShift = pinIndex * 2U;
+    const uint32_t pullMask = 0x3U << pullShift;
+
+    if (openDrain)
+    {
+        port->OTYPER |= pinMask;
+    }
+    else
+    {
+        port->OTYPER &= ~pinMask;
+    }
+
+    port->PUPDR = (port->PUPDR & ~pullMask) | (pullMode << pullShift);
+}
+
+static void CRSF_configure_stm32_handset_uart()
+{
+    USART3->CR1 &= ~USART_CR1_UE;
+    USART3->CR3 |= USART_CR3_HDSEL;
+    USART3->CR2 &= ~(USART_CR2_SWAP);
+    USART3->CR2 |= USART_CR2_RXINV | USART_CR2_TXINV;
+    USART3->CR1 |= USART_CR1_UE;
+}
 #endif
 
 static constexpr int HANDSET_TELEMETRY_FIFO_SIZE = 128; // this is the smallest telemetry FIFO size in ETX with CRSF defined
@@ -54,7 +92,10 @@ void CRSFHandset::Begin()
     addDevice(CRSF_ADDRESS_RADIO_TRANSMITTER);
     crsfRouter.addConnector(this);
 
-    UARTwdtLastChecked = millis() + UARTwdtInterval; // allows a delay before the first time the UARTwdt() function is called
+    // UARTwdt() uses elapsed-time subtraction, so this must be a past timestamp rather than
+    // a future deadline. Initializing from millis() gives a real 1-second quiet window before
+    // the first watchdog check on every platform.
+    UARTwdtLastChecked = millis();
 
     halfDuplex = (GPIO_PIN_RCSIGNAL_TX == GPIO_PIN_RCSIGNAL_RX);
 
@@ -78,6 +119,14 @@ void CRSFHandset::Begin()
     // Invert RX/TX (not done, connection is full duplex uninverted)
     //USC0(UART0) |= BIT(UCRXI) | BIT(UCTXI);
     // No log message because this is our only UART
+#elif defined(PLATFORM_STM32)
+    halfDuplex = true;
+    UARTinverted = true;
+    CRSFHandset::Port.setTx(GPIO_PIN_RCSIGNAL_TX);
+    CRSFHandset::Port.begin(UARTrequestedBaud); // HAL applies inversion + arms interrupt internally
+    CRSF_configure_stm32_handset_uart();
+    duplex_set_RX();
+    flush_port_input();
 #endif
 }
 
@@ -253,6 +302,10 @@ void CRSFHandset::handleInput()
         {
             return;
         }
+#elif defined(PLATFORM_STM32)
+    if (Port.availableForWrite() != SERIAL_TX_BUFFER_SIZE - 1)
+            return;
+        Port.flush();
 #endif
         // All done transmitting; go back to receive mode
         transmitting = false;
@@ -262,7 +315,8 @@ void CRSFHandset::handleInput()
 
     // Add new data, and then discard bytes until we start with header byte
     auto toRead = std::min(Port.available(), CRSF_MAX_PACKET_LEN - SerialInPacketPtr);
-    SerialInPacketPtr += Port.readBytes(&inBuffer[SerialInPacketPtr], toRead);
+    const size_t readCount = Port.readBytes(&inBuffer[SerialInPacketPtr], toRead);
+    SerialInPacketPtr += readCount;
     alignBufferToSync(0);
 
     // Make sure we have at least a packet header and a length byte
@@ -381,6 +435,9 @@ void CRSFHandset::duplex_set_RX() const
 #elif defined(PLATFORM_ESP8266)
     // Enable loopback on UART0 to connect the RX pin to the TX pin (not done, connection is full duplex uninverted)
     //USC0(UART0) |= BIT(UCLBE);
+#elif defined(PLATFORM_STM32)
+    CRSF_configure_stm32_halfduplex_pin(GPIO_PULLDOWN, true);
+    Port.enableHalfDuplexRx();
 #endif
 }
 
@@ -408,6 +465,8 @@ void CRSFHandset::duplex_set_TX() const
 #elif defined(PLATFORM_ESP8266)
     // Disable loopback to disconnect the RX pin from the TX pin (not done, connection is full duplex uninverted)
     //USC0(UART0) &= ~BIT(UCLBE);
+#elif defined(PLATFORM_STM32)
+    CRSF_configure_stm32_halfduplex_pin(GPIO_NOPULL, false);
 #endif
 }
 
@@ -538,6 +597,12 @@ uint32_t CRSFHandset::autobaud()
     }
     return bestBaud;
 }
+#elif defined(PLATFORM_STM32)
+uint32_t CRSFHandset::autobaud()
+{
+    UARTcurrentBaudIdx = (UARTcurrentBaudIdx + 1) % ARRAY_SIZE(TxToHandsetBauds);
+    return TxToHandsetBauds[UARTcurrentBaudIdx];
+}
 #else
 uint32_t CRSFHandset::autobaud() {
     UARTcurrentBaudIdx = (UARTcurrentBaudIdx + 1) % ARRAY_SIZE(TxToHandsetBauds);
@@ -575,11 +640,17 @@ bool CRSFHandset::UARTwdt()
 
                 SerialOutFIFO.flush();
                 Port.flush();
+#if defined(PLATFORM_STM32)
+                Port.begin(UARTrequestedBaud);
+                CRSF_configure_stm32_handset_uart();
+                if (halfDuplex) duplex_set_RX();
+#else
                 Port.updateBaudRate(UARTrequestedBaud);
                 if (halfDuplex)
                 {
                     duplex_set_RX();
                 }
+#endif
                 // cleanup input buffer
                 flush_port_input();
             }

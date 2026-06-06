@@ -1,21 +1,27 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD-DB STM32H7"
+#define DEVICE_NAME "TD-DB STM32H7 TX G"
 #endif
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif
 
-#define TARGET_DIY_LR1121_RX_STM32H743
+#define TARGET_DIY_LR1121_TX_STM32H743_GEMINI
 
-// Radio on SPI4
-#define GPIO_PIN_NSS         PE0   // Chip Select
+// Radio1 on SPI4
+#define GPIO_PIN_NSS         PE0   // Chip Select (Radio 1)
 #define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
 #define GPIO_PIN_MISO        PE13  // SPI4_MISO
 #define GPIO_PIN_SCK         PE12  // SPI4_SCK
-#define GPIO_PIN_RST         PE7   // Radio Reset
-#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
-#define GPIO_PIN_BUSY        PE9   // BUSY
+#define GPIO_PIN_RST         PE7   // Radio 1 Reset
+#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ (Radio 1)
+#define GPIO_PIN_BUSY        PE9   // BUSY (Radio 1)
+
+// Radio2 on SPI4
+#define GPIO_PIN_NSS_2       PE8   // Chip Select (Radio 2)
+#define GPIO_PIN_RST_2       PE5   // Radio 2 Reset
+#define GPIO_PIN_DIO1_2      PE6   // LR1121 DIO9 IRQ (Radio 2)
+#define GPIO_PIN_BUSY_2      PE15  // BUSY (Radio 2)
 
 // LCD shares SPI4 on the WeAct. Mute it at boot:
 //   PE11 = LCD_CS  -> hold HIGH (deassert, ignore bus)
@@ -32,19 +38,16 @@
 #define W25Q64_MOSI_PIN      PD7
 #define W25Q64_CS_PIN        PD6
 
-// CRSF UART
-#define GPIO_PIN_RCSIGNAL_RX PB11  // USART3_RX
-#define GPIO_PIN_RCSIGNAL_TX PB10  // USART3_TX
+// CRSF UART — half-duplex single-wire on PB10 (USART3_TX)
+#define GPIO_PIN_RCSIGNAL_RX PB10
+#define GPIO_PIN_RCSIGNAL_TX PB10
 
-// Debug logging via USB CDC (Serial)
-#ifdef DEBUG_LOG
-#define GPIO_PIN_DEBUG_RX    UNDEF_PIN
-#define GPIO_PIN_DEBUG_TX    UNDEF_PIN
-#define DEBUG_LOG_PORT       Serial
+// USB CDC descriptors (always-on for TX — Serial-over-USB / MAVLink forward)
+#ifdef USBCON
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD-DB STM32H7 TX Gemini"
 #endif
 
 // LEDs
@@ -67,15 +70,15 @@
 #define GPIO_BUTTON_ACTIVE_HIGH         1
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
+// LR1121 configuration
 #ifndef RADIO_LR1121
 #define RADIO_LR1121
 #endif
 
-// LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
 // #define OPT_USE_LR1121_TCXO        1
-//#define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
+// #define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
 
 // RF switch control — default config for standard LR1121 modules
 // [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]

@@ -1,5 +1,7 @@
 #include "TXBackpackConnector.h"
+#if !defined(PLATFORM_STM32)
 #include "devBackpack.h"
+#endif
 
 #include "config.h"
 

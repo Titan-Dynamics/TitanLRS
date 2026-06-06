@@ -1,12 +1,12 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD-DB STM32H7"
+#define DEVICE_NAME "TD-DB STM32H7 TX"
 #endif
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif
 
-#define TARGET_DIY_LR1121_RX_STM32H743
+#define TARGET_DIY_LR1121_TX_STM32H743
 
 // Radio on SPI4
 #define GPIO_PIN_NSS         PE0   // Chip Select
@@ -32,19 +32,16 @@
 #define W25Q64_MOSI_PIN      PD7
 #define W25Q64_CS_PIN        PD6
 
-// CRSF UART
-#define GPIO_PIN_RCSIGNAL_RX PB11  // USART3_RX
-#define GPIO_PIN_RCSIGNAL_TX PB10  // USART3_TX
+// CRSF UART — half-duplex single-wire on PB10 (USART3_TX)
+#define GPIO_PIN_RCSIGNAL_RX PB10
+#define GPIO_PIN_RCSIGNAL_TX PB10
 
-// Debug logging via USB CDC (Serial)
-#ifdef DEBUG_LOG
-#define GPIO_PIN_DEBUG_RX    UNDEF_PIN
-#define GPIO_PIN_DEBUG_TX    UNDEF_PIN
-#define DEBUG_LOG_PORT       Serial
+// USB CDC descriptors (always-on for TX — Serial-over-USB / MAVLink forward)
+#ifdef USBCON
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD-DB STM32H7 TX"
 #endif
 
 // LEDs
@@ -67,15 +64,15 @@
 #define GPIO_BUTTON_ACTIVE_HIGH         1
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
+// LR1121 configuration
 #ifndef RADIO_LR1121
 #define RADIO_LR1121
 #endif
 
-// LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
 // #define OPT_USE_LR1121_TCXO        1
-//#define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
+// #define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
 
 // RF switch control — default config for standard LR1121 modules
 // [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]

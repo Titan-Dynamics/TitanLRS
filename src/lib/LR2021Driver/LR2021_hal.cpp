@@ -1,18 +1,18 @@
 #ifndef UNIT_TEST
 
-#include "LR1121_hal.h"
-#include "LR1121_Regs.h"
+#include "LR2021_hal.h"
+#include "LR2021_Regs.h"
 #include "logging.h"
 #include <SPIEx.h>
 
-LR1121Hal *LR1121Hal::instance = NULL;
+LR2021Hal *LR2021Hal::instance = NULL;
 
-LR1121Hal::LR1121Hal()
+LR2021Hal::LR2021Hal()
 {
     instance = this;
 }
 
-void LR1121Hal::end()
+void LR2021Hal::end()
 {
     detachInterrupt(GPIO_PIN_DIO1);
     if (GPIO_PIN_DIO1_2 != UNDEF_PIN)
@@ -24,7 +24,7 @@ void LR1121Hal::end()
     IsrCallback_2 = nullptr;
 }
 
-void LR1121Hal::init()
+void LR2021Hal::init()
 {
     DBGLN("Hal Init");
 
@@ -71,14 +71,14 @@ void LR1121Hal::init()
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setFrequency(16000000);
 #elif defined(PLATFORM_STM32)
-    DBGLN("Config LR1121 SPI (STM32)");
+    DBGLN("Config LR2021 SPI (STM32)");
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setMOSI(GPIO_PIN_MOSI);
     SPIEx.setMISO(GPIO_PIN_MISO);
     SPIEx.setSCLK(GPIO_PIN_SCK);
     SPIEx.begin();
-    SPIEx.setClockDivider(SPI_CLOCK_DIV8); // SPI45 kernel = HSI 64 MHz -> /4 = 16 MHz SCK (LR1121 max)
+    SPIEx.setClockDivider(SPI_CLOCK_DIV8); // SPI4 kernel clk (PLL2Q) is 80 MHz on the H7 -> 10 MHz SCK
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);
@@ -88,32 +88,16 @@ void LR1121Hal::init()
     }
 }
 
-void LR1121Hal::reset(bool bootloader)
+void LR2021Hal::reset()
 {
-    DBGLN("LR1121 Reset");
+    DBGLN("LR2021 Reset");
 
     if (GPIO_PIN_RST != UNDEF_PIN)
     {
-        if (bootloader)
-        {
-            if (GPIO_PIN_BUSY != UNDEF_PIN)
-            {
-                pinMode(GPIO_PIN_BUSY, OUTPUT);
-                digitalWrite(GPIO_PIN_BUSY, LOW);
-            }
-        }
         pinMode(GPIO_PIN_RST, OUTPUT);
         digitalWrite(GPIO_PIN_RST, LOW);
         if (GPIO_PIN_RST_2 != UNDEF_PIN)
         {
-            if (bootloader)
-            {
-                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
-                {
-                    pinMode(GPIO_PIN_BUSY_2, OUTPUT);
-                    digitalWrite(GPIO_PIN_BUSY_2, LOW);
-                }
-            }
             pinMode(GPIO_PIN_RST_2, OUTPUT);
             digitalWrite(GPIO_PIN_RST_2, LOW);
         }
@@ -123,22 +107,7 @@ void LR1121Hal::reset(bool bootloader)
         {
             digitalWrite(GPIO_PIN_RST_2, HIGH);
         }
-        delay(300); // LR1121 busy is high for 230ms after reset.  The WaitOnBusy timeout is only 1ms.  So this long delay is required.
-        if (bootloader)
-        {
-            if (GPIO_PIN_BUSY != UNDEF_PIN)
-            {
-                pinMode(GPIO_PIN_BUSY, INPUT_PULLDOWN);
-            }
-            if (GPIO_PIN_RST_2 != UNDEF_PIN)
-            {
-                if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
-                {
-                    pinMode(GPIO_PIN_BUSY_2, INPUT_PULLDOWN);
-                }
-            }
-            delay(100);
-        }
+        delay(300); // LR2021 busy is high for 230ms after reset.  The WaitOnBusy timeout is only ~2ms.  So this long delay is required.
     }
 
     // Poll until BUSY goes low with a generous timeout to handle chips whose
@@ -152,7 +121,7 @@ void LR1121Hal::reset(bool bootloader)
     }
 }
 
-void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
+void ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, const uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
 {
     WORD_ALIGNED_ATTR uint8_t OutBuffer[WORD_PADDED(size + 2)] = {
         (uint8_t)((command & 0xFF00) >> 8),
@@ -165,7 +134,7 @@ void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, uint8_t *buffer, 
     SPIEx.write(radioNumber, OutBuffer, size + 2);
 }
 
-void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, SX12XX_Radio_Number_t radioNumber)
+void ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, SX12XX_Radio_Number_t radioNumber)
 {
     WORD_ALIGNED_ATTR uint8_t OutBuffer[WORD_PADDED(2)] = {
         (uint8_t)((command & 0xFF00) >> 8),
@@ -176,7 +145,7 @@ void ICACHE_RAM_ATTR LR1121Hal::WriteCommand(uint16_t command, SX12XX_Radio_Numb
     SPIEx.write(radioNumber, OutBuffer, 2);
 }
 
-void ICACHE_RAM_ATTR LR1121Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
+void ICACHE_RAM_ATTR LR2021Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
 {
     WORD_ALIGNED_ATTR uint8_t InBuffer[WORD_PADDED(size)] = {0};
 
@@ -188,10 +157,9 @@ void ICACHE_RAM_ATTR LR1121Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12X
     memcpy(buffer, InBuffer, size);
 }
 
-bool ICACHE_RAM_ATTR LR1121Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
+bool ICACHE_RAM_ATTR LR2021Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
 {
-    constexpr uint32_t wtimeoutUS = 2000U; // changed due to unknown issues in a small percentage of LR1121s that some
-                                           // commands may have extremely long busy times during startup, exceeding 1ms
+    constexpr uint32_t wtimeoutUS = 2000U; // some commands may have extremely long busy times during startup, exceeding 1ms
     uint32_t startTime = 0;
 
     while (true)
@@ -222,13 +190,13 @@ bool ICACHE_RAM_ATTR LR1121Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
     }
 }
 
-void ICACHE_RAM_ATTR LR1121Hal::dioISR_1()
+void ICACHE_RAM_ATTR LR2021Hal::dioISR_1()
 {
     if (instance->IsrCallback_1)
         instance->IsrCallback_1();
 }
 
-void ICACHE_RAM_ATTR LR1121Hal::dioISR_2()
+void ICACHE_RAM_ATTR LR2021Hal::dioISR_2()
 {
     if (instance->IsrCallback_2)
         instance->IsrCallback_2();

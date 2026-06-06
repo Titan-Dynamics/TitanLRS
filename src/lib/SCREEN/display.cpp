@@ -51,7 +51,7 @@ const char *rate_string[] = {
     "100 Full",
     "50Hz"
 };
-#elif defined(RADIO_LR1121)
+#elif defined(RADIO_LR11XX)
 static const char *rate_string[] = {
     // 900
     "K1000Full",

@@ -1,20 +1,20 @@
 #ifndef DEVICE_NAME
-#define DEVICE_NAME "TD-DB STM32H7"
+#define DEVICE_NAME "TD LR2021 STM32H7"
 #endif
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif
 
-#define TARGET_DIY_LR1121_RX_STM32H743
+#define TARGET_DIY_LR2021_RX_STM32H743
 
-// Radio on SPI4
+// Radio on SPI4 (same pin map as the LR1121 STM32H7 RX target)
 #define GPIO_PIN_NSS         PE0   // Chip Select
 #define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
 #define GPIO_PIN_MISO        PE13  // SPI4_MISO
 #define GPIO_PIN_SCK         PE12  // SPI4_SCK
 #define GPIO_PIN_RST         PE7   // Radio Reset
-#define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ
+#define GPIO_PIN_DIO1        PE1   // LR2021 DIO9 IRQ (module DIO9 -> this MCU pin)
 #define GPIO_PIN_BUSY        PE9   // BUSY
 
 // LCD shares SPI4 on the WeAct. Mute it at boot:
@@ -44,7 +44,7 @@
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"
-#define USB_PRODUCT          "TD-DB STM32H7"
+#define USB_PRODUCT          "TD LR2021 STM32H7"
 #endif
 
 // LEDs
@@ -67,37 +67,28 @@
 #define GPIO_BUTTON_ACTIVE_HIGH         1
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
-#ifndef RADIO_LR1121
-#define RADIO_LR1121
+#ifndef RADIO_LR2021
+#define RADIO_LR2021
 #endif
 
-// LR1121 configuration
+// LR2021 configuration
 #define OPT_USE_HARDWARE_DCDC      true
-#define OPT_USE_SX1276_RFO_HF      0
-// #define OPT_USE_LR1121_TCXO        1
-//#define LR1121_TCXO_VOLTAGE        0x02  // RegTcxoTune: 0x02 = 1.8V
 
-// RF switch control — default config for standard LR1121 modules
-// [RfswEnable, StbyCfg, RxCfg, TxCfg, TxHPCfg, TxHfCfg, Unused, WifiCfg]
-#ifndef __ASSEMBLER__
-static const uint16_t _rfsw_ctrl[] = {0x0F, 0x00, 0x04, 0x08, 0x08, 0x02, 0x00, 0x01};
-#define LR1121_RFSW_CTRL             _rfsw_ctrl
-#endif
-#define LR1121_RFSW_CTRL_COUNT       8
-
-// Power output — LR1121 dBm values
-// Sub-GHz power levels: 12, 16, 19, 22 dBm
-// 2.4GHz power levels: -10, -6, -3, 1 dBm
+// Power output — LR2021 SetTxParams register values (NiceRF LoRa2021 datasheet §8).
+// These are register values written directly to SetTxParams (NOT dBm); the chip
+// integrated PA is selected per band by SetPaConfig. Bench-tunable (see plan §1.5).
+//   Sub-GHz (LF PA) regs  19/25/31/37 ~= +10/+13/+17/+20 dBm
+//   2.4 GHz  (HF PA) regs   0/ 8/16/24 ~=  +1/ +5/ +8/+12 dBm
 #define MinPower                        PWR_10mW
 #define MaxPower                        PWR_100mW
 #define DefaultPower                    PWR_10mW
 #define POWER_OUTPUT_VALUES_COUNT       4
 #ifndef __ASSEMBLER__
-static const int16_t _power_values[] = {12, 16, 19, 22};
+static const int16_t _power_values[] = {19, 25, 31, 37};
 #define POWER_OUTPUT_VALUES             _power_values
 #define POWER_OUTPUT_VALUES2            _power_values
 #define POWER_OUTPUT_VALUES2_COUNT      POWER_OUTPUT_VALUES_COUNT
-static const int16_t _power_values_dual[] = {-10, -6, -3, 1};
+static const int16_t _power_values_dual[] = {0, 8, 16, 24};
 #define POWER_OUTPUT_VALUES_DUAL        _power_values_dual
 #endif
 #define POWER_OUTPUT_VALUES_DUAL_COUNT  4

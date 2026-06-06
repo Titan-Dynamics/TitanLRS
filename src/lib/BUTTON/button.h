@@ -39,8 +39,24 @@ public:
     void init(uint8_t pin, bool idlelow = false)
     {
         _pin = pin;
-        _idlelow = idlelow,
-        pinMode(_pin, _idlelow ? INPUT : INPUT_PULLUP);
+        _idlelow = idlelow;
+        if (_idlelow)
+        {
+            // Active-high button: idles low, driven high when pressed. Bias with an
+            // internal pulldown so a floating net reads as "released" (STM32/ESP32).
+            // ESP8266 has no general INPUT_PULLDOWN — fall back to bare INPUT and rely
+            // on an external pulldown there.
+#if defined(INPUT_PULLDOWN)
+            pinMode(_pin, INPUT_PULLDOWN);
+#else
+            pinMode(_pin, INPUT);
+#endif
+        }
+        else
+        {
+            // Active-low button: idles high via internal pullup, pulled low when pressed.
+            pinMode(_pin, INPUT_PULLUP);
+        }
     }
 
     // Call this in loop()

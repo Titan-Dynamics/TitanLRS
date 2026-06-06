@@ -3,9 +3,11 @@
 #include "options.h"
 #include <string.h>
 
-#if defined(RADIO_SX127X) || defined(RADIO_LR1121)
+#if defined(RADIO_SX127X) || defined(RADIO_LR11XX)
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR2021)
+#include "LR2021Driver.h"
+#elif defined(RADIO_LR1121)
 #include "LR1121Driver.h"
 #else
 #include "SX127xDriver.h"
@@ -22,7 +24,7 @@ const fhss_config_t domains[] = {
     {"US433W",  FREQ_HZ_TO_REG_VAL(423500000), FREQ_HZ_TO_REG_VAL(438000000), 20, 434000000},
 };
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
 const fhss_config_t domainsDualBand[] = {
     {
     #if defined(Regulatory_Domain_EU_CE_2400)
@@ -90,7 +92,7 @@ void FHSSrandomiseFHSSsequence(const uint32_t seed)
 
     FHSSrandomiseFHSSsequenceBuild(seed, FHSSconfig->freq_count, sync_channel, FHSSsequence);
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     FHSSconfigDualBand = &domainsDualBand[0];
     sync_channel_DualBand = FHSSconfigDualBand->freq_count / 2;
     freq_spread_DualBand = (FHSSconfigDualBand->freq_stop - FHSSconfigDualBand->freq_start) * FREQ_SPREAD_SCALE / (FHSSconfigDualBand->freq_count - 1);

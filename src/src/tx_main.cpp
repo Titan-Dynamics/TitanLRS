@@ -13,9 +13,13 @@
 #include "devADC.h"
 #include "devLED.h"
 #include "devTXLUA.h"
+#if !defined(PLATFORM_STM32)
 #include "devWIFI.h"
+#endif
 #include "devButton.h"
+#if !defined(PLATFORM_STM32)
 #include "devVTX.h"
+#endif
 #if defined(PLATFORM_ESP32)
 #include "devScreen.h"
 #include "devBLE.h"
@@ -28,6 +32,10 @@
 void checkBackpackUpdate() {}
 void sendCRSFTelemetryToBackpack(uint8_t *) {}
 void sendMAVLinkTelemetryToBackpack(uint8_t *) {}
+#if defined(PLATFORM_STM32)
+void setWifiUpdateMode() {}
+void VtxTriggerSend() {}
+#endif
 #endif
 
 #include "CRSFParser.h"
@@ -58,7 +66,11 @@ FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; // Buffer for current stubbon sender packet (mavlink only)
 
 unsigned long rebootTime = 0;
+#if !defined(PLATFORM_STM32)
 extern bool webserverPreventAutoStart;
+#else
+static bool webserverPreventAutoStart;
+#endif
 //// MSP Data Handling ///////
 bool NextPacketIsDataUl = false;  // if true the next packet will contain the uplink data (instead of channels)
 char backpackVersion[32] = "";
@@ -106,7 +118,9 @@ device_affinity_t ui_devices[] = {
   {&RGB_device, 0},
   {&TXLUA_device, 1},
   {&ADC_device, 1},
+#if !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
+#endif
   {&Button_device, 0},
 #if defined(PLATFORM_ESP32)
   {&Backpack_device, 0},
@@ -118,7 +132,9 @@ device_affinity_t ui_devices[] = {
   {&PDET_device, 0},
 #endif
 #endif
+#if !defined(PLATFORM_STM32)
   {&VTX_device, 0}
+#endif
 };
 
 static bool diversityAntennaState = LOW;
@@ -445,7 +461,7 @@ void SetRFLinkRate(uint8_t index) // Set speed of RF link
   OtaSwitchMode_e newSwitchMode = (OtaSwitchMode_e)config.GetSwitchMode();
 
   bool subGHz = FHSSconfig->freq_center < 1000000000;
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
   if (FHSSuseDualBand && subGHz)
   {
       subGHz = FHSSconfigDualBand->freq_center < 1000000000;
@@ -474,12 +490,12 @@ void SetRFLinkRate(uint8_t index) // Set speed of RF link
 #if defined(RADIO_SX128X)
                , uidMacSeedGet(), OtaCrcInitializer, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC)
 #endif
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
                , (ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_900 || ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4), (uint8_t)UID[5], (uint8_t)UID[4]
 #endif
                );
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
   if (FHSSuseDualBand)
   {
     Radio.Config(ModParams->bw2, ModParams->sf2, ModParams->cr2, FHSSgetInitialGeminiFreq(),
@@ -820,6 +836,9 @@ static void CheckConfigChangePending()
     if (syncSpamCounter > 0)
       return;
 
+#if defined(PLATFORM_STM32)
+    ConfigChangeCommit();
+#else
     // wait until no longer transmitting
     while (busyTransmitting);
     // Set the commitInProgress flag to prevent any other RF SPI traffic during the commit from RX or scheduled TX
@@ -834,6 +853,7 @@ static void CheckConfigChangePending()
       TelemetryRcvPhase = ttrpTransmitting;
     }
     ConfigChangeCommit();
+#endif
   }
 }
 
@@ -1330,11 +1350,17 @@ static void setupSerial()
   {
     serialPort = new NullStream();
   }
+#elif defined(PLATFORM_STM32)
+  Stream *serialPort = new NullStream();
 #endif
   BackpackOrLogStrm = serialPort;
 
 // Setup TxUSB
-#if defined(PLATFORM_ESP32_S3)
+#if defined(PLATFORM_STM32)
+  Serial.begin(460800); // CDC serial logging on STM32
+  Serial.dtr(false); // keep CDC active even without a host asserting DTR
+  TxUSB = &Serial;
+#elif defined(PLATFORM_ESP32_S3)
   // Because we have ARDUINO_USB_MODE enabled, we use USBSerial as the USB device.
   USBSerial.begin(firmwareOptions.uart_baud);
   TxUSB = &USBSerial;
@@ -1396,18 +1422,38 @@ bool setupHardwareFromOptions()
 {
   if (!options_init())
   {
+#if !defined(PLATFORM_STM32)
     // Register the WiFi with the framework
     static device_affinity_t wifi_device[] = {
         {&WIFI_device, 1}
     };
     devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
     devicesInit();
-
+#endif
     setConnectionState(hardwareUndefined);
     return false;
   }
   return true;
 }
+
+#if defined(PLATFORM_STM32)
+static void deriveStm32Uid(uint8_t out[UID_LEN])
+{
+    // Future: if (config.GetIsBound()) { memcpy(out, config.GetUID(), UID_LEN); return; }
+    const uint32_t w0 = HAL_GetUIDw0();
+    const uint32_t w1 = HAL_GetUIDw1();
+    const uint32_t w2 = HAL_GetUIDw2();
+    // XOR-fold 96 bits to 48 bits
+    const uint32_t a = w0 ^ (w2 >> 16);
+    const uint32_t b = w1 ^ (w2 & 0xFFFF);
+    out[0] = (a >> 24) & 0xFF;
+    out[1] = (a >> 16) & 0xFF;
+    out[2] = (a >>  8) & 0xFF;
+    out[3] = (a >>  0) & 0xFF;
+    out[4] = (b >>  8) & 0xFF;
+    out[5] = (b >>  0) & 0xFF;
+}
+#endif
 
 static void setupBindingFromConfig()
 {
@@ -1419,6 +1465,8 @@ static void setupBindingFromConfig()
   {
 #if defined(PLATFORM_ESP32)
     esp_read_mac(UID, ESP_MAC_WIFI_STA);
+#elif defined(PLATFORM_STM32)
+    deriveStm32Uid(UID);
 #else
     wifi_get_macaddr(STATION_IF, UID);
 #endif
@@ -1464,6 +1512,10 @@ static void checkSendLinkStatsToHandset(uint32_t now)
 
 void setup()
 {
+#ifdef SUPPRESS_LCD
+  pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
+  pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
+#endif
   if (setupHardwareFromOptions())
   {
     setupTarget();
@@ -1577,7 +1629,11 @@ void loop()
 
   // If the reboot time is set and the current time is past the reboot time then reboot.
   if (rebootTime != 0 && now > rebootTime) {
+#if defined(PLATFORM_STM32)
+    HAL_NVIC_SystemReset();
+#else
     ESP.restart();
+#endif
   }
 
   executeDeferredFunction(micros());
@@ -1592,7 +1648,9 @@ void loop()
   CheckReadyToSend();
   CheckConfigChangePending();
   DynamicPower_Update(now);
+#if !defined(PLATFORM_STM32)
   VtxPitmodeSwitchUpdate();
+#endif
   checkSendLinkStatsToHandset(now);
 
   if (DataDlReceiver.HasFinishedData())
@@ -1625,7 +1683,7 @@ void loop()
   // only send Uplink data when binding is not active
   if (InBindingMode)
   {
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR11XX)
     // Send half of the bind packets on the 2.4GHz domain
     if (BindingSendCount == BindingSpamAmount / 2) {
       SetRFLinkRate(enumRatetoIndex(RATE_DUALBAND_BINDING));

@@ -38,6 +38,12 @@ bool options_init()
     // Set defaults for firmware options
     memset(&firmwareOptions, 0, sizeof(firmwareOptions));
     firmwareOptions.uart_baud = 420000;
+#if defined(TARGET_TX)
+    // Set this to a sane default; A zero interval can make
+    // checkSendLinkStatsToHandset() queue link-stats every millis() tick,
+    // which keeps SerialOutFIFO non-empty and blocks the OpenTX mixer-sync
+    firmwareOptions.tlm_report_interval = 240U;
+#endif
 #if defined(TARGET_RX)
     firmwareOptions.lock_on_first_connection = true;
 #endif

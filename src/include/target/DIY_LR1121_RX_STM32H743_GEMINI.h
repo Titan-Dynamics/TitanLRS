@@ -8,27 +8,39 @@
 
 #define TARGET_DIY_LR1121_RX_STM32H743_GEMINI
 
-// GPIO pin definitions
-#define GPIO_PIN_NSS         PE0   // Chip Select
-#define GPIO_PIN_MOSI        PA7   // SPI1_SDO (SPI1_MOSI)
-#define GPIO_PIN_MISO        PA6   // SPI1_SDI (SPI1_MISO)
-#define GPIO_PIN_SCK         PA5   // SPI1_SCK
+// Radio1 on SPI4
+#define GPIO_PIN_NSS         PE0   // Chip Select (Radio 1)
+#define GPIO_PIN_MOSI        PE14  // SPI4_MOSI
+#define GPIO_PIN_MISO        PE13  // SPI4_MISO
+#define GPIO_PIN_SCK         PE12  // SPI4_SCK
 #define GPIO_PIN_RST         PE7   // Radio 1 Reset
 #define GPIO_PIN_DIO1        PE1   // LR1121 DIO9 IRQ (Radio 1)
 #define GPIO_PIN_BUSY        PE9   // BUSY (Radio 1)
 
-// Second LR1121 on shared SPI1
+// Radio2 on SPI4
 #define GPIO_PIN_NSS_2       PE8   // Chip Select (Radio 2)
-#define GPIO_PIN_RST_2       PE10  // Radio 2 Reset
-#define GPIO_PIN_DIO1_2      PE11  // LR1121 DIO9 IRQ (Radio 2)
-#define GPIO_PIN_BUSY_2      PE12  // BUSY (Radio 2)
+#define GPIO_PIN_RST_2       PE5   // Radio 2 Reset
+#define GPIO_PIN_DIO1_2      PE6   // LR1121 DIO9 IRQ (Radio 2)
+#define GPIO_PIN_BUSY_2      PE15  // BUSY (Radio 2)
 
-// On-board W25Q64 SPI NOR flash shares SPI1 - hold its CS high
-#define FLASH_CS_PIN         PD6
+// LCD shares SPI4 on the WeAct. Mute it at boot:
+//   PE11 = LCD_CS  -> hold HIGH (deassert, ignore bus)
+//   PE10 = LCD_LED -> hold HIGH  (backlight off)
+#define SUPPRESS_LCD            1
+#define GPIO_PIN_LCD_CS         PE11
+#define GPIO_PIN_LCD_BACKLIGHT  PE10
+
+// On-board W25Q64 SPI NOR flash on SPI1 (PB3 SCK, PB4 MISO, PD7 MOSI, PD6 CS)
+// Used as the EEPROM config on this target
+#define HAS_W25Q64_CONFIG
+#define W25Q64_SCK_PIN       PB3
+#define W25Q64_MISO_PIN      PB4
+#define W25Q64_MOSI_PIN      PD7
+#define W25Q64_CS_PIN        PD6
 
 // CRSF UART
-#define GPIO_PIN_RCSIGNAL_RX PB7   // USART1_RX
-#define GPIO_PIN_RCSIGNAL_TX PB6   // USART1_TX
+#define GPIO_PIN_RCSIGNAL_RX PB11  // USART3_RX
+#define GPIO_PIN_RCSIGNAL_TX PB10  // USART3_TX
 
 // Debug logging via USB CDC (Serial)
 #ifdef DEBUG_LOG
@@ -54,18 +66,18 @@
 #define WS2812_VTX_STATUS_LEDS_COUNT    0
 #define WS2812_BOOT_LEDS_COUNT          0
 
-// Button (boot button on WeAct Mini)
-#define GPIO_PIN_BUTTON                 PC13
+// BOOT0 on the STM32H7 is a strapping-only pin and can't be read as
+// a GPIO at runtime, so a custom board should route the (active-high) BOOT0 button net
+// to spare GPIO PE2 for the runtime user-button role
+#define GPIO_PIN_BUTTON                 PE2
+#define GPIO_BUTTON_ACTIVE_HIGH         1
 #define GPIO_PIN_BUTTON2                UNDEF_PIN
 
-// Use flash-emulated EEPROM (no external I2C EEPROM)
-#define STM32_USE_FLASH
-
+// LR1121 configuration
 #ifndef RADIO_LR1121
 #define RADIO_LR1121
 #endif
 
-// LR1121 configuration
 #define OPT_USE_HARDWARE_DCDC      true
 #define OPT_USE_SX1276_RFO_HF      0
 // #define OPT_USE_LR1121_TCXO        1

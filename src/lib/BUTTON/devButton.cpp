@@ -9,6 +9,16 @@
 static Button button1;
 static Button button2;
 
+// Button polarity. Default is active-low (idle high via internal pullup), matching
+// the ESP targets. A target whose button is wired active-high (idle low, driven to
+// VDD when pressed) sets GPIO_BUTTON_ACTIVE_HIGH / GPIO_BUTTON2_ACTIVE_HIGH to 1.
+#ifndef GPIO_BUTTON_ACTIVE_HIGH
+#define GPIO_BUTTON_ACTIVE_HIGH 0
+#endif
+#ifndef GPIO_BUTTON2_ACTIVE_HIGH
+#define GPIO_BUTTON2_ACTIVE_HIGH 0
+#endif
+
 // only check every second if the device is in-use, i.e. RX connected, or TX is armed
 static constexpr int MS_IN_USE = 1000;
 
@@ -68,13 +78,13 @@ static int start()
 {
     if (GPIO_PIN_BUTTON != UNDEF_PIN)
     {
-        button1.init(GPIO_PIN_BUTTON);
+        button1.init(GPIO_PIN_BUTTON, GPIO_BUTTON_ACTIVE_HIGH);
         button1.OnShortPress = [](){ handlePress(0, false, button1.getCount()); };
         button1.OnLongPress = [](){ handlePress(0, true, button1.getLongCount()+1); };
     }
     if (GPIO_PIN_BUTTON2 != UNDEF_PIN)
     {
-        button2.init(GPIO_PIN_BUTTON2);
+        button2.init(GPIO_PIN_BUTTON2, GPIO_BUTTON2_ACTIVE_HIGH);
         button2.OnShortPress = [](){ handlePress(1, false, button2.getCount()); };
         button2.OnLongPress = [](){ handlePress(1, true, button2.getLongCount()+1); };
     }
