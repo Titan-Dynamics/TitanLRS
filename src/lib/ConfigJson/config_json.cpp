@@ -9,10 +9,18 @@
 #include "FHSS.h"
 #include "devButton.h"
 
+#include "options_storage_stm32.h"
+
 #if defined(TARGET_TX)
 extern TxConfig config;
+static_assert(sizeof(tx_config_t) <= FW_OPTIONS_EEPROM_OFFSET,
+              "tx_config_t has grown into the persisted firmware options region "
+              "(see lib/OPTIONS/options_storage_stm32.h)");
 #else
 extern RxConfig config;
+static_assert(sizeof(rx_config_t) <= FW_OPTIONS_EEPROM_OFFSET,
+              "rx_config_t has grown into the persisted firmware options region "
+              "(see lib/OPTIONS/options_storage_stm32.h)");
 #endif
 
 // ---------------------------------------------------------------------------
@@ -49,10 +57,111 @@ void ConfigJson_BuildOptions(JsonObject options)
 
     options["is-airport"] = firmwareOptions.is_airport;
     options["domain"] = firmwareOptions.domain;
-    // Compile-time options are never "customised" at runtime on STM32 — the dynamic-options
-    // follow-up flips this once options can be persisted.
-    options["customised"] = false;
+    // True once anything has been written over the USB config API and persisted; the flag is
+    // stored in the options blob header (lib/OPTIONS/options_storage_stm32.h).
+    options["customised"] = options_IsCustomised();
     options["flash-discriminator"] = firmwareOptions.flash_discriminator;
+}
+
+// ---------------------------------------------------------------------------
+// Copy-adapt of devWIFI.cpp::UpdateSettings() (the `POST /options.json` handler).
+//
+// devWIFI simply writes the posted document to LittleFS and lets the next boot parse it; STM32
+// has no filesystem, so each key is applied to `firmwareOptions` here and the struct is persisted
+// by saveOptions(). That means this function — not a boot-time parser — is where validation has
+// to happen, hence the range checks that have no devWIFI counterpart.
+//
+// Every option is reboot-to-apply: UID, domain and the airport baud are all consumed during
+// setup(). The host prompts for the reboot (saveWithReboot()).
+// ---------------------------------------------------------------------------
+const char *ConfigJson_ApplyOptions(JsonVariant json)
+{
+    if (json["options"].is<JsonVariant>())
+    {
+        json = json["options"];
+    }
+
+    // Refuse a document that was fetched from a different board or a different firmware build.
+    // devWIFI only checks the discriminator; `target` is checked too because the USB transport
+    // makes it trivial to point a saved file at the wrong device.
+    if (json["target"].is<const char *>() &&
+        strcmp(json["target"].as<const char *>(), (const char *)&target_name[4]) != 0)
+    {
+        return "target mismatch";
+    }
+    if (json["flash-discriminator"].is<JsonVariant>() &&
+        json["flash-discriminator"].as<uint32_t>() != firmwareOptions.flash_discriminator)
+    {
+        return "mismatched device identifier, reload the configuration and try again";
+    }
+
+    // Everything below is applied to a scratch copy so that a value rejected half way through
+    // leaves the live options — and therefore the running radio — untouched.
+    firmware_options_t opts = firmwareOptions;
+
+    // Regulatory domain indexes domains[] in FHSS.cpp directly (FHSS.cpp: FHSSconfig =
+    // &domains[firmwareOptions.domain]), so an out-of-range value would read off the end of the
+    // table and put the radio on a garbage frequency. On 2.4 GHz-only builds the table has a
+    // single entry and any non-zero write is refused.
+    if (json["domain"].is<JsonVariant>())
+    {
+        const uint32_t domain = json["domain"].as<uint32_t>();
+        if (domain >= FHSSdomainCount)
+        {
+            return "unsupported regulatory domain";
+        }
+        opts.domain = (uint8_t)domain;
+    }
+
+    if (json["is-airport"].is<JsonVariant>()) opts.is_airport = json["is-airport"].as<bool>();
+
+#if defined(TARGET_TX)
+    // The binding phrase. An absent/empty array means "no override", matching the ESP path where
+    // a missing `uid` key clears hasUID (options.cpp::options_LoadFromFlashOrFile).
+    if (json["uid"].is<JsonArray>())
+    {
+        const auto juid = json["uid"].as<JsonArray>();
+        if (juid.size() == 0)
+        {
+            memset(opts.uid, 0, sizeof(opts.uid));
+            opts.hasUID = false;
+        }
+        else if (juid.size() != sizeof(opts.uid))
+        {
+            return "uid must be 6 bytes";
+        }
+        else
+        {
+            copyArray(juid, opts.uid, sizeof(opts.uid));
+            opts.hasUID = true;
+        }
+    }
+
+    if (json["tlm-interval"].is<JsonVariant>())
+    {
+        // A zero interval makes checkSendLinkStatsToHandset() queue link-stats every millis()
+        // tick, which blocks the OpenTX mixer sync — see options.cpp.
+        const uint32_t interval = json["tlm-interval"].as<uint32_t>();
+        opts.tlm_report_interval = interval ? interval : 1U;
+    }
+    if (json["fan-runtime"].is<JsonVariant>()) opts.fan_min_runtime = json["fan-runtime"].as<uint32_t>();
+    if (json["unlock-higher-power"].is<JsonVariant>()) opts.unlock_higher_power = json["unlock-higher-power"].as<bool>();
+    if (json["airport-uart-baud"].is<JsonVariant>()) opts.uart_baud = json["airport-uart-baud"].as<uint32_t>();
+#else
+    // RX binding lives in config.uid (jsonUidToConfig), not in firmwareOptions, so a posted `uid`
+    // is deliberately ignored here — the flashed UID stays the bind baseline.
+    if (json["rcvr-uart-baud"].is<JsonVariant>()) opts.uart_baud = json["rcvr-uart-baud"].as<uint32_t>();
+    if (json["lock-on-first-connection"].is<JsonVariant>()) opts.lock_on_first_connection = json["lock-on-first-connection"].as<bool>();
+    if (json["dji-permanently-armed"].is<JsonVariant>()) opts.dji_permanently_armed = json["dji-permanently-armed"].as<bool>();
+#endif
+
+    // `wifi-ssid` / `wifi-password` / `wifi-on-interval` are accepted and ignored — no WiFi
+    // hardware on STM32, but the host posts the whole options object back.
+
+    firmwareOptions = opts;
+    options_SetCustomised(true);
+    saveOptions();
+    return nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +493,8 @@ const char *ConfigJson_ApplyConfig(JsonVariant json)
 
 // ---------------------------------------------------------------------------
 // Mirror of the config/model portion of devWIFI.cpp::HandleReset().
-// The LittleFS removals (`hardware`, `options`, `lr1121`) have no STM32 equivalent.
+// The LittleFS removals (`hardware`, `lr1121`) have no STM32 equivalent; the `options` removal
+// maps onto options_SetTrueDefaults(), which re-seeds the persisted blob from the flashed values.
 // ---------------------------------------------------------------------------
 void ConfigJson_Reset(const bool resetConfig, const bool resetOptions)
 {
@@ -395,7 +505,7 @@ void ConfigJson_Reset(const bool resetConfig, const bool resetOptions)
         config.SetForceTlmOff(false);
         config.Commit();
 #endif
-        // No stored options file to erase on STM32 (options are compile-time).
+        options_SetTrueDefaults();
     }
     if (resetConfig)
     {

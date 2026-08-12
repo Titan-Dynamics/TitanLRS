@@ -50,6 +50,8 @@ const fhss_config_t domains[] = {
 };
 #endif
 
+const uint8_t FHSSdomainCount = sizeof(domains) / sizeof(domains[0]);
+
 // Our table of FHSS frequencies. Define a regulatory domain to select the correct set for your location and radio
 const fhss_config_t *FHSSconfig;
 const fhss_config_t *FHSSconfigDualBand;

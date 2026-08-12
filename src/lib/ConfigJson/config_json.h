@@ -21,6 +21,8 @@
  *   - GetConfiguration()        -> ConfigJson_BuildConfig()
  *   - GetConfigUidType()        -> (static) getConfigUidType()
  *   - UpdateConfiguration()     -> ConfigJson_ApplyConfig()   (both the TX and the RX variant)
+ *   - UpdateSettings()          -> ConfigJson_ApplyOptions()  (POST /options.json; devWIFI stores
+ *                                  the posted document verbatim, STM32 applies it field by field)
  *   - ImportConfiguration()     -> ConfigJson_ApplyConfig()   (TX; handles the superset)
  *   - JsonUidToConfig()         -> (static) jsonUidToConfig()  (RX)
  *   - HandleReset()             -> ConfigJson_Reset()          (config/model part only)
@@ -35,10 +37,13 @@
  *   - serial1 / PWM feature bits that reference ESP GPIO symbols (U0TXD_GPIO_NUM etc.) are
  *     dropped; all STM32 RX targets have GPIO_PIN_PWM_OUTPUTS_COUNT == 0 so the `pwm` array
  *     is empty and the panel self-hides.
- *   - LittleFS removals in HandleReset() do not exist on STM32.
- *   - Options are READ-ONLY on this platform for now (compile-time, see lib/OPTIONS/options.cpp
- *     PLATFORM_STM32 branch), so there is no ConfigJson_ApplyOptions(). The dynamic-options
- *     follow-up adds it.
+ *   - LittleFS removals in HandleReset() do not exist on STM32; `?options` maps onto
+ *     options_SetTrueDefaults().
+ *   - Options are persisted in the elrs_eeprom blob rather than /options.json, so
+ *     ConfigJson_ApplyOptions() validates and applies each field instead of storing the document
+ *     (see lib/OPTIONS/options_storage_stm32.h). New writable options added upstream must be
+ *     mirrored into it by hand.
+ *   - WiFi options are accepted and ignored — no WiFi hardware.
  */
 
 #if defined(PLATFORM_STM32)
@@ -74,12 +79,26 @@ void ConfigJson_BuildOptions(JsonObject options);
 const char *ConfigJson_ApplyConfig(JsonVariant json);
 
 /**
+ * @brief Apply a posted options document, mirroring `POST /options.json`.
+ *
+ * Accepts either the bare options object or a wrapper containing an `options` key. Validates the
+ * document against this device (`target`, `flash-discriminator`) and each value's range, applies
+ * it to `firmwareOptions`, marks the options as customised and persists them.
+ *
+ * All options are reboot-to-apply; nothing is re-applied live.
+ *
+ * @return nullptr on success, or a human-readable error string (device left unchanged for the
+ *         guard failures; range failures are rejected before anything is persisted).
+ */
+const char *ConfigJson_ApplyOptions(JsonVariant json);
+
+/**
  * @brief Mirrors the config/model part of devWIFI.cpp::HandleReset().
  *
  * @param resetConfig  reset the config/model store to defaults (`?config` / `?model`)
- * @param resetOptions reserved for the dynamic-options follow-up; on RX it still performs the
- *                     modelid/force-tlm reset the ESP `?options` path does. No stored options
- *                     exist to erase on STM32 yet.
+ * @param resetOptions discard the persisted firmware options and re-seed from the flashed values
+ *                     (`?options`); on RX it also performs the modelid/force-tlm reset the ESP
+ *                     path does.
  */
 void ConfigJson_Reset(bool resetConfig, bool resetOptions);
 
