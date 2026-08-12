@@ -15,9 +15,16 @@ Examples
     ./titan_usbcfg.py get --export -o models.json
     ./titan_usbcfg.py set models.json
     ./titan_usbcfg.py set '{"serial-protocol": 0}'
-    ./titan_usbcfg.py reset --config
+    ./titan_usbcfg.py get-options -o options.json
+    ./titan_usbcfg.py set-options '{"tlm-interval": 320}'
+    ./titan_usbcfg.py set-options --uid 1,2,3,4,5,6      # TX binding phrase UID
+    ./titan_usbcfg.py reset --options
     ./titan_usbcfg.py reboot
     ./titan_usbcfg.py soak 100
+    ./titan_usbcfg.py soak 100 --options
+
+`set-options` merges the given keys into the device's current options document (the same thing
+the web dashboard does), so a partial document is safe: everything unmentioned is preserved.
 
 The port is auto-detected by USB VID:PID 0483:5740; override with `-p /dev/tty.usbmodemXXXX`.
 """
@@ -285,14 +292,53 @@ def cmd_get(sess, args):
         print(text)
 
 
-def cmd_set(sess, args):
-    source = args.document
+def load_document(source):
+    """A subcommand argument is either a path to a JSON file or inline JSON."""
     try:
         with open(source) as fh:
-            doc = json.load(fh)
+            return json.load(fh)
     except (OSError, IOError):
-        doc = json.loads(source)
-    print(sess.set(doc))
+        return json.loads(source)
+
+
+def cmd_set(sess, args):
+    print(sess.set(load_document(args.document)))
+
+
+def cmd_get_options(sess, args):
+    doc = sess.get(RES_OPTIONS)
+    text = json.dumps(doc, indent=2)
+    if args.output:
+        with open(args.output, "w") as fh:
+            fh.write(text + "\n")
+        print("wrote %s (%d bytes)" % (args.output, len(text)))
+    else:
+        print(text)
+
+
+def cmd_set_options(sess, args):
+    if not (sess.features & (1 << 0)):
+        sys.exit("device does not advertise the options-write feature "
+                 "(features=0x%08X) — flash a firmware with dynamic options" % sess.features)
+
+    changes = load_document(args.document) if args.document else {}
+    if args.uid is not None:
+        uid = [int(x, 0) for x in args.uid.split(",")] if args.uid else []
+        if uid and len(uid) != 6:
+            sys.exit("--uid takes 6 comma-separated bytes (or an empty value to clear it)")
+        changes["uid"] = uid
+    if not changes:
+        sys.exit("nothing to set: pass a JSON document/file and/or --uid")
+
+    if args.replace:
+        doc = changes
+    else:
+        # Merge into the live document, exactly like the dashboard's state.js does, so a partial
+        # document does not have to restate every option.
+        doc = sess.get(RES_OPTIONS)
+        doc.update(changes)
+    doc["customised"] = True
+    print(sess.set(doc, resource=RES_OPTIONS))
 
 
 def cmd_reboot(sess, args):
@@ -307,23 +353,48 @@ def cmd_reset(sess, args):
     print("reset complete, rebooting")
 
 
+def soak_cycle_config(sess):
+    before = sess.get()
+    cfg = before.get("config", {})
+    if sess.hello.get("module-type") == "RX":
+        probe = {"serial-protocol": cfg.get("serial-protocol", 0)}
+    else:
+        probe = {"button-actions": cfg.get("button-actions", [])}
+    sess.set(probe)
+    after = sess.get()
+    for key in probe:
+        if after.get("config", {}).get(key) != before.get("config", {}).get(key):
+            raise DeviceError(7, "round-trip mismatch on '%s'" % key)
+
+
+def soak_cycle_options(sess):
+    """Write a changed value back and read it out again — each cycle is a flash commit."""
+    key = "tlm-interval" if sess.hello.get("module-type") == "TX" else "rcvr-uart-baud"
+    before = sess.get(RES_OPTIONS)
+    original = before.get(key)
+    if original is None:
+        raise DeviceError(7, "device did not report '%s'" % key)
+    doc = dict(before)
+    # A value the device will not clamp or reject, distinct from the current one.
+    doc[key] = original + 1
+    doc["customised"] = True
+    sess.set(doc, resource=RES_OPTIONS)
+    after = sess.get(RES_OPTIONS)
+    if after.get(key) != original + 1:
+        raise DeviceError(7, "round-trip mismatch on '%s': got %r" % (key, after.get(key)))
+    # Put it back so a soak run leaves the device where it started.
+    doc[key] = original
+    sess.set(doc, resource=RES_OPTIONS)
+
+
 def cmd_soak(sess, args):
     """N get/set/verify cycles — the regression test for the session mux."""
     failures = 0
     started = time.time()
+    cycle = soak_cycle_options if args.options else soak_cycle_config
     for i in range(args.count):
         try:
-            before = sess.get()
-            cfg = before.get("config", {})
-            if sess.hello.get("module-type") == "RX":
-                probe = {"serial-protocol": cfg.get("serial-protocol", 0)}
-            else:
-                probe = {"button-actions": cfg.get("button-actions", [])}
-            sess.set(probe)
-            after = sess.get()
-            for key in probe:
-                if after.get("config", {}).get(key) != before.get("config", {}).get(key):
-                    raise DeviceError(7, "round-trip mismatch on '%s'" % key)
+            cycle(sess)
         except (DeviceError, TimeoutError) as exc:
             failures += 1
             print("cycle %d FAILED: %s" % (i, exc))
@@ -358,6 +429,18 @@ def main(argv=None):
     s.add_argument("document")
     s.set_defaults(fn=cmd_set)
 
+    go = sub.add_parser("get-options", help="read the firmware options document")
+    go.add_argument("-o", "--output", help="write JSON to this file instead of stdout")
+    go.set_defaults(fn=cmd_get_options)
+
+    so = sub.add_parser("set-options",
+                        help="write firmware options (merged into the device's current document)")
+    so.add_argument("document", nargs="?", help="file path or inline JSON of the keys to change")
+    so.add_argument("--uid", help="TX binding UID as 6 comma-separated bytes, or '' to clear")
+    so.add_argument("--replace", action="store_true",
+                    help="send the document as-is instead of merging it into the current options")
+    so.set_defaults(fn=cmd_set_options)
+
     sub.add_parser("reboot", help="reboot the device").set_defaults(fn=cmd_reboot)
 
     r = sub.add_parser("reset", help="reset config/options to defaults and reboot")
@@ -367,6 +450,8 @@ def main(argv=None):
 
     k = sub.add_parser("soak", help="N get/set/verify cycles")
     k.add_argument("count", type=int)
+    k.add_argument("--options", action="store_true",
+                   help="round-trip the options resource instead of the config resource")
     k.add_argument("--stop-on-error", action="store_true")
     k.set_defaults(fn=cmd_soak)
 

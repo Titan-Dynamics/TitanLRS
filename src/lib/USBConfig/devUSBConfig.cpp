@@ -98,9 +98,9 @@ static void handleHello()
     doc["radio-type"] = "UNKNOWN";
 #endif
 
-    // Options are read-only on STM32 for now; the dynamic-options follow-up sets
-    // TCFG_FEATURE_OPTIONS_WRITE here and the dashboard lights up its save buttons.
-    const uint32_t features = 0;
+    // Options are runtime-writable and persisted (lib/OPTIONS/options_storage_stm32.h), which is
+    // what lights up the save buttons on the dashboard's binding and options panels.
+    const uint32_t features = TCFG_FEATURE_OPTIONS_WRITE;
 
     uint8_t payload[USBCFG_PAYLOAD_MAX];
     payload[0] = USBCFG_PROTOCOL_VERSION;
@@ -173,12 +173,10 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     const uint8_t flags = p[3];
     uint16_t offset = 4;
 
-    if (resource != TCFG_RES_CONFIG)
+    if (resource != TCFG_RES_CONFIG && resource != TCFG_RES_OPTIONS)
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_UNSUPPORTED,
-                          resource == TCFG_RES_OPTIONS ? "options are read-only on this firmware"
-                                                       : "unknown resource");
+        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_UNSUPPORTED, "unknown resource");
         return;
     }
 
@@ -219,6 +217,12 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     if (!s_setActive)
     {
         usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "no chunk sequence in progress");
+        return;
+    }
+    if (resource != s_setResource)
+    {
+        setAbort();
+        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "resource changed mid-sequence");
         return;
     }
     if (seq != s_setNextSeq)
@@ -263,13 +267,18 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     s_setLen = 0;
     s_setActive = false;
 
-    const char *applyErr = ConfigJson_ApplyConfig(doc.as<JsonVariant>());
+    // Options are all reboot-to-apply, but we never reboot ourselves — the host drives that with
+    // TCFG_REBOOT once the user accepts the prompt.
+    const char *applyErr = s_setResource == TCFG_RES_OPTIONS
+                               ? ConfigJson_ApplyOptions(doc.as<JsonVariant>())
+                               : ConfigJson_ApplyConfig(doc.as<JsonVariant>());
     if (applyErr)
     {
         setFinalResponse(TCFG_ERR_INTERNAL, applyErr);
         return;
     }
-    setFinalResponse(0, "Configuration updated");
+    setFinalResponse(0, s_setResource == TCFG_RES_OPTIONS ? "Options updated - reboot to apply"
+                                                          : "Configuration updated");
 }
 
 // ---------------------------------------------------------------------------------------

@@ -42,7 +42,7 @@ enum : uint16_t {
 // ---- resources ------------------------------------------------------------------------
 enum : uint8_t {
     TCFG_RES_CONFIG  = 0,   // the full /config document: options + config + settings
-    TCFG_RES_OPTIONS = 1,   // GET only for now; SET answers ERR_UNSUPPORTED
+    TCFG_RES_OPTIONS = 1,   // firmwareOptions; SET requires the OPTIONS_WRITE feature bit
 };
 
 // ---- GET request flags ----------------------------------------------------------------
@@ -53,7 +53,7 @@ enum : uint8_t {
 #define TCFG_RESETFLAG_OPTIONS (1u << 1) // mirrors `?options`
 
 // ---- HELLO feature bitmask ------------------------------------------------------------
-#define TCFG_FEATURE_OPTIONS_WRITE (1u << 0) // SET(options) supported (dynamic-options follow-up)
+#define TCFG_FEATURE_OPTIONS_WRITE (1u << 0) // SET(options) supported and persisted
 #define TCFG_FEATURE_CW            (1u << 1) // continuous-wave control (Phase 1.3)
 #define TCFG_FEATURE_LR1121_UPDATE (1u << 2) // LR1121 firmware upload (Phase 1.3)
 
