@@ -38,6 +38,32 @@ export function postJSON(url, data, opts = {}) {
   return post(url, data, opts)
 }
 
+// Save settings that only take effect at boot: confirm up front, then save and reboot without a
+// second prompt. Cancelling leaves the device untouched — nothing is written. The button that
+// triggers this reads "Save & Reboot", so the confirmation is never a surprise.
+export function saveAndReboot(title, errorTitle, saveFn, changes, successCB,
+                              message = 'These settings are applied when the device boots. Save them and reboot now?') {
+  return cuteAlert({
+    type: 'question',
+    title,
+    message,
+    confirmText: 'Save & Reboot',
+    cancelText: 'Cancel',
+  }).then((res) => {
+    if (res !== 'confirm') return
+    return Promise.resolve()
+      .then(() => saveFn(changes))
+      .then(() => {
+        if (successCB) successCB()
+        // fire-and-forget reboot
+        Promise.resolve(transport.reboot()).catch(() => {})
+      })
+      .catch(async (err) => {
+        await errorAlert(errorTitle, (err && err.message) || 'Request failed')
+      })
+  })
+}
+
 // Run a save action (a function returning a Promise, normally a transport method) and then
 // show the reboot prompt on success. `saveFn` replaces what used to be a hard-coded URL, which
 // is what lets the same panels run over HTTP on-device and over WebSerial in the web flasher.

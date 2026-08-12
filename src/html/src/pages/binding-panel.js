@@ -43,18 +43,6 @@ class BindingPanel extends LitElement {
         return elrsState.config.uid
     }
 
-    // True when a saved TX binding phrase has not been applied yet (it applies at boot).
-    _rebootPending() {
-        // FEATURE:IS_TX
-        const saved = elrsState.options && elrsState.options.uid
-        const live = elrsState.config.uid
-        if (Array.isArray(saved) && Array.isArray(live) && saved.length === live.length) {
-            return saved.some((b, i) => b !== live[i])
-        }
-        // /FEATURE:IS_TX
-        return false
-    }
-
     render() {
         const uidChipClass = this._uidChipClass()
         const isDirty = this.uidData.uidtype === 'Modified'
@@ -117,19 +105,6 @@ which will be copied to the UID field and used as-is.
                             <span class="td-chip ${sourceChipClass}" style="width: fit-content;">${this.uidSource}</span>
                         </div>
 
-                        <!-- FEATURE:IS_TX -->
-                        ${this._rebootPending() ? html`
-                            <div class="td-notice" style="margin-bottom: var(--td-s-3);">
-                                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="var(--td-warn)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v3.5M8 5.25v.01"/></svg>
-                                <p class="td-small td-mute" style="margin: 0; line-height: 1.5;">
-                                    Saved, but <strong>not yet in use</strong> — the binding phrase is applied when the
-                                    transmitter boots. It is still linking on <span class="td-mono">${(elrsState.config.uid || []).join(',')}</span>
-                                    until you reboot it.
-                                </p>
-                            </div>
-                        ` : ''}
-                        <!-- /FEATURE:IS_TX -->
-
                         <!-- FEATURE:NOT IS_TX -->
                         ${this.uidData.uidtype === 'Loaned' ? html`
                             <div class="td-notice" style="margin-bottom: var(--td-s-3);">
@@ -152,7 +127,10 @@ which will be copied to the UID field and used as-is.
                     <!-- /FEATURE:NOT IS_TX -->
                     <button class="td-btn td-btn-primary"
                             ?disabled=${!this.checkChanged() || this.uidSource === 'invalid'}
-                            @click="${this._submitOptions}">Save Binding</button>
+                            @click="${this._submitOptions}">
+                        <!-- FEATURE:IS_TX -->Save &amp; Reboot<!-- /FEATURE:IS_TX -->
+                        <!-- FEATURE:NOT IS_TX -->Save Binding<!-- /FEATURE:NOT IS_TX -->
+                    </button>
                 </div>
             </div>
         `
@@ -274,6 +252,7 @@ which will be copied to the UID field and used as-is.
 
         // FEATURE:IS_TX
         let tx_changes = { customised: true, uid: this.uid }
+        // The UID is only applied during setup(), so this is a confirm-save-reboot flow.
         saveOptions(tx_changes, () => {
             this.originalUID = this.uid
             this.originalUIDType = 'Overridden'
@@ -282,7 +261,7 @@ which will be copied to the UID field and used as-is.
             this.uidSource = 'current'
             this._updateUIDType(this.originalUIDType)
             return this.requestUpdate()
-        })
+        }, {reboot: true})
         // /FEATURE:IS_TX
         // FEATURE:NOT IS_TX
         const rx_changes = { uid: this.uid, vbind: this.bindType }

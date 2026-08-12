@@ -1,5 +1,5 @@
 import {State} from "@lit-app/state";
-import {errorAlert, saveWithReboot} from "./feedback.js";
+import {saveAndReboot, saveWithReboot} from "./feedback.js";
 import {transport} from "./transport.js";
 
 class ElrsState extends State {
@@ -19,7 +19,9 @@ export function formatBand() {
     }
 }
 
-export function saveConfig(changes, successCB) {
+// Merge posted changes over the live config, carrying the PWM channel settings across (they are
+// held as objects in the state but posted as raw values).
+function mergeConfig(changes) {
     const currentPWM = elrsState.config.pwm
     if (changes.pwm) {
         // update pwm settings
@@ -33,7 +35,11 @@ export function saveConfig(changes, successCB) {
             changes.pwm.push(currentPWM[i].config)
         }
     }
-    const newConfig = {...elrsState.config, ...changes}
+    return {newConfig: {...elrsState.config, ...changes}, currentPWM}
+}
+
+export function saveConfig(changes, successCB) {
+    const {newConfig, currentPWM} = mergeConfig(changes)
     return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
         (cfg) => transport.saveConfig(cfg), newConfig, () => {
             elrsState.config = {...newConfig, pwm: currentPWM}
@@ -41,25 +47,40 @@ export function saveConfig(changes, successCB) {
         })
 }
 
-export function saveOptions(changes, successCB) {
+/**
+ * Save firmware options.
+ *
+ * Every option is applied during setup() (UID, regulatory domain, baud rates), so callers whose
+ * panel offers a "Save & Reboot" button pass `reboot: true` to get the confirm-save-reboot flow
+ * instead of the save-then-offer-a-reboot one.
+ */
+export function saveOptions(changes, successCB, {reboot = false} = {}) {
     const newOptions = {...elrsState.options, ...changes, customised: true}
+    const apply = () => {
+        elrsState.options = newOptions
+        if (successCB) successCB()
+    }
+    const save = (opts) => transport.saveOptions(opts)
+    if (reboot) {
+        return saveAndReboot('Save & Reboot', 'Configuration Update Failed', save, newOptions, apply)
+    }
     return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
-        (opts) => transport.saveOptions(opts), newOptions, () => {
-            elrsState.options = newOptions
-            if (successCB) successCB()
-        })
+        save, newOptions, apply)
 }
 
+// Options + config in one transaction. The options half is always reboot-to-apply, so this is
+// always the confirm-save-reboot flow.
 export function saveOptionsAndConfig(changes, successCB) {
     const newOptions = {...elrsState.options, ...changes.options, customised: true}
-    return Promise.resolve()
-        .then(() => transport.saveOptions(newOptions))
-        .then(() => saveConfig(changes.config, () => {
+    const {newConfig, currentPWM} = mergeConfig(changes.config)
+    return saveAndReboot('Save & Reboot', 'Configuration Update Failed',
+        () => Promise.resolve()
+            .then(() => transport.saveOptions(newOptions))
+            .then(() => transport.saveConfig(newConfig)),
+        null, () => {
             elrsState.options = newOptions
+            elrsState.config = {...newConfig, pwm: currentPWM}
             if (successCB) successCB()
-        }))
-        .catch(async (err) => {
-            await errorAlert('Configuration Update Failed', (err && err.message) || 'Request failed')
         })
 }
 
