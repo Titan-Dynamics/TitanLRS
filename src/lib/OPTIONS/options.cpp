@@ -28,14 +28,75 @@ const char *wifi_ap_address = "10.0.0.1";
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
 #elif defined(PLATFORM_STM32)
-// STM32: compile-time fixed target, no runtime JSON loading
+// STM32: compile-time fixed target, no runtime JSON loading. Options that the user changes over
+// the USB config API are persisted into the elrs_eeprom blob — see options_storage_stm32.h.
+#include "elrs_eeprom.h"
+#include "options_storage_stm32.h"
+
+// The shared EEPROM instance, defined in tx_main.cpp / rx_main.cpp
+extern ELRS_EEPROM eeprom;
+
+static_assert(FW_OPTIONS_EEPROM_OFFSET + sizeof(fw_options_header_t) + sizeof(firmware_options_t)
+                  <= RESERVED_EEPROM_SIZE,
+              "persisted firmware_options_t does not fit in the EEPROM blob");
+
 char product_name[ELRSOPTS_PRODUCTNAME_SIZE+1];
 char device_name[ELRSOPTS_DEVICENAME_SIZE+1];
 firmware_options_t firmwareOptions;
 
-bool options_init()
+static bool optionsCustomised = false;
+
+// CRC16/CCITT-FALSE: init=0xFFFF, poly=0x1021, no final XOR. Takes the running remainder so a CRC
+// can span the header and the payload without copying them into one buffer.
+static uint16_t fw_options_crc(uint16_t crc, const uint8_t *data, size_t len)
 {
-    // Set defaults for firmware options
+    while (len--)
+    {
+        crc ^= (uint16_t)(*data++) << 8;
+        for (int i = 0; i < 8; i++)
+        {
+            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+// CRC of a header (up to but not including its own `crc` member) followed by the options payload.
+static uint16_t fw_options_blobCrc(const fw_options_header_t &hdr, const firmware_options_t &opts)
+{
+    uint16_t crc = fw_options_crc(0xFFFF, (const uint8_t *)&hdr, offsetof(fw_options_header_t, crc));
+    return fw_options_crc(crc, (const uint8_t *)&opts, sizeof(opts));
+}
+
+/**
+ * @brief Build-identity value stored alongside the options.
+ *
+ * Mirrors the ESP "flash-discriminator" contract: re-flashing the device (new firmware commit) or
+ * flashing with a different binding phrase invalidates any stored overrides, so the freshly
+ * flashed values win. FNV-1a over LATEST_COMMIT and MY_UID.
+ */
+static uint32_t fw_options_discriminator()
+{
+    uint32_t hash = 2166136261UL;
+    for (const char *p = commit; *p; ++p)
+    {
+        hash ^= (uint8_t)*p;
+        hash *= 16777619UL;
+    }
+#if defined(MY_UID)
+    const uint8_t myUid[] = { MY_UID };
+    for (size_t i = 0; i < sizeof(myUid); ++i)
+    {
+        hash ^= myUid[i];
+        hash *= 16777619UL;
+    }
+#endif
+    // 0 means "no discriminator" in the ESP options.json, so never produce it.
+    return hash ? hash : 1U;
+}
+
+static void applyCompileTimeDefaults()
+{
     memset(&firmwareOptions, 0, sizeof(firmwareOptions));
     firmwareOptions.uart_baud = 420000;
 #if defined(TARGET_TX)
@@ -54,6 +115,114 @@ bool options_init()
     memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
     firmwareOptions.hasUID = true;
 #endif
+    // Regulatory domain — index into FHSS.cpp's domains[]. The upstream ESP path gets this from
+    // options.json; on STM32 it comes from the build define unless persisted otherwise. Without
+    // this the domain would always read 0 (AU915), which is wrong on every other build.
+#if defined(Regulatory_Domain_AU_915)
+    firmwareOptions.domain = 0;
+#elif defined(Regulatory_Domain_FCC_915)
+    firmwareOptions.domain = 1;
+#elif defined(Regulatory_Domain_EU_868)
+    firmwareOptions.domain = 2;
+#elif defined(Regulatory_Domain_IN_866)
+    firmwareOptions.domain = 3;
+#elif defined(Regulatory_Domain_AU_433)
+    firmwareOptions.domain = 4;
+#elif defined(Regulatory_Domain_EU_433)
+    firmwareOptions.domain = 5;
+#elif defined(Regulatory_Domain_US_433)
+    firmwareOptions.domain = 6;
+#elif defined(Regulatory_Domain_US_433_WIDE)
+    firmwareOptions.domain = 7;
+#endif
+    // 2.4 GHz domains (ISM_2400 / EU_CE_2400) index the single-entry 2.4 GHz table, so 0 is correct.
+
+    firmwareOptions.flash_discriminator = fw_options_discriminator();
+    optionsCustomised = false;
+}
+
+bool options_IsCustomised()
+{
+    return optionsCustomised;
+}
+
+void options_SetCustomised(const bool customised)
+{
+    optionsCustomised = customised;
+}
+
+void saveOptions()
+{
+    fw_options_header_t hdr;
+    hdr.magic      = FW_OPTIONS_MAGIC;
+    hdr.version    = FW_OPTIONS_VERSION;
+    hdr.size       = (uint16_t)sizeof(firmware_options_t);
+    hdr.customised = optionsCustomised ? 1 : 0;
+    hdr._reserved  = 0;
+    hdr.crc        = fw_options_blobCrc(hdr, firmwareOptions);
+
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), firmwareOptions);
+    eeprom.Commit();
+}
+
+/**
+ * @brief Discard every stored override and go back to the flashed values (mirrors the ESP
+ *        options_SetTrueDefaults(), which writes a near-empty options.json).
+ */
+void options_SetTrueDefaults()
+{
+    // The ESP version retains the regulatory domain "as there is no sensible default"; on STM32
+    // there is one — the domain the firmware was built for — so everything is re-seeded.
+    applyCompileTimeDefaults();
+    saveOptions();
+}
+
+bool options_init()
+{
+    // Compile-time defaults are the baseline; anything persisted is layered on top.
+    applyCompileTimeDefaults();
+
+    // options_init() runs before the mains bring the EEPROM up (tx_main.cpp / rx_main.cpp call
+    // eeprom.Begin() later), so bring it up here. Begin() is an idempotent flash -> RAM-mirror
+    // read, making the later call a harmless re-read of the same bytes.
+    eeprom.Begin();
+
+    fw_options_header_t hdr;
+    eeprom.Get(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    if (hdr.magic != FW_OPTIONS_MAGIC || hdr.version != FW_OPTIONS_VERSION)
+    {
+        DBGLN("options: no stored blob, seeding compile-time defaults");
+        saveOptions();
+    }
+    else if (hdr.size != sizeof(firmware_options_t))
+    {
+        DBGLN("options: stored size %u != %u, discarding", (unsigned)hdr.size,
+              (unsigned)sizeof(firmware_options_t));
+        saveOptions();
+    }
+    else
+    {
+        firmware_options_t loaded;
+        eeprom.Get(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), loaded);
+        if (fw_options_blobCrc(hdr, loaded) != hdr.crc)
+        {
+            DBGLN("options: stored CRC mismatch, discarding");
+            saveOptions();
+        }
+        else if (loaded.flash_discriminator != firmwareOptions.flash_discriminator)
+        {
+            DBGLN("options: reflashed (discriminator changed), discarding stored options");
+            saveOptions();
+        }
+        else
+        {
+            firmwareOptions = loaded;
+            optionsCustomised = hdr.customised != 0;
+            DBGLN("options: loaded from flash (customised=%u)", (unsigned)optionsCustomised);
+        }
+    }
+
     // Copy target name, truncating to fit
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
     product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';

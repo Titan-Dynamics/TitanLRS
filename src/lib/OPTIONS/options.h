@@ -69,4 +69,10 @@ bool options_HasStringInFlash(EspFlashStream &strmFlash);
 void options_SetTrueDefaults();
 #elif defined(PLATFORM_STM32)
 extern char product_name[];
+// Options are persisted in the elrs_eeprom blob — see lib/OPTIONS/options_storage_stm32.h.
+// Writers live in lib/ConfigJson (the USB config API); nothing else should call saveOptions().
+extern void saveOptions();
+extern void options_SetTrueDefaults();
+extern bool options_IsCustomised();
+extern void options_SetCustomised(bool customised);
 #endif
