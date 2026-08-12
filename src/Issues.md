@@ -73,23 +73,36 @@ reception is not being resumed after the CDC receive queue fills. Relevant core 
 | A crash / watchdog reset on the RX | Row 7: the USB port never re-enumerates |
 | The MSPv2 parser (`UsbCfgParser::feed`) | Byte-fed state machine, correct across call boundaries, `USBCFG_PAYLOAD_MAX` = 1024 |
 
-### Root cause (candidate, fix applied — hardware verification pending)
+### Root cause
 
-Rows 9 and 10 put it in the CDC receive path: the device is alive and the bytes are lost on
-arrival, only when more than about one packet lands before the RX drains.
+Rows 9-13 pin it down:
 
-The RX drain read the port **one byte at a time**, and `USBSerial::read()` calls
-`CDC_resume_receive()` on every byte from the main loop while the USB ISR calls it too from
-`CDC_Receive_FS`. Both go through `CDC_ReceiveQueue_ReserveBlock()`, which rewrites the queue's
-`length`/`write` wrap bookkeeping — and that wrap is only reached once more than ~128 bytes have
-flowed, which is exactly the measured threshold. The core's thread-safety argument for that
-function ("IRQ may occur only if receivePended is true") does not cover a main-loop caller
-hammering it per byte.
+| # | Test | Result |
+|---|---|---|
+| 11 | Same 167 B frame, burst vs. paced (repeated on the block-read build) | burst still fails — **the byte-at-a-time drain was not the cause**; that hypothesis is refuted |
+| 12 | Did a failed burst apply anyway? | no — `rcvr-uart-baud` unchanged, so the **request is lost inbound**, it is not a lost reply |
+| 13 | After a failed burst, 12 paced 9-byte PINGs on the **same open port** over 6 s | **total silence** — a desynced parser would have resynced within a few frames, so **reception is permanently paused** until the port is reopened |
 
-The TX — the only working row throughout — never does this: `tx_main` reads
-`readBytes(buf, min(free, available()))`, one block read and one resume per drain. The RX now does
-the same. Also added: `s_parser.reset()` on session close, so a truncated frame can no longer leave
-the parser mid-payload swallowing the next session's first command (row 8).
+The STM32duino CDC receive queue is `USB_FS_MAX_PACKET_SIZE × CDC_RECEIVE_QUEUE_BUFFER_PACKET_NUMBER`
+= 64 × 3 = 192 bytes, and `CDC_ReceiveQueue_ReserveBlock()` will only hand out a block when a whole
+64-byte packet still fits. Two packets in and it returns NULL, so `CDC_resume_receive()` stops
+re-arming the OUT endpoint — and on this core that pause is never lifted again, even though the
+application drains the queue and `USBSerial::read()`/`readBytes()` both call `CDC_resume_receive()`
+afterwards. Anything over ~127 bytes on the wire therefore kills the port until it is reopened.
+
+The TX escaped it only by draining every loop iteration instead of every 10 ms, so the queue never
+reached the pause point in normal use.
+
+**Fix:** `-D CDC_RECEIVE_QUEUE_BUFFER_PACKET_NUMBER=32` in `env_common_stm32` — a 2 KB receive
+queue, verified in the map file (`ReceiveQueue` 198 B → 2054 B). The largest frame the protocol can
+send is `USBCFG_CHUNK_MAX` + headers = 1017 B, and the host waits for a per-chunk ack, so no more
+than one chunk is ever in flight: the queue can no longer fill, and the broken pause path is never
+entered.
+
+**This avoids the core defect rather than repairing it.** The resume-after-pause path in
+`libraries/USBDevice` remains broken; if a future feature streams more than 2 KB at the RX without
+waiting for acks it will hit the same wall. The durable fix is to drain the port from the RX main
+loop the way `tx_main` does, instead of from a 10 ms device hook.
 
 ### Next step
 
