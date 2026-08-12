@@ -397,14 +397,29 @@ static int timeout()
 {
 #if defined(TARGET_RX)
     // RX drains the port itself; TX is fed from HandleUARTin().
+    //
+    // Read only what has actually arrived. Stream::readBytes() blocks until it has filled the
+    // buffer it was given or the stream timeout expires (1 s by default on STM32duino), so asking
+    // for a fixed 128 bytes stalled here for a full second on every frame shorter than that —
+    // which is every HELLO / PING / GET / REBOOT and the last chunk of every SET. That put ~1 s
+    // into each round trip, pushed saves past the host's 2 s request timeout ("Device did not
+    // respond"), and blocked the RX main loop while it waited. tx_main has always read
+    // min(free, available()), which is why the TX side was unaffected.
     if (s_port != nullptr)
     {
         uint8_t buf[128];
-        while (Serial.available())
+        int avail;
+        while ((avail = Serial.available()) > 0)
         {
-            const size_t n = Serial.readBytes(buf, sizeof(buf));
+            uint16_t n = 0;
+            while (n < sizeof(buf) && avail-- > 0)
+            {
+                const int c = Serial.read();
+                if (c < 0) break;
+                buf[n++] = (uint8_t)c;
+            }
             if (n == 0) break;
-            USBConfig_ProcessBytes(buf, (uint16_t)n);
+            USBConfig_ProcessBytes(buf, n);
         }
     }
 #endif
