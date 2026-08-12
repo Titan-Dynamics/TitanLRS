@@ -23,11 +23,36 @@ class BindingPanel extends LitElement {
     }
 
     firstUpdated(_changedProperties) {
-        this.uid = elrsState.config.uid
+        this.uid = this._savedUID()
         this.bindType = elrsState.config.vbind
-        this.originalUID = elrsState.config.uid
+        this.originalUID = this.uid
         this.originalUIDType = (elrsState.settings && elrsState.settings.uidtype) ? elrsState.settings.uidtype : ''
         this._updateUIDType(this.originalUIDType)
+    }
+
+    // The UID this panel edits, which is not always the one the radio is running on.
+    _savedUID() {
+        // FEATURE:IS_TX
+        // On a TX the binding phrase lives in the options block and is only copied into the
+        // running UID during setup(), so `config.uid` keeps reporting the pre-save value until
+        // the module reboots. Read the saved value, or the panel appears to discard the save
+        // every time it is re-rendered (tab switch, reconnect).
+        const saved = elrsState.options && elrsState.options.uid
+        if (Array.isArray(saved) && saved.length) return saved.slice()
+        // /FEATURE:IS_TX
+        return elrsState.config.uid
+    }
+
+    // True when a saved TX binding phrase has not been applied yet (it applies at boot).
+    _rebootPending() {
+        // FEATURE:IS_TX
+        const saved = elrsState.options && elrsState.options.uid
+        const live = elrsState.config.uid
+        if (Array.isArray(saved) && Array.isArray(live) && saved.length === live.length) {
+            return saved.some((b, i) => b !== live[i])
+        }
+        // /FEATURE:IS_TX
+        return false
     }
 
     render() {
@@ -91,6 +116,19 @@ which will be copied to the UID field and used as-is.
                             <span class="td-mono" style="flex: 1; ${isDirty ? 'color: var(--td-warn);' : ''}">${uidStr}</span>
                             <span class="td-chip ${sourceChipClass}" style="width: fit-content;">${this.uidSource}</span>
                         </div>
+
+                        <!-- FEATURE:IS_TX -->
+                        ${this._rebootPending() ? html`
+                            <div class="td-notice" style="margin-bottom: var(--td-s-3);">
+                                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="var(--td-warn)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v3.5M8 5.25v.01"/></svg>
+                                <p class="td-small td-mute" style="margin: 0; line-height: 1.5;">
+                                    Saved, but <strong>not yet in use</strong> — the binding phrase is applied when the
+                                    transmitter boots. It is still linking on <span class="td-mono">${(elrsState.config.uid || []).join(',')}</span>
+                                    until you reboot it.
+                                </p>
+                            </div>
+                        ` : ''}
+                        <!-- /FEATURE:IS_TX -->
 
                         <!-- FEATURE:NOT IS_TX -->
                         ${this.uidData.uidtype === 'Loaned' ? html`
