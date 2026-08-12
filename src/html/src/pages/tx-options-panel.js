@@ -81,6 +81,18 @@ class TxOptionsPanel extends LitElement {
                     </div>
                 ` : ''}
 
+                <!-- FEATURE:HAS_SUBGHZ -->
+                ${this.domain !== elrsState.options['domain'] ? html`
+                    <div class="td-notice" style="margin: 0 var(--td-s-4) var(--td-s-3);">
+                        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="var(--td-warn)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v3.5M8 5.25v.01"/></svg>
+                        <p class="td-small td-mute" style="margin: 0; line-height: 1.5;">
+                            Changing the regulatory domain will break the link until both the
+                            transmitter and receiver are set to the same domain.
+                        </p>
+                    </div>
+                ` : ''}
+                <!-- /FEATURE:HAS_SUBGHZ -->
+
                 <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center; gap: var(--td-s-2);">
                     <div style="flex: 1;"></div>
                     ${elrsState.options.customised ? html`
