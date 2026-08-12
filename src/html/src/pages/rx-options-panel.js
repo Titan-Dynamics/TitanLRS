@@ -2,7 +2,7 @@ import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
 import {_uintInput} from "../utils/libs.js"
 import {elrsState, saveOptionsAndConfig} from "../utils/state.js"
-import {actionWithFeedback} from "../utils/feedback.js"
+import {actionWithConfirm} from "../utils/feedback.js"
 import {transport} from "../utils/transport.js"
 
 @customElement('rx-options-panel')
@@ -92,7 +92,10 @@ class RxOptionsPanel extends LitElement {
                     <div style="flex: 1;"></div>
                     ${elrsState.options.customised ? html`
                         <button class="td-btn td-btn-danger"
-                                @click="${actionWithFeedback('Reset Runtime Options', 'An error occurred resetting runtime options', () => transport.reset({options: true}))}">
+                                @click="${actionWithConfirm('Reset to defaults',
+                                    'This discards the settings saved on the device, restores the values it was flashed with and reboots it. Continue?',
+                                    'Reset & Reboot', 'An error occurred resetting runtime options',
+                                    () => transport.reset({options: true}))}">
                             Reset to defaults
                         </button>
                     ` : ''}

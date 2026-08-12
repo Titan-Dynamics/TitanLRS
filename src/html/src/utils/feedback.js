@@ -128,6 +128,26 @@ export function postWithFeedback(title, errorMsg, url, getdata, success) {
   }
 }
 
+// Confirm a destructive action first, then run it with no success popup — the visible outcome (a
+// reboot, a re-render) is the feedback. Failures still surface. Cancelling does nothing at all.
+export function actionWithConfirm(title, message, confirmText, errorTitle, actionFn) {
+  return function (e) {
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    return cuteAlert({type: 'question', title, message, confirmText, cancelText: 'Cancel'})
+      .then((res) => {
+        if (res !== 'confirm') return
+        return Promise.resolve()
+          .then(() => actionFn())
+          .catch(async (err) => {
+            await errorAlert(errorTitle, (err && err.message) || 'Request failed')
+          })
+      })
+  }
+}
+
 // Click handler that runs a transport action and reports the outcome.
 export function actionWithFeedback(title, errorMsg, actionFn, success) {
   return function (e) {
