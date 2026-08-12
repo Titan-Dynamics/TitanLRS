@@ -128,8 +128,7 @@ which will be copied to the UID field and used as-is.
                     <button class="td-btn td-btn-primary"
                             ?disabled=${!this.checkChanged() || this.uidSource === 'invalid'}
                             @click="${this._submitOptions}">
-                        <!-- FEATURE:IS_TX -->Save &amp; Reboot<!-- /FEATURE:IS_TX -->
-                        <!-- FEATURE:NOT IS_TX -->Save Binding<!-- /FEATURE:NOT IS_TX -->
+                        Save &amp; Reboot
                     </button>
                 </div>
             </div>
@@ -214,6 +213,10 @@ which will be copied to the UID field and used as-is.
             this.uidSource = 'current'
             this._updateUIDType('Not bound')
             return this.requestUpdate()
+        }, {
+            title: 'Reset to Unbound',
+            message: 'This clears the binding on this receiver and reboots it. It will wait to be bound again. Continue?',
+            confirmText: 'Reset & Reboot',
         })
     }
 

@@ -2,7 +2,7 @@ import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, saveConfig} from "../utils/state.js";
 import {_} from "../utils/libs.js";
-import {actionWithFeedback} from "../utils/feedback.js";
+import {actionWithConfirm} from "../utils/feedback.js";
 import {transport} from "../utils/transport.js";
 
 export const PWM_MODE_SERIAL = 10;
@@ -75,11 +75,14 @@ class ConnectionsPanel extends LitElement {
                         <div style="flex: 1;"></div>
                         ${elrsState.options.customised ? html`
                             <button class="td-btn td-btn-danger"
-                                    @click="${actionWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', () => transport.reset({config: true}))}">
+                                    @click="${actionWithConfirm('Reset to defaults',
+                                        'This discards the configuration saved on the device, restores the values it was flashed with and reboots it. Continue?',
+                                        'Reset & Reboot', 'An error occurred resetting the configuration',
+                                        () => transport.reset({config: true}))}">
                                 Reset to defaults
                             </button>
                         ` : ''}
-                        <button class="td-btn td-btn-primary" @click="${this._savePwmConfig}">Save</button>
+                        <button class="td-btn td-btn-primary" @click="${this._savePwmConfig}">Save &amp; Reboot</button>
                     </div>
                     <div class="td-divider"></div>
                     <div style="padding: var(--td-s-3) var(--td-s-4);">

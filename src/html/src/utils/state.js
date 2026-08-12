@@ -38,13 +38,20 @@ function mergeConfig(changes) {
     return {newConfig: {...elrsState.config, ...changes}, currentPWM}
 }
 
-export function saveConfig(changes, successCB) {
+/**
+ * Save device configuration.
+ *
+ * Config changes take effect at boot, so this is the same confirm-save-reboot flow the options
+ * saves use — one behaviour and one set of button labels across every panel, TX and RX. `dialog`
+ * overrides the wording for saves that are not a plain "Save" (e.g. Reset to Unbound).
+ */
+export function saveConfig(changes, successCB, {title = 'Save & Reboot', ...dialog} = {}) {
     const {newConfig, currentPWM} = mergeConfig(changes)
-    return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
+    return saveAndReboot(title, 'Configuration Update Failed',
         (cfg) => transport.saveConfig(cfg), newConfig, () => {
             elrsState.config = {...newConfig, pwm: currentPWM}
             if (successCB) successCB()
-        })
+        }, dialog)
 }
 
 /**

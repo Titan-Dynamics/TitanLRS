@@ -41,13 +41,15 @@ export function postJSON(url, data, opts = {}) {
 // Save settings that only take effect at boot: confirm up front, then save and reboot without a
 // second prompt. Cancelling leaves the device untouched — nothing is written. The button that
 // triggers this reads "Save & Reboot", so the confirmation is never a surprise.
-export function saveAndReboot(title, errorTitle, saveFn, changes, successCB,
-                              message = 'These settings are applied when the device boots. Save them and reboot now?') {
+export function saveAndReboot(title, errorTitle, saveFn, changes, successCB, {
+  message = 'These settings are applied when the device boots. Save them and reboot now?',
+  confirmText = 'Save & Reboot',
+} = {}) {
   return cuteAlert({
     type: 'question',
     title,
     message,
-    confirmText: 'Save & Reboot',
+    confirmText,
     cancelText: 'Cancel',
   }).then((res) => {
     if (res !== 'confirm') return

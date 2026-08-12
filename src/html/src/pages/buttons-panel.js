@@ -59,7 +59,7 @@ class ButtonsPanel extends LitElement {
                     <div style="flex: 1;"></div>
                     <button class="td-btn td-btn-primary"
                             @click="${this._submitButtonActions}"
-                            ?disabled="${this._checkEnableButtonActionSave()}">Save</button>
+                            ?disabled="${this._checkEnableButtonActionSave()}">Save &amp; Reboot</button>
                 </div>
             </div>
         `;

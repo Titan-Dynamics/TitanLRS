@@ -90,7 +90,7 @@ class SerialPanel extends LitElement {
                         <div style="flex: 1;"></div>
                         <button class="td-btn td-btn-primary"
                                 ?disabled="${!this.checkChanged()}"
-                                @click="${this._saveSerial}">Save</button>
+                                @click="${this._saveSerial}">Save &amp; Reboot</button>
                     </div>
                 </div>
             ` : html`
