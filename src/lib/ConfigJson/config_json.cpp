@@ -36,14 +36,11 @@ void ConfigJson_BuildOptions(JsonObject options)
         copyArray(firmwareOptions.uid, sizeof(firmwareOptions.uid), uid);
     }
 
-    options["wifi-on-interval"] = firmwareOptions.wifi_auto_on_interval < 0
-                                      ? -1
-                                      : firmwareOptions.wifi_auto_on_interval / 1000;
-    if (firmwareOptions.home_wifi_ssid[0])
-    {
-        options["wifi-ssid"] = firmwareOptions.home_wifi_ssid;
-        options["wifi-password"] = firmwareOptions.home_wifi_password;
-    }
+    // devWIFI publishes `wifi-on-interval` / `wifi-ssid` / `wifi-password` here. STM32 has no WiFi
+    // hardware, so the keys are omitted entirely rather than reported with a meaningless value:
+    // info-panel.js treats any `wifi-on-interval` other than 60 as a customised setting and lists
+    // it under "Custom Settings", so publishing the struct's unused 0 made every STM32 device look
+    // like it had WiFi configured. An absent key reads as the default on the panel's `?? 60`.
 
 #if defined(TARGET_RX)
     options["rcvr-uart-baud"] = firmwareOptions.uart_baud;

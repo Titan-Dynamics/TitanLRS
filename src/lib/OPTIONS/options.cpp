@@ -99,6 +99,9 @@ static void applyCompileTimeDefaults()
 {
     memset(&firmwareOptions, 0, sizeof(firmwareOptions));
     firmwareOptions.uart_baud = 420000;
+    // No WiFi hardware on STM32; -1 is the "never" value the ESP path uses, so the field is not a
+    // meaningless 0 if anything reads it. lib/ConfigJson does not publish it at all.
+    firmwareOptions.wifi_auto_on_interval = -1;
 #if defined(TARGET_TX)
     // Set this to a sane default; A zero interval can make
     // checkSendLinkStatsToHandset() queue link-stats every millis() tick,
