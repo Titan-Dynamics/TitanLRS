@@ -2,7 +2,7 @@ import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, saveConfig} from "../utils/state.js";
 import {_, _renderOptions} from "../utils/libs.js";
-import {postJSON} from "../utils/feedback.js";
+import {transport} from "../utils/transport.js";
 
 @customElement('buttons-panel')
 class ButtonsPanel extends LitElement {
@@ -142,7 +142,7 @@ class ButtonsPanel extends LitElement {
     _sendCurrentColors() {
         let colors = [this.buttonActions[0].color];
         if (this.buttonActions[1] && this.buttonActions[1].color !== undefined) colors.push(this.buttonActions[1].color);
-        postJSON('/buttons', colors)
+        Promise.resolve(transport.previewButtonColors(colors)).catch(() => {})
         this.colorUpdated = false;
     }
 

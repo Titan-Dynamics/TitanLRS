@@ -19,6 +19,8 @@
 #include "devButton.h"
 #if !defined(PLATFORM_STM32)
 #include "devVTX.h"
+#else
+#include "devUSBConfig.h"
 #endif
 #if defined(PLATFORM_ESP32)
 #include "devScreen.h"
@@ -120,6 +122,8 @@ device_affinity_t ui_devices[] = {
   {&ADC_device, 1},
 #if !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
+#else
+  {&USBConfig_device, 1},
 #endif
   {&Button_device, 0},
 #if defined(PLATFORM_ESP32)
@@ -1155,6 +1159,9 @@ static void HandleUARTout()
       apOutputBuffer.lock();
       apOutputBuffer.popBytes(buf, size);
       apOutputBuffer.unlock();
+#if defined(PLATFORM_STM32)
+      if (!USBConfig_SessionActive())
+#endif
       TxUSB->write(buf, size);
     }
   }
@@ -1164,6 +1171,13 @@ static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
 {
   if (size == 0)
     return;
+
+#if defined(PLATFORM_STM32)
+  // USB config service: sniffs for a HELLO frame while closed (bytes still flow on below),
+  // and owns the stream exclusively once a session is open.
+  if (USBConfig_ProcessBytes(buf, size))
+    return;
+#endif
 
   if (connectionState == noCrossfire)
   {
@@ -1663,6 +1677,9 @@ void loop()
           // Convert to CRSF telemetry where we can and send to handset
           convert_mavlink_to_crsf_telem(CRSF_ADDRESS_RADIO_TRANSMITTER, CRSFinBuffer, count);
           // forward raw mavlink data to USB
+#if defined(PLATFORM_STM32)
+          if (!USBConfig_SessionActive())
+#endif
           TxUSB->write(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
           // And to the backpack if we have one
           if (TxUSB != BackpackOrLogStrm)

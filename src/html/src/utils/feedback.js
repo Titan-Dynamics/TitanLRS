@@ -1,3 +1,5 @@
+import {transport} from './transport.js'
+
 export function infoAlert(title, message) {
   return cuteAlert({ type: 'info', title, message })
 }
@@ -36,10 +38,13 @@ export function postJSON(url, data, opts = {}) {
   return post(url, data, opts)
 }
 
-// Helper to post JSON and then show reboot prompt on success
-export function saveJSONWithReboot(title, errorTitle, url, changes, successCB) {
-  postJSON(url, changes, {
-    onload: async () => {
+// Run a save action (a function returning a Promise, normally a transport method) and then
+// show the reboot prompt on success. `saveFn` replaces what used to be a hard-coded URL, which
+// is what lets the same panels run over HTTP on-device and over WebSerial in the web flasher.
+export function saveWithReboot(title, errorTitle, saveFn, changes, successCB) {
+  return Promise.resolve()
+    .then(() => saveFn(changes))
+    .then(async () => {
       let message
       if (successCB) message = successCB()
       const res = await cuteAlert({
@@ -51,22 +56,36 @@ export function saveJSONWithReboot(title, errorTitle, url, changes, successCB) {
       })
       if (res === 'confirm') {
         // fire-and-forget reboot
-        const r = new XMLHttpRequest()
-        r.open('POST', '/reboot')
-        r.setRequestHeader('Content-Type', 'application/json')
-        r.send()
+        Promise.resolve(transport.reboot()).catch(() => {})
       }
-    },
-    onerror: async (xhr) => {
-      await errorAlert(errorTitle, xhr.responseText || 'Request failed')
-    }
+    })
+    .catch(async (err) => {
+      await errorAlert(errorTitle, (err && err.message) || 'Request failed')
+    })
+}
+
+// URL-based variant, kept for the ESP-only panels that are NOT part of the transport
+// abstraction (wifi, update, lr1121-updater, hardware-layout — see transport.js).
+export function saveJSONWithReboot(title, errorTitle, url, changes, successCB) {
+  return saveWithReboot(title, errorTitle, (data) => postJSONAsync(url, data), changes, successCB)
+}
+
+function postJSONAsync(url, data) {
+  return new Promise((resolve, reject) => {
+    postJSON(url, data, {
+      onload: (xhr) => resolve(xhr.responseText),
+      onerror: (xhr) => reject(new Error(xhr.responseText || 'Request failed')),
+    })
   })
 }
 
+// URL-based click handler, kept for the same ESP-only panels as above.
 export function postWithFeedback(title, errorMsg, url, getdata, success) {
   return function (e) {
-    e.stopPropagation()
-    e.preventDefault()
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
     const xmlhttp = new XMLHttpRequest()
     xmlhttp.onreadystatechange = async function () {
       if (this.readyState === 4) {
@@ -79,10 +98,26 @@ export function postWithFeedback(title, errorMsg, url, getdata, success) {
       }
     }
     xmlhttp.open('POST', url, true)
-    let data
-    if (getdata) data = getdata(xmlhttp)
-    else data = null
-    xmlhttp.send(data)
+    xmlhttp.send(getdata ? getdata(xmlhttp) : null)
+  }
+}
+
+// Click handler that runs a transport action and reports the outcome.
+export function actionWithFeedback(title, errorMsg, actionFn, success) {
+  return function (e) {
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    return Promise.resolve()
+      .then(() => actionFn())
+      .then(async (responseText) => {
+        if (success) success()
+        await infoAlert(title, responseText || 'Done')
+      })
+      .catch(async () => {
+        await errorAlert(title, errorMsg)
+      })
   }
 }
 

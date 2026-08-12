@@ -2,7 +2,8 @@ import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, saveConfig} from "../utils/state.js";
 import {_} from "../utils/libs.js";
-import {postWithFeedback} from "../utils/feedback.js";
+import {actionWithFeedback} from "../utils/feedback.js";
+import {transport} from "../utils/transport.js";
 
 export const PWM_MODE_SERIAL = 10;
 export const PWM_MODE_SERIAL2RX = 14;
@@ -74,7 +75,7 @@ class ConnectionsPanel extends LitElement {
                         <div style="flex: 1;"></div>
                         ${elrsState.options.customised ? html`
                             <button class="td-btn td-btn-danger"
-                                    @click="${postWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', '/reset?config', null)}">
+                                    @click="${actionWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', () => transport.reset({config: true}))}">
                                 Reset to defaults
                             </button>
                         ` : ''}

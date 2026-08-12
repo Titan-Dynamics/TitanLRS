@@ -39,6 +39,7 @@
 #else
 // Stub: no servo output on STM32
 static inline void servoNewChannelsAvailable() {}
+#include "devUSBConfig.h"
 #endif
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
@@ -93,6 +94,8 @@ device_affinity_t ui_devices[] = {
   {&RGB_device, 0},
 #if !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
+#else
+  {&USBConfig_device, 1},
 #endif
   {&Button_device, 0},
   {&AnalogVbat_device, 0},

@@ -30,7 +30,11 @@
 #define GPIO_PIN_DEBUG_TX    UNDEF_PIN
 // Use USB CDC for debug output
 #define DEBUG_LOG_PORT       Serial
-// STM32 USB CDC configuration
+#endif
+
+// USB CDC descriptors — always on so the USB config service enumerates with the
+// Titan Dynamics identity the web dashboard filters on (0x0483:0x5740).
+#ifdef USBCON
 #define USBD_VID             0x0483
 #define USBD_PID             0x5740
 #define USB_MANUFACTURER     "Titan Dynamics"

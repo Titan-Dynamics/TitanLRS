@@ -1,5 +1,6 @@
 import {State} from "@lit-app/state";
-import {errorAlert, postJSON, saveJSONWithReboot} from "./feedback.js";
+import {errorAlert, saveWithReboot} from "./feedback.js";
+import {transport} from "./transport.js";
 
 class ElrsState extends State {
     config = {}
@@ -33,33 +34,33 @@ export function saveConfig(changes, successCB) {
         }
     }
     const newConfig = {...elrsState.config, ...changes}
-    saveJSONWithReboot('Configuration Update Succeeded', 'Configuration Update Failed', '/config', newConfig, () => {
-        elrsState.config = {...newConfig, pwm: currentPWM}
-        if (successCB) successCB()
-    })
+    return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
+        (cfg) => transport.saveConfig(cfg), newConfig, () => {
+            elrsState.config = {...newConfig, pwm: currentPWM}
+            if (successCB) successCB()
+        })
 }
 
 export function saveOptions(changes, successCB) {
     const newOptions = {...elrsState.options, ...changes, customised: true}
-    saveJSONWithReboot('Configuration Update Succeeded', 'Configuration Update Failed', '/options.json', newOptions, () => {
-        elrsState.options = newOptions
-        if (successCB) successCB()
-    })
+    return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
+        (opts) => transport.saveOptions(opts), newOptions, () => {
+            elrsState.options = newOptions
+            if (successCB) successCB()
+        })
 }
 
 export function saveOptionsAndConfig(changes, successCB) {
     const newOptions = {...elrsState.options, ...changes.options, customised: true}
-    postJSON('/options.json', newOptions, {
-        onload: async () => {
-            saveConfig(changes.config, () => {
-                elrsState.options = newOptions
-                if (successCB) successCB()
-            })
-        },
-        onerror: async (xhr) => {
-            await errorAlert('Configuration Update Failed', xhr.responseText || 'Request failed')
-        }
-    })
+    return Promise.resolve()
+        .then(() => transport.saveOptions(newOptions))
+        .then(() => saveConfig(changes.config, () => {
+            elrsState.options = newOptions
+            if (successCB) successCB()
+        }))
+        .catch(async (err) => {
+            await errorAlert('Configuration Update Failed', (err && err.message) || 'Request failed')
+        })
 }
 
 export let elrsState = new ElrsState()
