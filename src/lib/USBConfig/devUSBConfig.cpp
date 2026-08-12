@@ -397,38 +397,28 @@ static int start()
     return 10; // ms
 }
 
-static int timeout()
-{
 #if defined(TARGET_RX)
-    // RX drains the port itself; TX is fed from HandleUARTin().
-    //
-    // Read only what has actually arrived. Stream::readBytes() blocks until it has filled the
-    // buffer it was given or the stream timeout expires (1 s by default on STM32duino), so asking
-    // for a fixed 128 bytes stalled here for a full second on every frame shorter than that —
-    // which is every HELLO / PING / GET / REBOOT and the last chunk of every SET. That put ~1 s
-    // into each round trip, pushed saves past the host's 2 s request timeout ("Device did not
-    // respond"), and blocked the RX main loop while it waited. tx_main has always read
-    // min(free, available()), which is why the TX side was unaffected.
-    // Ask readBytes() only for bytes that have already arrived, exactly as tx_main does. Reading
-    // byte-at-a-time instead drives CDC_resume_receive() once per byte from the main loop while
-    // the USB ISR calls it too; they share the receive queue's wrap bookkeeping, which is only
-    // exercised once more than ~128 bytes (two USB packets) have flowed — and that is precisely
-    // where inbound frames started disappearing. One block read per drain, one resume.
-    if (s_port != nullptr)
+void USBConfig_DrainPort()
+{
+    if (s_port == nullptr) return;
+
+    // Ask readBytes() only for bytes that have already arrived, exactly as tx_main does — asking
+    // for more blocks until the stream timeout expires.
+    uint8_t buf[128];
+    for (;;)
     {
-        uint8_t buf[128];
-        for (;;)
-        {
-            const int avail = Serial.available();
-            if (avail <= 0) break;
-            const size_t want = (size_t)avail < sizeof(buf) ? (size_t)avail : sizeof(buf);
-            const size_t n = Serial.readBytes(buf, want);
-            if (n == 0) break;
-            USBConfig_ProcessBytes(buf, (uint16_t)n);
-        }
+        const int avail = Serial.available();
+        if (avail <= 0) break;
+        const size_t want = (size_t)avail < sizeof(buf) ? (size_t)avail : sizeof(buf);
+        const size_t n = Serial.readBytes(buf, want);
+        if (n == 0) break;
+        USBConfig_ProcessBytes(buf, (uint16_t)n);
     }
+}
 #endif
 
+static int timeout()
+{
     if (s_sessionActive && (millis() - s_lastFrameMs) > USBCFG_SESSION_TIMEOUT_MS)
     {
         DBGLN("USBConfig: session timed out");

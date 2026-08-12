@@ -99,10 +99,17 @@ send is `USBCFG_CHUNK_MAX` + headers = 1017 B, and the host waits for a per-chun
 than one chunk is ever in flight: the queue can no longer fill, and the broken pause path is never
 entered.
 
-**This avoids the core defect rather than repairing it.** The resume-after-pause path in
-`libraries/USBDevice` remains broken; if a future feature streams more than 2 KB at the RX without
-waiting for acks it will hit the same wall. The durable fix is to drain the port from the RX main
-loop the way `tx_main` does, instead of from a 10 ms device hook.
+**Durable fix (also applied):** `USBConfig_DrainPort()` is now called from `rx_main`'s `loop()`
+every iteration, exactly as `tx_main` feeds the service from `HandleUARTin()`. The device timeout
+hook keeps only the session-expiry check. This is what stops the queue reaching the pause point in
+the first place, rather than relying on it being large enough.
+
+Both changes are kept. The queue bump is not redundant: the main loop blocks for ~70 ms in the
+W25Q64 sector erase during a config apply, and the default 192-byte queue leaves only ~128 usable
+bytes of margin for anything that arrives in that window. The failure mode is unrecoverable without
+a port reopen, so the margin is worth 2 KB of the 512 KB SRAM.
+
+The resume-after-pause path in `libraries/USBDevice` is still broken upstream — worth reporting.
 
 ### Next step
 

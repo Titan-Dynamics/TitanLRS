@@ -30,4 +30,19 @@ bool USBConfig_ProcessBytes(const uint8_t *buf, uint16_t len);
  */
 bool USBConfig_SessionActive();
 
+#if defined(TARGET_RX)
+/**
+ * @brief Drain the CDC port into the config service. RX only; call once per main-loop iteration.
+ *
+ * The RX owns the CDC port outright (unlike the TX, where tx_main reads it for MAVLink and feeds
+ * us via USBConfig_ProcessBytes), so someone has to read it. This must be driven from the main
+ * loop rather than from the device timeout hook: at 64 bytes per USB frame the port can deliver
+ * far more than the CDC receive queue holds inside one 10 ms hook interval, and this core never
+ * recovers once that queue fills — it stops re-arming the OUT endpoint for good (Issues.md
+ * BUG #5). Draining every iteration keeps the queue shallow, which is exactly why the TX side
+ * never hit it.
+ */
+void USBConfig_DrainPort();
+#endif
+
 #endif /* PLATFORM_STM32 */
