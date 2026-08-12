@@ -116,8 +116,10 @@ const char *ConfigJson_ApplyOptions(JsonVariant json)
     if (json["is-airport"].is<JsonVariant>()) opts.is_airport = json["is-airport"].as<bool>();
 
 #if defined(TARGET_TX)
-    // The binding phrase. An absent/empty array means "no override", matching the ESP path where
-    // a missing `uid` key clears hasUID (options.cpp::options_LoadFromFlashOrFile).
+    // The binding phrase. An empty array clears the override the way a missing `uid` key does on
+    // the ESP path (options.cpp::options_LoadFromFlashOrFile). An *absent* key leaves the stored
+    // UID alone, unlike ESP: a partial document must not silently unbind the module, and the web
+    // UI always posts the whole options object anyway.
     if (json["uid"].is<JsonArray>())
     {
         const auto juid = json["uid"].as<JsonArray>();
