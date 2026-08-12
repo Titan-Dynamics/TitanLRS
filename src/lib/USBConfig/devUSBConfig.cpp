@@ -70,6 +70,10 @@ static void closeSession()
 {
     s_sessionActive = false;
     setAbort();
+    // Drop any half-parsed frame with the session. Without this a truncated frame leaves the
+    // parser mid-payload, where it swallows whatever arrives next — so the first command of the
+    // following session is eaten too, and the device looks dead for longer than it is.
+    s_parser.reset();
 }
 
 // ---------------------------------------------------------------------------------------
@@ -405,21 +409,22 @@ static int timeout()
     // into each round trip, pushed saves past the host's 2 s request timeout ("Device did not
     // respond"), and blocked the RX main loop while it waited. tx_main has always read
     // min(free, available()), which is why the TX side was unaffected.
+    // Ask readBytes() only for bytes that have already arrived, exactly as tx_main does. Reading
+    // byte-at-a-time instead drives CDC_resume_receive() once per byte from the main loop while
+    // the USB ISR calls it too; they share the receive queue's wrap bookkeeping, which is only
+    // exercised once more than ~128 bytes (two USB packets) have flowed — and that is precisely
+    // where inbound frames started disappearing. One block read per drain, one resume.
     if (s_port != nullptr)
     {
         uint8_t buf[128];
-        int avail;
-        while ((avail = Serial.available()) > 0)
+        for (;;)
         {
-            uint16_t n = 0;
-            while (n < sizeof(buf) && avail-- > 0)
-            {
-                const int c = Serial.read();
-                if (c < 0) break;
-                buf[n++] = (uint8_t)c;
-            }
+            const int avail = Serial.available();
+            if (avail <= 0) break;
+            const size_t want = (size_t)avail < sizeof(buf) ? (size_t)avail : sizeof(buf);
+            const size_t n = Serial.readBytes(buf, want);
             if (n == 0) break;
-            USBConfig_ProcessBytes(buf, n);
+            USBConfig_ProcessBytes(buf, (uint16_t)n);
         }
     }
 #endif
