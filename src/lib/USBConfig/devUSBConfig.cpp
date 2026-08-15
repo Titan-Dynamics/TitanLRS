@@ -12,9 +12,10 @@
 #include "config_json.h"
 #include "usbcfg_framing.h"
 
+#include "USBVendorStream.h"
+
 #if defined(TARGET_TX)
 #include "handset.h"
-extern Stream *TxUSB;
 #endif
 
 extern unsigned long rebootTime;
@@ -304,8 +305,8 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
 {
     if (!s_sessionActive)
     {
-        // Sniff mode: only HELLO is acted upon. Anything else on the wire belongs to whoever
-        // else is using this port (MAVLink / CRSF) and must be left alone.
+        // A session only opens on HELLO. Any other frame arriving first is from a host that lost
+        // track of the session state, so ignore it rather than half-opening.
         if (function != TCFG_HELLO) return;
         s_sessionActive = true;
         DBGLN("USBConfig: session opened");
@@ -325,7 +326,10 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
 
     case TCFG_BYE:
         usbcfg_writeAck(s_port, TCFG_BYE);
-        s_port->flush();
+        // Deliberately no flush(): the host has just told us it is going away and tears the
+        // interface down the moment it sees this ack, so waiting for the pipe to drain is at
+        // best a no-op and at worst a stall on a host that is already gone. The reboot paths
+        // below do need the ack out first, and their flush is bounded.
         closeSession();
         DBGLN("USBConfig: session closed");
         break;
@@ -384,38 +388,31 @@ static bool initialize()
 
 static int start()
 {
-#if defined(TARGET_TX)
-    // The TX shares the CDC port with MAVLink; tx_main owns it and feeds us via
-    // USBConfig_ProcessBytes(). We only need the handle for responses.
-    s_port = TxUSB;
-#else
-    // The RX does not use the CDC port for anything else, so the config service owns it.
-    Serial.begin(460800);
-    Serial.dtr(false);   // STM32duino drops TX bytes unless DTR is asserted by the host
-    s_port = &Serial;
-#endif
+    // Both TX and RX own the vendor-class config pipe outright (lib/USBComposite). It is not a
+    // serial port, so nothing else on the host can enumerate or claim it, and there is no sharing
+    // with MAVLink or CRSF to arbitrate.
+    SerialCfg.begin();
+    s_port = &SerialCfg;
     return 10; // ms
 }
 
-#if defined(TARGET_RX)
 void USBConfig_DrainPort()
 {
     if (s_port == nullptr) return;
 
-    // Ask readBytes() only for bytes that have already arrived, exactly as tx_main does — asking
-    // for more blocks until the stream timeout expires.
+    // Ask readBytes() only for bytes that have already arrived — asking for more blocks until the
+    // stream timeout expires.
     uint8_t buf[128];
     for (;;)
     {
-        const int avail = Serial.available();
+        const int avail = s_port->available();
         if (avail <= 0) break;
         const size_t want = (size_t)avail < sizeof(buf) ? (size_t)avail : sizeof(buf);
-        const size_t n = Serial.readBytes(buf, want);
+        const size_t n = s_port->readBytes(buf, want);
         if (n == 0) break;
         USBConfig_ProcessBytes(buf, (uint16_t)n);
     }
 }
-#endif
 
 static int timeout()
 {

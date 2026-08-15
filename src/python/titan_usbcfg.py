@@ -6,7 +6,7 @@ This is the bring-up tool for the firmware side of lib/USBConfig (before any web
 and the regression tool afterwards. It speaks the exact protocol described in
 lib/USBConfig/usbcfg_protocol.h.
 
-Requires pyserial (`pip install pyserial`).
+Requires pyusb (`pip install pyusb`), and libusb (`brew install libusb` on macOS).
 
 Examples
 --------
@@ -26,7 +26,13 @@ Examples
 `set-options` merges the given keys into the device's current options document (the same thing
 the web dashboard does), so a partial document is safe: everything unmentioned is preserved.
 
-The port is auto-detected by USB VID:PID 0483:5740; override with `-p /dev/tty.usbmodemXXXX`.
+The config protocol rides a vendor-class USB interface (bInterfaceClass 0xFF), not the CDC
+serial port -- the same interface the web flasher claims with WebUSB. There is nothing to select:
+the device is found by VID:PID 1209:0001 and the interface by its class. The CDC port next to it
+is left alone, so a GCS can hold it open throughout.
+
+On Linux this needs either root or a udev rule:
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0001", MODE="0666"
 """
 
 import argparse
@@ -36,13 +42,17 @@ import sys
 import time
 
 try:
-    import serial
-    from serial.tools import list_ports
+    import usb.core
+    import usb.util
 except ImportError:  # pragma: no cover
-    sys.exit("pyserial is required: pip install pyserial")
+    sys.exit("pyusb is required: pip install pyusb")
 
-USB_VID = 0x0483
-USB_PID = 0x5740
+USB_VID = 0x1209
+USB_PID = 0x0001
+
+# The config interface identifies itself by class, so it survives any future
+# renumbering of the interfaces around it.
+USB_VENDOR_CLASS = 0xFF
 
 PROTOCOL_VERSION = 1
 CHUNK_MAX = 1000
@@ -104,13 +114,45 @@ class DeviceError(Exception):
 
 
 class UsbConfigSession:
-    def __init__(self, port, baud=460800, timeout=2.0, verbose=False):
-        self.ser = serial.Serial(port, baud, timeout=0.05)
+    def __init__(self, device, timeout=2.0, verbose=False):
+        self.dev = device
         self.timeout = timeout
         self.verbose = verbose
         self.hello = None
         self.features = 0
         self._rx = bytearray()
+
+        # Only configure the device if the host has not already done so. Calling
+        # set_configuration() unconditionally re-selects the configuration, which
+        # tears down the CDC endpoints and would drop a GCS mid-session.
+        try:
+            cfg = device.get_active_configuration()
+        except usb.core.USBError:
+            device.set_configuration()
+            cfg = device.get_active_configuration()
+
+        self.intf = usb.util.find_descriptor(cfg, bInterfaceClass=USB_VENDOR_CLASS)
+        if self.intf is None:
+            raise DeviceError(1, "no vendor-class config interface on this device")
+
+        self.ep_out = usb.util.find_descriptor(
+            self.intf, custom_match=lambda e:
+            usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT)
+        self.ep_in = usb.util.find_descriptor(
+            self.intf, custom_match=lambda e:
+            usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN)
+        if self.ep_out is None or self.ep_in is None:
+            raise DeviceError(1, "config interface is missing its bulk pair")
+
+        # Linux binds nothing to a vendor interface, but be defensive.
+        if hasattr(device, "is_kernel_driver_active"):
+            try:
+                if device.is_kernel_driver_active(self.intf.bInterfaceNumber):
+                    device.detach_kernel_driver(self.intf.bInterfaceNumber)
+            except (NotImplementedError, usb.core.USBError):
+                pass
+
+        usb.util.claim_interface(device, self.intf.bInterfaceNumber)
 
     # -- framing -----------------------------------------------------------------
     def _encode(self, function, payload=b""):
@@ -121,16 +163,22 @@ class UsbConfigSession:
         frame = self._encode(function, payload)
         if self.verbose:
             print(">>> fn=0x%04X len=%d" % (function, len(payload)), file=sys.stderr)
-        self.ser.write(frame)
-        self.ser.flush()
+        self.ep_out.write(frame, int(self.timeout * 1000))
 
     def read_frame(self, timeout=None):
         """Return (direction, function, payload) for the next well-formed frame."""
         deadline = time.time() + (self.timeout if timeout is None else timeout)
         while True:
-            chunk = self.ser.read(512)
+            try:
+                # A bulk read must be a multiple of the max packet size, and it
+                # returns as soon as the device sends a short packet.
+                chunk = self.ep_in.read(self.ep_in.wMaxPacketSize * 8, 50)
+            except usb.core.USBError as exc:
+                if exc.errno not in (None, 60, 110) and "timeout" not in str(exc).lower():
+                    raise
+                chunk = None
             if chunk:
-                self._rx.extend(chunk)
+                self._rx.extend(bytearray(chunk))
                 frame = self._try_parse()
                 if frame is not None:
                     return frame
@@ -195,7 +243,11 @@ class UsbConfigSession:
             self.request(TCFG_BYE)
         except (TimeoutError, DeviceError, OSError):
             pass
-        self.ser.close()
+        try:
+            usb.util.release_interface(self.dev, self.intf.bInterfaceNumber)
+        except usb.core.USBError:
+            pass
+        usb.util.dispose_resources(self.dev)
 
     def ping(self):
         self.request(TCFG_PING)
@@ -264,11 +316,10 @@ class UsbConfigSession:
         self.request(TCFG_RESET, bytes([flags]))
 
 
-def find_port():
-    for p in list_ports.comports():
-        if p.vid == USB_VID and p.pid == USB_PID:
-            return p.device
-    return None
+def find_devices():
+    """Every attached TitanLRS device exposing a vendor-class config interface."""
+    found = usb.core.find(find_all=True, idVendor=USB_VID, idProduct=USB_PID)
+    return list(found) if found else []
 
 
 def describe_features(mask):
@@ -411,8 +462,7 @@ def cmd_soak(sess, args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-p", "--port", help="serial port (default: auto-detect 0483:5740)")
-    ap.add_argument("-b", "--baud", type=int, default=460800, help="nominal CDC baud rate")
+    ap.add_argument("-s", "--serial", help="USB serial number, when more than one device is attached")
     ap.add_argument("-t", "--timeout", type=float, default=2.0, help="per-request timeout (s)")
     ap.add_argument("-v", "--verbose", action="store_true", help="trace frames on stderr")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -457,12 +507,19 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
 
-    port = args.port or find_port()
-    if not port:
-        sys.exit("no TitanLRS device found (looked for USB %04X:%04X); pass -p PORT"
-                 % (USB_VID, USB_PID))
+    devices = find_devices()
+    if not devices:
+        sys.exit("no TitanLRS device found (looked for USB %04X:%04X)" % (USB_VID, USB_PID))
 
-    sess = UsbConfigSession(port, args.baud, args.timeout, args.verbose)
+    if args.serial:
+        devices = [d for d in devices if d.serial_number == args.serial]
+        if not devices:
+            sys.exit("no TitanLRS device with serial number %s" % args.serial)
+    elif len(devices) > 1:
+        sys.exit("%d TitanLRS devices attached; pick one with -s SERIAL:\n  %s"
+                 % (len(devices), "\n  ".join(d.serial_number or "?" for d in devices)))
+
+    sess = UsbConfigSession(devices[0], args.timeout, args.verbose)
     try:
         sess.open()
         rc = args.fn(sess, args)

@@ -2134,8 +2134,8 @@ void loop()
     devicesUpdate(now);
 
 #if defined(PLATFORM_STM32)
-    // Drain the USB CDC config port every iteration, as tx_main does for its own. Doing it from
-    // the device timeout hook instead let the CDC receive queue fill between calls, which this
+    // Drain the vendor-class config pipe every iteration, as tx_main does. Doing it from the
+    // device timeout hook instead let the receive queue fill between calls, which this
     // core never recovers from. See lib/USBConfig/devUSBConfig.h.
     USBConfig_DrainPort();
 #endif

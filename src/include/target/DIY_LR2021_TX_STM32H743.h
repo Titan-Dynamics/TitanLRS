@@ -38,8 +38,17 @@
 
 // USB CDC descriptors (always-on for TX — Serial-over-USB / MAVLink forward)
 #ifdef USBCON
-#define USBD_VID             0x0483
-#define USBD_PID             0x5740
+/* USB identity. Deliberately NOT ST's generic Virtual COM Port pair (0483:5740): ST's Windows VCP
+ * driver claims that pair by hardware ID, which outranks the generic USB\COMPOSITE compatible ID,
+ * so Windows binds it at device level, never loads usbccgp, and the vendor (WebUSB config)
+ * interface never gets a device node at all.
+ *
+ * 1209:0001 is pid.codes' prototyping pair and MUST NOT ship — register a real PID before release
+ * and update USB_FILTER in titan-web-flasher/src/js/usbconfig.js and USB_VID/USB_PID in
+ * python/titan_usbcfg.py to match. These are force-included via -include, so they override any
+ * -D on the command line; this header is the single source of truth. */
+#define USBD_VID             0x1209
+#define USBD_PID             0x0001
 #define USB_MANUFACTURER     "Titan Dynamics"
 #define USB_PRODUCT          "TD LR2021 STM32H7 TX"
 #endif
