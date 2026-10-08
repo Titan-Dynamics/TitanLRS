@@ -5,6 +5,16 @@
 
 #define RESERVED_EEPROM_SIZE 1024
 
+// CRC-32 (IEEE, reflected), continuing from `crc` (0 to start).
+uint32_t elrs_crc32_update(uint32_t crc, const uint8_t *buf, uint32_t len);
+
+#if defined(HAS_W25Q64_CONFIG)
+class W25Q64;
+// The config flash brought up by ELRS_EEPROM::Begin(), or nullptr when the target has no
+// config-flash pins or the chip did not answer.
+W25Q64 *elrs_ConfigFlash();
+#endif
+
 class ELRS_EEPROM
 {
 public:

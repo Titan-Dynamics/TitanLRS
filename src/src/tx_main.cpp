@@ -21,6 +21,7 @@
 #include "devVTX.h"
 #else
 #include "devUSBConfig.h"
+#include "stm32_dfu.h"
 #endif
 #if defined(PLATFORM_ESP32)
 #include "devScreen.h"
@@ -68,6 +69,10 @@ FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; // Buffer for current stubbon sender packet (mavlink only)
 
 unsigned long rebootTime = 0;
+#if defined(PLATFORM_STM32)
+// Set by the USB config API's TLRS_DFU; reboots into ROM DFU from loop(), as rebootTime does.
+unsigned long dfuRequestTime = 0;
+#endif
 #if !defined(PLATFORM_STM32)
 extern bool webserverPreventAutoStart;
 #else
@@ -1433,6 +1438,14 @@ bool setupHardwareFromOptions()
     };
     devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
     devicesInit();
+#else
+    // No WiFi to fix the layout with; keep the USB config API up instead, so the web flasher can
+    // still reach HELLO and TLRS_DFU and reflash the board.
+    static device_affinity_t usbconfig_device[] = {
+        {&USBConfig_device, 1}
+    };
+    devicesRegister(usbconfig_device, ARRAY_SIZE(usbconfig_device));
+    devicesInit();
 #endif
     setConnectionState(hardwareUndefined);
     return false;
@@ -1646,6 +1659,11 @@ void loop()
     ESP.restart();
 #endif
   }
+#if defined(STM32_DFU_SUPPORTED)
+  if (dfuRequestTime != 0 && now > dfuRequestTime) {
+    stm32_RequestDfu();
+  }
+#endif
 
   executeDeferredFunction(micros());
 

@@ -57,13 +57,13 @@ USB_VENDOR_CLASS = 0xFF
 PROTOCOL_VERSION = 1
 CHUNK_MAX = 1000
 
-TCFG_HELLO = 0x5443
-TCFG_BYE = 0x5444
-TCFG_GET = 0x5445
-TCFG_SET = 0x5446
-TCFG_REBOOT = 0x5447
-TCFG_RESET = 0x5448
-TCFG_PING = 0x5449
+TLRS_HELLO = 0x5443
+TLRS_BYE = 0x5444
+TLRS_GET = 0x5445
+TLRS_SET = 0x5446
+TLRS_REBOOT = 0x5447
+TLRS_RESET = 0x5448
+TLRS_PING = 0x5449
 
 RES_CONFIG = 0
 RES_OPTIONS = 1
@@ -229,7 +229,7 @@ class UsbConfigSession:
 
     # -- session -----------------------------------------------------------------
     def open(self):
-        resp = self.request(TCFG_HELLO, bytes([PROTOCOL_VERSION]))
+        resp = self.request(TLRS_HELLO, bytes([PROTOCOL_VERSION]))
         if len(resp) < 5:
             raise DeviceError(3, "short HELLO response")
         proto = resp[0]
@@ -240,7 +240,7 @@ class UsbConfigSession:
 
     def close(self):
         try:
-            self.request(TCFG_BYE)
+            self.request(TLRS_BYE)
         except (TimeoutError, DeviceError, OSError):
             pass
         try:
@@ -250,18 +250,18 @@ class UsbConfigSession:
         usb.util.dispose_resources(self.dev)
 
     def ping(self):
-        self.request(TCFG_PING)
+        self.request(TLRS_PING)
 
     # -- endpoints ---------------------------------------------------------------
     def get(self, resource=RES_CONFIG, export=False):
         flags = GETFLAG_EXPORT if export else 0
-        self.send(TCFG_GET, bytes([resource, flags]))
+        self.send(TLRS_GET, bytes([resource, flags]))
         out = bytearray()
         expect_seq = 0
         total = None
         while True:
             direction, fn, payload = self.read_frame()
-            if fn != TCFG_GET:
+            if fn != TLRS_GET:
                 continue
             if direction == "!":
                 raise DeviceError(payload[0] if payload else 0,
@@ -296,9 +296,9 @@ class UsbConfigSession:
                                  (CHUNK_FIRST if first else 0) | (CHUNK_LAST if last else 0))
             if first:
                 header += struct.pack("<I", total)
-            self.send(TCFG_SET, header + piece)
+            self.send(TLRS_SET, header + piece)
             direction, fn, payload = self.read_frame()
-            while fn != TCFG_SET:
+            while fn != TLRS_SET:
                 direction, fn, payload = self.read_frame()
             if direction == "!":
                 raise DeviceError(payload[0] if payload else 0,
@@ -309,11 +309,11 @@ class UsbConfigSession:
             seq += 1
 
     def reboot(self):
-        self.request(TCFG_REBOOT)
+        self.request(TLRS_REBOOT)
 
     def reset(self, config=True, options=False):
         flags = (RESETFLAG_CONFIG if config else 0) | (RESETFLAG_OPTIONS if options else 0)
-        self.request(TCFG_RESET, bytes([flags]))
+        self.request(TLRS_RESET, bytes([flags]))
 
 
 def find_devices():

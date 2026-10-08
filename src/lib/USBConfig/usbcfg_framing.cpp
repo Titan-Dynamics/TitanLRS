@@ -129,8 +129,8 @@ void UsbCfgChunkWriter::flushChunk(const bool last)
     header[hdrLen++] = (uint8_t)(m_seq & 0xFF);
     header[hdrLen++] = (uint8_t)(m_seq >> 8);
     uint8_t flags = 0;
-    if (m_first) flags |= TCFG_CHUNK_FIRST;
-    if (last)    flags |= TCFG_CHUNK_LAST;
+    if (m_first) flags |= TLRS_CHUNK_FIRST;
+    if (last)    flags |= TLRS_CHUNK_LAST;
     header[hdrLen++] = flags;
     if (m_first)
     {

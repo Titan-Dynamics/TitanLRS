@@ -40,6 +40,7 @@
 // Stub: no servo output on STM32
 static inline void servoNewChannelsAvailable() {}
 #include "devUSBConfig.h"
+#include "stm32_dfu.h"
 #endif
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
@@ -126,6 +127,10 @@ bool crsfBatterySensorDetected = false;
 bool crsfBaroSensorDetected = false;
 
 unsigned long rebootTime = 0;
+#if defined(PLATFORM_STM32)
+// Set by the USB config API's TLRS_DFU; reboots into ROM DFU from loop(), as rebootTime does.
+unsigned long dfuRequestTime = 0;
+#endif
 #if !defined(PLATFORM_STM32)
 extern bool webserverPreventAutoStart;
 #else
@@ -2041,6 +2046,14 @@ void setup()
         };
         devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
         devicesInit();
+#else
+        // No WiFi to fix the layout with; keep the USB config API up instead, so the web flasher
+        // can still reach HELLO and TLRS_DFU and reflash the board.
+        static device_affinity_t usbconfig_device[] = {
+            {&USBConfig_device, 1}
+        };
+        devicesRegister(usbconfig_device, ARRAY_SIZE(usbconfig_device));
+        devicesInit();
 #endif
 
         setConnectionState(hardwareUndefined);
@@ -2151,6 +2164,11 @@ void loop()
         ESP.restart();
 #endif
     }
+#if defined(STM32_DFU_SUPPORTED)
+    if (dfuRequestTime != 0 && now > dfuRequestTime) {
+        stm32_RequestDfu();
+    }
+#endif
 
     CheckConfigChangePending();
     executeDeferredFunction(micros());
@@ -2248,7 +2266,11 @@ void reset_into_bootloader(void)
 {
     SERIAL_PROTOCOL_TX.println((const char *)&target_name[4]);
     SERIAL_PROTOCOL_TX.flush();
-#if defined(PLATFORM_STM32)
+#if defined(STM32_DFU_SUPPORTED)
+    delay(100);
+    DBGLN("Rebooting into ROM DFU...");
+    stm32_RequestDfu();
+#elif defined(PLATFORM_STM32)
     delay(100);
     DBGLN("Jumping to Bootloader...");
     delay(100);

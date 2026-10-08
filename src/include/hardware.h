@@ -69,8 +69,10 @@ typedef enum {
 
     HARDWARE_button,
     HARDWARE_button_led_index,
+    HARDWARE_button_active_high,
     HARDWARE_button2,
     HARDWARE_button2_led_index,
+    HARDWARE_button2_active_high,
 
     // Lighting
     HARDWARE_led,
@@ -127,6 +129,12 @@ typedef enum {
     HARDWARE_gsensor_stk8xxx,
     HARDWARE_thermal_lm75a,
 
+    // Config flash (SPI NOR holding the persisted config, STM32)
+    HARDWARE_config_flash_cs,
+    HARDWARE_config_flash_sck,
+    HARDWARE_config_flash_miso,
+    HARDWARE_config_flash_mosi,
+
     // PWM
     HARDWARE_pwm_outputs,
     HARDWARE_pwm_outputs_count,
@@ -160,5 +168,8 @@ int hardware_int(nameType name);
 float hardware_float(nameType name);
 const int16_t* hardware_i16_array(nameType name);
 const uint16_t* hardware_u16_array(nameType name);
+
+// Parses an STM32 pin name ("PE12") to its PinName value ((port << 4) | pin), or -1.
+int hardware_ParsePinName(const char *name);
 
 #endif // __HARDWARE_H__

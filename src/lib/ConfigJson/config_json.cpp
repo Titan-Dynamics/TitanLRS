@@ -492,8 +492,9 @@ const char *ConfigJson_ApplyConfig(JsonVariant json)
 
 // ---------------------------------------------------------------------------
 // Mirror of the config/model portion of devWIFI.cpp::HandleReset().
-// The LittleFS removals (`hardware`, `lr1121`) have no STM32 equivalent; the `options` removal
-// maps onto options_SetTrueDefaults(), which re-seeds the persisted blob from the flashed values.
+// The `options` removal maps onto options_SetTrueDefaults(), which re-seeds the persisted blob from
+// the flashed values. The `hardware` removal is the saved layout override, cleared by the USB
+// config API itself (devUSBConfig.cpp, TLRS_RESETFLAG_HARDWARE); `lr1121` has no STM32 equivalent.
 // ---------------------------------------------------------------------------
 void ConfigJson_Reset(const bool resetConfig, const bool resetOptions)
 {

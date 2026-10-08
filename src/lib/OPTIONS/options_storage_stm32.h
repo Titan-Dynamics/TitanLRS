@@ -31,9 +31,10 @@
  *               change self-invalidating instead of loading garbage.
  *   - crc matches (CRC16/CCITT-FALSE over the header bytes preceding `crc`, then the payload —
  *               so the `customised` flag is covered by the CRC too).
- *   - the payload's flash_discriminator equals the compile-time one (MY_UID + LATEST_COMMIT),
- *               i.e. re-flashing with a different binding phrase or firmware drops stored
- *               overrides, matching the ESP flash-discriminator contract.
+ *   - the payload's flash_discriminator equals fw_options_discriminator() (MY_UID +
+ *               LATEST_COMMIT, plus on the unified targets the slot's random flash-discriminator),
+ *               i.e. re-flashing with a different binding phrase or firmware — or any web flash —
+ *               drops stored overrides, matching the ESP flash-discriminator contract.
  */
 
 #include <stdint.h>

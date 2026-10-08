@@ -11,8 +11,8 @@ extern device_t USBConfig_device;
  * @brief Feed config-pipe bytes to the config service.
  *
  * The service owns the vendor-class config pipe (SerialCfg, lib/USBComposite) outright on both TX
- * and RX, so these bytes have no other consumer. A session opens on a CRC-valid TCFG_HELLO and
- * closes on TCFG_BYE or USBCFG_SESSION_TIMEOUT_MS of silence.
+ * and RX, so these bytes have no other consumer. A session opens on a CRC-valid TLRS_HELLO and
+ * closes on TLRS_BYE or USBCFG_SESSION_TIMEOUT_MS of silence.
  *
  * @return true while a session is open.
  */

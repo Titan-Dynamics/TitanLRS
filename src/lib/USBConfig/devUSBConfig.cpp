@@ -13,14 +13,22 @@
 #include "usbcfg_framing.h"
 
 #include "USBVendorStream.h"
+#include "stm32_dfu.h"
+
+#if defined(TITAN_UNIFIED_STM32)
+#include "elrs_eeprom.h"
+#include "hardware_layout.h"
+#include "hardware_override_stm32.h"
+#endif
 
 #if defined(TARGET_TX)
 #include "handset.h"
 #endif
 
 extern unsigned long rebootTime;
+extern unsigned long dfuRequestTime;
 
-// Session drops if no valid frame arrives inside this window. The host sends TCFG_PING at 1 Hz
+// Session drops if no valid frame arrives inside this window. The host sends TLRS_PING at 1 Hz
 // while idle, so this only fires on a yanked cable / crashed host.
 #define USBCFG_SESSION_TIMEOUT_MS 3000
 
@@ -67,6 +75,25 @@ static bool moduleIsBusy()
 #endif
 }
 
+// The hardware layout can be overridden only when the layout names a config flash that answered
+// (the override is stored there).
+static bool hardwareWritable()
+{
+#if defined(TITAN_UNIFIED_STM32)
+    return elrs_ConfigFlash() != nullptr;
+#else
+    return false;
+#endif
+}
+
+// Without a hardware layout (connectionState hardwareUndefined) setup() stops before the config
+// is loaded and given its storage, so only the options, the layout, reboot and DFU are served —
+// enough to fix the layout or reflash the board.
+static bool configLoaded()
+{
+    return connectionState != hardwareUndefined;
+}
+
 static void closeSession()
 {
     s_sessionActive = false;
@@ -86,6 +113,7 @@ static void handleHello()
     doc["version"] = version;
     doc["git-commit"] = commit;
     doc["target"] = &target_name[4];
+    doc["product-name"] = product_name;
 #if defined(TARGET_TX)
     doc["module-type"] = "TX";
 #else
@@ -105,7 +133,14 @@ static void handleHello()
 
     // Options are runtime-writable and persisted (lib/OPTIONS/options_storage_stm32.h), which is
     // what lights up the save buttons on the dashboard's binding and options panels.
-    const uint32_t features = TCFG_FEATURE_OPTIONS_WRITE;
+    uint32_t features = TLRS_FEATURE_OPTIONS_WRITE;
+#if defined(STM32_DFU_SUPPORTED)
+    features |= TLRS_FEATURE_DFU;
+#endif
+    if (hardwareWritable())
+    {
+        features |= TLRS_FEATURE_HARDWARE_WRITE;
+    }
 
     uint8_t payload[USBCFG_PAYLOAD_MAX];
     payload[0] = USBCFG_PROTOCOL_VERSION;
@@ -115,7 +150,7 @@ static void handleHello()
     payload[4] = (uint8_t)((features >> 24) & 0xFF);
     const size_t json = serializeJson(doc, (char *)&payload[5], sizeof(payload) - 5);
 
-    usbcfg_writeFrame(s_port, '>', TCFG_HELLO, payload, (uint16_t)(5 + json));
+    usbcfg_writeFrame(s_port, '>', TLRS_HELLO, payload, (uint16_t)(5 + json));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -125,29 +160,45 @@ static void handleGet(const uint8_t *p, const uint16_t len)
 {
     if (len < 1)
     {
-        usbcfg_writeError(s_port, TCFG_GET, TCFG_ERR_BAD_REQUEST, "missing resource");
+        usbcfg_writeError(s_port, TLRS_GET, TLRS_ERR_BAD_REQUEST, "missing resource");
         return;
     }
     const uint8_t resource = p[0];
     const uint8_t flags = len > 1 ? p[1] : 0;
 
+    if (resource == TLRS_RES_CONFIG && !configLoaded())
+    {
+        usbcfg_writeError(s_port, TLRS_GET, TLRS_ERR_UNSUPPORTED, "no hardware layout");
+        return;
+    }
+
     JsonDocument doc;
     switch (resource)
     {
-    case TCFG_RES_CONFIG:
-        ConfigJson_BuildConfig(doc.to<JsonObject>(), (flags & TCFG_GETFLAG_EXPORT) != 0);
+    case TLRS_RES_CONFIG:
+        ConfigJson_BuildConfig(doc.to<JsonObject>(), (flags & TLRS_GETFLAG_EXPORT) != 0);
         break;
-    case TCFG_RES_OPTIONS:
+    case TLRS_RES_OPTIONS:
         ConfigJson_BuildOptions(doc.to<JsonObject>());
         break;
+#if defined(TITAN_UNIFIED_STM32)
+    case TLRS_RES_HARDWARE:
+        // The effective layout: the flashed one, or the override (with "customised": true).
+        // An empty object when the board was flashed without a layout.
+        if (deserializeJson(doc, getHardware()) || !doc.is<JsonObject>())
+        {
+            doc.to<JsonObject>();
+        }
+        break;
+#endif
     default:
-        usbcfg_writeError(s_port, TCFG_GET, TCFG_ERR_UNSUPPORTED, "unknown resource");
+        usbcfg_writeError(s_port, TLRS_GET, TLRS_ERR_UNSUPPORTED, "unknown resource");
         return;
     }
 
     // Serialize straight onto the wire — measureJson() gives the host the total up front so it
     // can size its reassembly buffer without us ever holding the document as text.
-    UsbCfgChunkWriter writer(s_port, TCFG_GET, (uint32_t)measureJson(doc));
+    UsbCfgChunkWriter writer(s_port, TLRS_GET, (uint32_t)measureJson(doc));
     serializeJson(doc, writer);
     writer.finish();
 }
@@ -161,8 +212,49 @@ static void setFinalResponse(const uint8_t status, const char *message)
     buf[0] = status;
     const size_t len = message ? strnlen(message, sizeof(buf) - 1) : 0;
     if (len) memcpy(&buf[1], message, len);
-    usbcfg_writeFrame(s_port, status == 0 ? '>' : '!', TCFG_SET, buf, (uint16_t)(len + 1));
+    usbcfg_writeFrame(s_port, status == 0 ? '>' : '!', TLRS_SET, buf, (uint16_t)(len + 1));
 }
+
+#if defined(TITAN_UNIFIED_STM32)
+// Mirrors the ESP `POST /hardware.json` (devWIFI.cpp): the document replaces the flashed layout
+// from the next boot, nothing is applied live. `config_flash_*` always come from the flashed
+// layout (hardware_ApplyOverride), so they are not stored.
+static void setHardware(JsonDocument &doc)
+{
+    if (!doc.is<JsonObject>())
+    {
+        setFinalResponse(TLRS_ERR_PARSE, "layout must be a JSON object");
+        return;
+    }
+    doc.remove("config_flash_cs");
+    doc.remove("config_flash_sck");
+    doc.remove("config_flash_miso");
+    doc.remove("config_flash_mosi");
+    doc["customised"] = true;
+
+    const size_t len = measureJson(doc);
+    if (len > ELRSOPTS_HARDWARE_SIZE)
+    {
+        setFinalResponse(TLRS_ERR_TOO_LARGE, "layout too large");
+        return;
+    }
+    char *json = (char *)malloc(len + 1);
+    if (json == nullptr)
+    {
+        setFinalResponse(TLRS_ERR_INTERNAL, "out of memory");
+        return;
+    }
+    serializeJson(doc, json, len + 1);
+    const bool saved = hwOverride_Save(json, len);
+    free(json);
+    if (!saved)
+    {
+        setFinalResponse(TLRS_ERR_INTERNAL, "config flash write failed");
+        return;
+    }
+    setFinalResponse(0, "Hardware updated - reboot to apply");
+}
+#endif
 
 static void handleSet(const uint8_t *p, const uint16_t len)
 {
@@ -170,7 +262,7 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     if (len < 4)
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "short chunk");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BAD_REQUEST, "short chunk");
         return;
     }
     const uint8_t resource = p[0];
@@ -178,40 +270,48 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     const uint8_t flags = p[3];
     uint16_t offset = 4;
 
-    if (resource != TCFG_RES_CONFIG && resource != TCFG_RES_OPTIONS)
+    if (resource != TLRS_RES_CONFIG && resource != TLRS_RES_OPTIONS &&
+        !(resource == TLRS_RES_HARDWARE && hardwareWritable()))
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_UNSUPPORTED, "unknown resource");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_UNSUPPORTED, "unknown resource");
+        return;
+    }
+    if (resource == TLRS_RES_CONFIG && !configLoaded())
+    {
+        setAbort();
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_UNSUPPORTED, "no hardware layout");
         return;
     }
 
     if (moduleIsBusy())
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BUSY, "module is armed");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BUSY, "module is armed");
         return;
     }
 
-    if (flags & TCFG_CHUNK_FIRST)
+    if (flags & TLRS_CHUNK_FIRST)
     {
         setAbort();
         if (len < offset + 4)
         {
-            usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "missing total length");
+            usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BAD_REQUEST, "missing total length");
             return;
         }
         s_setExpected = (uint32_t)p[offset] | ((uint32_t)p[offset + 1] << 8) |
                         ((uint32_t)p[offset + 2] << 16) | ((uint32_t)p[offset + 3] << 24);
         offset += 4;
-        if (s_setExpected > USBCFG_SET_MAX_BYTES)
+        if (s_setExpected > USBCFG_SET_MAX_BYTES ||
+            (resource == TLRS_RES_HARDWARE && s_setExpected > ELRSOPTS_HARDWARE_SIZE))
         {
-            usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_TOO_LARGE, "document too large");
+            usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_TOO_LARGE, "document too large");
             return;
         }
         s_setBuf = (char *)malloc(s_setExpected + 1);
         if (s_setBuf == nullptr)
         {
-            usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_INTERNAL, "out of memory");
+            usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_INTERNAL, "out of memory");
             return;
         }
         s_setResource = resource;
@@ -221,19 +321,19 @@ static void handleSet(const uint8_t *p, const uint16_t len)
 
     if (!s_setActive)
     {
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "no chunk sequence in progress");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BAD_REQUEST, "no chunk sequence in progress");
         return;
     }
     if (resource != s_setResource)
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "resource changed mid-sequence");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BAD_REQUEST, "resource changed mid-sequence");
         return;
     }
     if (seq != s_setNextSeq)
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_BAD_REQUEST, "chunk out of sequence");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_BAD_REQUEST, "chunk out of sequence");
         return;
     }
 
@@ -241,18 +341,18 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     if (s_setLen + dataLen > s_setExpected)
     {
         setAbort();
-        usbcfg_writeError(s_port, TCFG_SET, TCFG_ERR_TOO_LARGE, "more data than declared");
+        usbcfg_writeError(s_port, TLRS_SET, TLRS_ERR_TOO_LARGE, "more data than declared");
         return;
     }
     memcpy(s_setBuf + s_setLen, p + offset, dataLen);
     s_setLen += dataLen;
     s_setNextSeq++;
 
-    if (!(flags & TCFG_CHUNK_LAST))
+    if (!(flags & TLRS_CHUNK_LAST))
     {
         // Per-chunk ack so the host can flow-control.
         const uint8_t ack[2] = {(uint8_t)(seq & 0xFF), (uint8_t)(seq >> 8)};
-        usbcfg_writeFrame(s_port, '>', TCFG_SET, ack, sizeof(ack));
+        usbcfg_writeFrame(s_port, '>', TLRS_SET, ack, sizeof(ack));
         return;
     }
 
@@ -263,7 +363,7 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     if (err)
     {
         setAbort();
-        setFinalResponse(TCFG_ERR_PARSE, err.c_str());
+        setFinalResponse(TLRS_ERR_PARSE, err.c_str());
         return;
     }
     // The document is parsed; the raw text is no longer needed while we commit to flash.
@@ -272,17 +372,25 @@ static void handleSet(const uint8_t *p, const uint16_t len)
     s_setLen = 0;
     s_setActive = false;
 
+#if defined(TITAN_UNIFIED_STM32)
+    if (s_setResource == TLRS_RES_HARDWARE)
+    {
+        setHardware(doc);
+        return;
+    }
+#endif
+
     // Options are all reboot-to-apply, but we never reboot ourselves — the host drives that with
-    // TCFG_REBOOT once the user accepts the prompt.
-    const char *applyErr = s_setResource == TCFG_RES_OPTIONS
+    // TLRS_REBOOT once the user accepts the prompt.
+    const char *applyErr = s_setResource == TLRS_RES_OPTIONS
                                ? ConfigJson_ApplyOptions(doc.as<JsonVariant>())
                                : ConfigJson_ApplyConfig(doc.as<JsonVariant>());
     if (applyErr)
     {
-        setFinalResponse(TCFG_ERR_INTERNAL, applyErr);
+        setFinalResponse(TLRS_ERR_INTERNAL, applyErr);
         return;
     }
-    setFinalResponse(0, s_setResource == TCFG_RES_OPTIONS ? "Options updated - reboot to apply"
+    setFinalResponse(0, s_setResource == TLRS_RES_OPTIONS ? "Options updated - reboot to apply"
                                                           : "Configuration updated");
 }
 
@@ -291,12 +399,23 @@ static void handleReset(const uint8_t *p, const uint16_t len)
 {
     if (moduleIsBusy())
     {
-        usbcfg_writeError(s_port, TCFG_RESET, TCFG_ERR_BUSY, "module is armed");
+        usbcfg_writeError(s_port, TLRS_RESET, TLRS_ERR_BUSY, "module is armed");
         return;
     }
-    const uint8_t flags = len ? p[0] : TCFG_RESETFLAG_CONFIG;
-    ConfigJson_Reset((flags & TCFG_RESETFLAG_CONFIG) != 0, (flags & TCFG_RESETFLAG_OPTIONS) != 0);
-    usbcfg_writeAck(s_port, TCFG_RESET);
+    const uint8_t flags = len ? p[0] : TLRS_RESETFLAG_CONFIG;
+    if ((flags & (TLRS_RESETFLAG_CONFIG | TLRS_RESETFLAG_OPTIONS)) && !configLoaded())
+    {
+        usbcfg_writeError(s_port, TLRS_RESET, TLRS_ERR_UNSUPPORTED, "no hardware layout");
+        return;
+    }
+#if defined(TITAN_UNIFIED_STM32)
+    if (flags & TLRS_RESETFLAG_HARDWARE)
+    {
+        hwOverride_Clear();
+    }
+#endif
+    ConfigJson_Reset((flags & TLRS_RESETFLAG_CONFIG) != 0, (flags & TLRS_RESETFLAG_OPTIONS) != 0);
+    usbcfg_writeAck(s_port, TLRS_RESET);
     s_port->flush();
     rebootTime = millis() + 100;
 }
@@ -307,7 +426,7 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
     {
         // A session only opens on HELLO. Any other frame arriving first is from a host that lost
         // track of the session state, so ignore it rather than half-opening.
-        if (function != TCFG_HELLO) return;
+        if (function != TLRS_HELLO) return;
         s_sessionActive = true;
         DBGLN("USBConfig: session opened");
     }
@@ -316,16 +435,16 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
 
     switch (function)
     {
-    case TCFG_HELLO:
+    case TLRS_HELLO:
         handleHello();
         break;
 
-    case TCFG_PING:
-        usbcfg_writeAck(s_port, TCFG_PING);
+    case TLRS_PING:
+        usbcfg_writeAck(s_port, TLRS_PING);
         break;
 
-    case TCFG_BYE:
-        usbcfg_writeAck(s_port, TCFG_BYE);
+    case TLRS_BYE:
+        usbcfg_writeAck(s_port, TLRS_BYE);
         // Deliberately no flush(): the host has just told us it is going away and tears the
         // interface down the moment it sees this ack, so waiting for the pipe to drain is at
         // best a no-op and at worst a stall on a host that is already gone. The reboot paths
@@ -334,31 +453,46 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
         DBGLN("USBConfig: session closed");
         break;
 
-    case TCFG_GET:
+    case TLRS_GET:
         handleGet(p, len);
         break;
 
-    case TCFG_SET:
+    case TLRS_SET:
         handleSet(p, len);
         break;
 
-    case TCFG_REBOOT:
+    case TLRS_REBOOT:
         if (moduleIsBusy())
         {
-            usbcfg_writeError(s_port, TCFG_REBOOT, TCFG_ERR_BUSY, "module is armed");
+            usbcfg_writeError(s_port, TLRS_REBOOT, TLRS_ERR_BUSY, "module is armed");
             break;
         }
-        usbcfg_writeAck(s_port, TCFG_REBOOT);
+        usbcfg_writeAck(s_port, TLRS_REBOOT);
         s_port->flush();
         rebootTime = millis() + 100;
         break;
 
-    case TCFG_RESET:
+    case TLRS_RESET:
         handleReset(p, len);
         break;
 
+    case TLRS_DFU:
+#if defined(STM32_DFU_SUPPORTED)
+        if (moduleIsBusy())
+        {
+            usbcfg_writeError(s_port, TLRS_DFU, TLRS_ERR_BUSY, "module is armed");
+            break;
+        }
+        usbcfg_writeAck(s_port, TLRS_DFU);
+        s_port->flush();
+        dfuRequestTime = millis() + 100;
+#else
+        usbcfg_writeError(s_port, TLRS_DFU, TLRS_ERR_UNSUPPORTED, "DFU not supported on this MCU");
+#endif
+        break;
+
     default:
-        usbcfg_writeError(s_port, function, TCFG_ERR_UNSUPPORTED, "unknown function");
+        usbcfg_writeError(s_port, function, TLRS_ERR_UNSUPPORTED, "unknown function");
         break;
     }
 }

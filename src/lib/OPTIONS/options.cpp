@@ -28,10 +28,18 @@ const char *wifi_ap_address = "10.0.0.1";
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
 #elif defined(PLATFORM_STM32)
-// STM32: compile-time fixed target, no runtime JSON loading. Options that the user changes over
-// the USB config API are persisted into the elrs_eeprom blob — see options_storage_stm32.h.
+// STM32: the per-board targets are compile-time fixed. The unified targets (TITAN_UNIFIED_STM32)
+// read their names, options and hardware layout from the firmware slot (titanSlot), as ESP reads
+// them from after its sketch. Options that the user changes over the USB config API are persisted
+// into the elrs_eeprom blob — see options_storage_stm32.h.
 #include "elrs_eeprom.h"
 #include "options_storage_stm32.h"
+#if defined(TITAN_UNIFIED_STM32)
+#include "FHSS.h"
+#include "options_apply.h"
+#include "hardware_layout.h"
+#include "hardware_override_stm32.h"
+#endif
 
 // The shared EEPROM instance, defined in tx_main.cpp / rx_main.cpp
 extern ELRS_EEPROM eeprom;
@@ -45,6 +53,36 @@ char device_name[ELRSOPTS_DEVICENAME_SIZE+1];
 firmware_options_t firmwareOptions;
 
 static bool optionsCustomised = false;
+
+#if defined(TITAN_UNIFIED_STM32)
+// The web flasher patches this block; volatile keeps GCC from constant-folding the zeroed regions.
+// GCC would place a volatile object in .data (RAM, copied from flash at startup); the section
+// keeps it in flash, where it is readable from reset.
+__attribute__((used, aligned(4), section(".rodata.titanSlot"))) const volatile titan_slot_t titanSlot = {
+    {'T', 'L', 'R', 'S', 'O', 'P', 'T', 'S'}, TITAN_SLOT_VERSION, 0, {0}, {0}, {0}, {0}};
+static_assert(sizeof(titan_slot_t) == 2716, "titan_slot_t layout is shared with the web flasher");
+
+const char *titan_ProductName(void)
+{
+    // A USB string descriptor holds at most 126 UTF-16 characters (bLength is one byte), and
+    // USBD_GetString() does not bound its copy, so the name is truncated to that.
+    static char name[127];
+    if (titanSlot.product_name[0] == '\0')
+    {
+        return "TitanLRS";
+    }
+    size_t i = 0;
+    for (; i < sizeof(name) - 1 && titanSlot.product_name[i] != '\0'; ++i)
+    {
+        name[i] = titanSlot.product_name[i];
+    }
+    name[i] = '\0';
+    return name;
+}
+
+// The flash-discriminator of the web flash (0 if none), folded into fw_options_discriminator().
+static uint32_t slotFlashDiscriminator = 0;
+#endif
 
 // CRC16/CCITT-FALSE: init=0xFFFF, poly=0x1021, no final XOR. Takes the running remainder so a CRC
 // can span the header and the payload without copying them into one buffer.
@@ -73,9 +111,10 @@ static uint16_t fw_options_blobCrc(const fw_options_header_t &hdr, const firmwar
  *
  * Mirrors the ESP "flash-discriminator" contract: re-flashing the device (new firmware commit) or
  * flashing with a different binding phrase invalidates any stored overrides, so the freshly
- * flashed values win. FNV-1a over LATEST_COMMIT and MY_UID.
+ * flashed values win. FNV-1a over LATEST_COMMIT and MY_UID, plus on the unified targets the
+ * flash-discriminator the web flasher writes into the slot, which is random per flash.
  */
-static uint32_t fw_options_discriminator()
+uint32_t fw_options_discriminator()
 {
     uint32_t hash = 2166136261UL;
     for (const char *p = commit; *p; ++p)
@@ -88,6 +127,13 @@ static uint32_t fw_options_discriminator()
     for (size_t i = 0; i < sizeof(myUid); ++i)
     {
         hash ^= myUid[i];
+        hash *= 16777619UL;
+    }
+#endif
+#if defined(TITAN_UNIFIED_STM32)
+    for (int shift = 0; shift < 32; shift += 8)
+    {
+        hash ^= (uint8_t)(slotFlashDiscriminator >> shift);
         hash *= 16777619UL;
     }
 #endif
@@ -144,6 +190,26 @@ static void applyCompileTimeDefaults()
     optionsCustomised = false;
 }
 
+/**
+ * @brief The defaults "Reset to defaults" returns to: the compile-time defaults, with the options
+ *        flashed into the slot applied on top on the unified targets.
+ */
+static void applyFlashedDefaults()
+{
+    applyCompileTimeDefaults();
+#if defined(TITAN_UNIFIED_STM32)
+    char json[ELRSOPTS_OPTIONS_SIZE + 1];
+    titan_SlotCopy(json, titanSlot.options, ELRSOPTS_OPTIONS_SIZE);
+    firmwareOptions.flash_discriminator = 0;
+    if (json[0] != '\0' && !options_ApplyJson(json, firmwareOptions, FHSSdomainCount))
+    {
+        DBGLN("options: flashed options do not parse, using compile-time defaults");
+    }
+    slotFlashDiscriminator = firmwareOptions.flash_discriminator;
+    firmwareOptions.flash_discriminator = fw_options_discriminator();
+#endif
+}
+
 bool options_IsCustomised()
 {
     return optionsCustomised;
@@ -176,21 +242,18 @@ void saveOptions()
 void options_SetTrueDefaults()
 {
     // The ESP version retains the regulatory domain "as there is no sensible default"; on STM32
-    // there is one — the domain the firmware was built for — so everything is re-seeded.
-    applyCompileTimeDefaults();
+    // there is one — the domain the firmware was built for, or the one flashed into the slot —
+    // so everything is re-seeded.
+    applyFlashedDefaults();
     saveOptions();
 }
 
-bool options_init()
+/**
+ * @brief Layer the options persisted in the EEPROM blob over the defaults already in
+ *        firmwareOptions, or seed the blob with those defaults when it holds nothing valid.
+ */
+static void loadPersistedOptions()
 {
-    // Compile-time defaults are the baseline; anything persisted is layered on top.
-    applyCompileTimeDefaults();
-
-    // options_init() runs before the mains bring the EEPROM up (tx_main.cpp / rx_main.cpp call
-    // eeprom.Begin() later), so bring it up here. Begin() is an idempotent flash -> RAM-mirror
-    // read, making the later call a harmless re-read of the same bytes.
-    eeprom.Begin();
-
     fw_options_header_t hdr;
     eeprom.Get(FW_OPTIONS_EEPROM_OFFSET, hdr);
     if (hdr.magic != FW_OPTIONS_MAGIC || hdr.version != FW_OPTIONS_VERSION)
@@ -225,6 +288,84 @@ bool options_init()
             DBGLN("options: loaded from flash (customised=%u)", (unsigned)optionsCustomised);
         }
     }
+}
+
+#if defined(TITAN_UNIFIED_STM32)
+/**
+ * @brief Replace the slot layout with the override saved in the config flash, if there is a
+ *        valid one for this flash. `config_flash_*` stay as flashed.
+ */
+static void applyHardwareOverride()
+{
+    String json;
+    if (!hwOverride_Load(json))
+    {
+        return;
+    }
+    JsonDocument overrideDoc;
+    if (deserializeJson(overrideDoc, json) || !overrideDoc.is<JsonObject>())
+    {
+        DBGLN("hardware: saved override does not parse, using the flashed layout");
+        return;
+    }
+    JsonDocument effective = hardware_ApplyOverride(hardware_SlotDoc(), overrideDoc);
+    hardware_LoadDoc(effective);
+    DBGLN("hardware: using the saved override");
+}
+
+bool options_init()
+{
+    // Names, then options, then hardware, then the EEPROM — the ESP order.
+    titan_SlotCopy(product_name, titanSlot.product_name, ELRSOPTS_PRODUCTNAME_SIZE);
+    titan_SlotCopy(device_name, titanSlot.device_name, ELRSOPTS_DEVICENAME_SIZE);
+#if defined(TARGET_RX)
+    const char *defaultName = "Unified RX";
+#else
+    const char *defaultName = "Unified TX";
+#endif
+    if (product_name[0] == '\0')
+    {
+        strcpy(product_name, defaultName);
+    }
+    if (device_name[0] == '\0')
+    {
+        strcpy(device_name, defaultName);
+    }
+
+    applyFlashedDefaults();
+
+    bool hasHardware = hardware_init();
+
+    // The EEPROM (and the hardware override in it) lives in the config flash named by the layout.
+    // Without one, options stay RAM-only and revert on every boot.
+    if (hasHardware && W25Q64_CS_PIN != UNDEF_PIN)
+    {
+        eeprom.Begin();
+        applyHardwareOverride();
+        loadPersistedOptions();
+    }
+
+    // A layout without the radio bus would leave setup() driving an unconfigured SPI peripheral.
+    // Treat it as no layout, so the board stays reachable over USB for DFU and the config API.
+    if (hasHardware && (GPIO_PIN_NSS == UNDEF_PIN || GPIO_PIN_SCK == UNDEF_PIN ||
+                        GPIO_PIN_MISO == UNDEF_PIN || GPIO_PIN_MOSI == UNDEF_PIN))
+    {
+        DBGLN("hardware: layout has no radio SPI pins");
+        hasHardware = false;
+    }
+    return hasHardware;
+}
+#else
+bool options_init()
+{
+    // Compile-time defaults are the baseline; anything persisted is layered on top.
+    applyCompileTimeDefaults();
+
+    // options_init() runs before the mains bring the EEPROM up (tx_main.cpp / rx_main.cpp call
+    // eeprom.Begin() later), so bring it up here. Begin() is an idempotent flash -> RAM-mirror
+    // read, making the later call a harmless re-read of the same bytes.
+    eeprom.Begin();
+    loadPersistedOptions();
 
     // Copy target name, truncating to fit
     strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
@@ -233,6 +374,7 @@ bool options_init()
     device_name[ELRSOPTS_DEVICENAME_SIZE] = '\0';
     return true;
 }
+#endif
 #else
 #include <ArduinoJson.h>
 #include <StreamString.h>

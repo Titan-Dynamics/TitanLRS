@@ -83,6 +83,11 @@
 
 #define USBD_LANGID_STRING            0x409   /* 1033 US.S English */
 
+#if defined(TITAN_UNIFIED_STM32)
+/* lib/OPTIONS/options.cpp */
+extern const char *titan_ProductName(void);
+#endif
+
 /* Product string: Use the specified string if specified, construct
    based on BOARD_NAME and class otherwise. */
 #if defined(USB_PRODUCT_STRING)
@@ -311,11 +316,19 @@ uint8_t *USBD_LangIDStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
   */
 uint8_t *USBD_Class_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
+#if defined(TITAN_UNIFIED_STM32)
+  /* The unified targets name themselves from the product_name the web flasher patched into the
+   * firmware slot. It is read straight from flash, so it is valid at enumeration time even
+   * though USB comes up in premain(), before setup(). */
+  UNUSED(speed);
+  USBD_GetString((uint8_t *)titan_ProductName(), USBD_StrDesc, length);
+#else
   if (speed == USBD_SPEED_HIGH) {
     USBD_GetString((uint8_t *)USBD_CLASS_PRODUCT_HS_STRING, USBD_StrDesc, length);
   } else {
     USBD_GetString((uint8_t *)USBD_CLASS_PRODUCT_FS_STRING, USBD_StrDesc, length);
   }
+#endif
   return USBD_StrDesc;
 }
 
