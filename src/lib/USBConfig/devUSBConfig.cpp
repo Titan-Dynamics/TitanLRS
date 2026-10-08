@@ -11,6 +11,8 @@
 #include "logging.h"
 #include "config_json.h"
 #include "usbcfg_framing.h"
+#include "USBConfigConnector.h"
+#include "CRSFRouter.h"
 
 #include "USBVendorStream.h"
 #include "stm32_dfu.h"
@@ -47,6 +49,10 @@ static uint32_t s_setExpected = 0;
 static uint16_t s_setNextSeq = 0;
 static uint8_t s_setResource = 0;
 static bool s_setActive = false;
+
+// CRSF parameter tunnel — only attached to the router while a session is open.
+static USBConfigConnector s_crsfConnector;
+static bool s_crsfAttached = false;
 
 static void setAbort()
 {
@@ -94,9 +100,30 @@ static bool configLoaded()
     return connectionState != hardwareUndefined;
 }
 
+// The parameter tree is only served once the hardware layout has loaded: without one, setup()
+// stops before any CRSF endpoint is registered, so the tunnel would have nothing to reach.
+static void attachCrsfTunnel()
+{
+    if (s_crsfAttached || !configLoaded()) return;
+    s_crsfConnector.setPort(s_port);
+    crsfRouter.addConnector(&s_crsfConnector);
+    s_crsfAttached = true;
+}
+
+static void detachCrsfTunnel()
+{
+    if (!s_crsfAttached) return;
+    crsfRouter.removeConnector(&s_crsfConnector);
+    s_crsfConnector.setPort(nullptr);
+    s_crsfAttached = false;
+}
+
 static void closeSession()
 {
     s_sessionActive = false;
+    // The router must stop writing parameter responses the moment the host goes away, or it keeps
+    // filling a pipe nobody is reading.
+    detachCrsfTunnel();
     setAbort();
     // Drop any half-parsed frame with the session. Without this a truncated frame leaves the
     // parser mid-payload, where it swallows whatever arrives next — so the first command of the
@@ -140,6 +167,12 @@ static void handleHello()
     if (hardwareWritable())
     {
         features |= TLRS_FEATURE_HARDWARE_WRITE;
+    }
+    // The tunnel is just a connector on the global router, which both mains build. It is what
+    // lights up the dashboard's Parameters tab.
+    if (configLoaded())
+    {
+        features |= TLRS_FEATURE_CRSF_PARAMS;
     }
 
     uint8_t payload[USBCFG_PAYLOAD_MAX];
@@ -420,6 +453,32 @@ static void handleReset(const uint8_t *p, const uint16_t len)
     rebootTime = millis() + 100;
 }
 
+// ---------------------------------------------------------------------------------------
+// CRSF tunnel
+// ---------------------------------------------------------------------------------------
+static void handleCrsf(const uint8_t *p, const uint16_t len)
+{
+    // Deliberately NOT guarded by moduleIsBusy(). These are the same live link parameters the
+    // handset LUA already changes in flight, reached through the same endpoint — gating one
+    // transport and not the other would make the web UI less capable than the handset for no
+    // safety gain. The static-config paths (SET/RESET/REBOOT) keep their armed guard because they
+    // need a reboot to apply. Parameters that genuinely must not move while armed are marked as
+    // such in the parameter definitions, which is the right place for it.
+    if (!s_crsfAttached) return;
+    if (len < CRSF_MIN_PACKET_LEN) return;
+
+    const uint8_t frameSize = p[1];
+    // frame_size counts everything after itself: type .. crc inclusive.
+    if (frameSize < 2 || (uint16_t)frameSize + CRSF_FRAME_NOT_COUNTED_BYTES != len) return;
+    if (len > CRSF_FRAME_SIZE_MAX) return;
+
+    if (crsfRouter.crsf_crc.calc(&p[2], frameSize - 1, 0) != p[len - 1]) return;
+
+    // Invalid frames are dropped without a reply: this is a stream of somebody else's protocol,
+    // and a '!' here would be read as a response to whatever request is actually in flight.
+    crsfRouter.processMessage(&s_crsfConnector, (const crsf_header_t *)p);
+}
+
 static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_t len)
 {
     if (!s_sessionActive)
@@ -428,6 +487,7 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
         // track of the session state, so ignore it rather than half-opening.
         if (function != TLRS_HELLO) return;
         s_sessionActive = true;
+        attachCrsfTunnel();
         DBGLN("USBConfig: session opened");
     }
 
@@ -451,6 +511,10 @@ static void handleFrame(const uint16_t function, const uint8_t *p, const uint16_
         // below do need the ack out first, and their flush is bounded.
         closeSession();
         DBGLN("USBConfig: session closed");
+        break;
+
+    case TLRS_CRSF:
+        handleCrsf(p, len);
         break;
 
     case TLRS_GET:

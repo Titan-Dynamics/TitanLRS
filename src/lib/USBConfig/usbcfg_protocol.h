@@ -30,7 +30,6 @@
 
 // ---- function IDs (base 0x5443 = 'TC') ------------------------------------------------
 // The identifier prefix is TLRS_; the wire values keep the original 'TC' base.
-// 0x544A is reserved (CRSF tunnel work).
 enum : uint16_t {
     TLRS_HELLO  = 0x5443,   // protoVer(1)                  -> protoVer(1) features(4,LE) json
     TLRS_BYE    = 0x5444,   // -                            -> ack
@@ -39,8 +38,24 @@ enum : uint16_t {
     TLRS_REBOOT = 0x5447,   // -                            -> ack, reboot ~100 ms later
     TLRS_RESET  = 0x5448,   // flags(1)                     -> ack, reboot
     TLRS_PING   = 0x5449,   // -                            -> ack (session keepalive)
+    TLRS_CRSF   = 0x544A,   // one raw CRSF frame           -> (async) one raw CRSF frame
     TLRS_DFU    = 0x544B,   // -                            -> ack, reset into ROM DFU ~100 ms later
 };
+
+// TLRS_CRSF is the one function that breaks the request/response pattern: it is a tunnel for
+// somebody else's protocol (the CRSF parameter tree the handset LUA drives), so frames flow in
+// both directions unsolicited and are never acknowledged.
+//
+//  - Payload is exactly ONE CRSF frame, sync byte through CRC inclusive. A CRSF frame is at most
+//    64 bytes against a 1017-byte payload, so batching would buy nothing and only complicate the
+//    parser. Do not batch.
+//  - Inbound frames are validated (length field + CRC-8) and silently DROPPED if invalid. They
+//    are deliberately not answered with '!': a stray error frame would desynchronise the
+//    request/response pairing every other function depends on.
+//  - Outbound frames are '>' with no request outstanding, so a host framing layer must route by
+//    function before matching against whatever request is in flight.
+//  - The tunnel only exists while a session is open; the connector is registered on HELLO and
+//    removed on BYE/timeout.
 
 // ---- resources ------------------------------------------------------------------------
 enum : uint8_t {
@@ -61,7 +76,7 @@ enum : uint8_t {
 #define TLRS_FEATURE_OPTIONS_WRITE (1u << 0) // SET(options) supported and persisted
 #define TLRS_FEATURE_CW            (1u << 1) // continuous-wave control (Phase 1.3)
 #define TLRS_FEATURE_LR1121_UPDATE (1u << 2) // LR1121 firmware upload (Phase 1.3)
-// bit 3 is reserved (CRSF tunnel work)
+#define TLRS_FEATURE_CRSF_PARAMS   (1u << 3) // TLRS_CRSF tunnel to the CRSF parameter tree
 #define TLRS_FEATURE_DFU            (1u << 4) // TLRS_DFU reboots into the MCU's ROM DFU bootloader
 #define TLRS_FEATURE_HARDWARE_WRITE (1u << 5) // SET(hardware) / RESET(hardware) persist a layout override
 
