@@ -11,11 +11,10 @@
   *                carrying MAVLink / CRSF / the debug log. Any GCS still sees
   *                exactly one virtual COM port.
   *
-  *   function 1 — vendor class (0xFF), interface 2, a bulk pair.
-  *                The config transport (lib/USBConfig), reached from the browser
-  *                with WebUSB and from python with pyusb. The OS creates no
-  *                serial node for it, so it cannot appear in — or be taken by —
-  *                anything that enumerates COM ports.
+  *   function 1 — CDC-NCM, interfaces 2 (comm) + 3 (data).
+  *                A USB network adapter (lib/USBNet runs lwIP over it). The
+  *                config API is HTTP on it and MAVLink is offered as UDP. The OS
+  *                binds its own NCM driver, so it never shows up as a port.
   ******************************************************************************
   */
 
@@ -41,31 +40,35 @@ typedef struct {
 #define CDC_IN_EP                     0x81U
 #define CDC_CMD_EP                    0x82U
 
-/* Vendor (config) function */
-#define VCFG_OUT_EP                   0x03U
-#define VCFG_IN_EP                    0x83U
+/* CDC-NCM function */
+#define NCM_OUT_EP                    0x03U
+#define NCM_IN_EP                     0x83U
+#define NCM_NOTIF_EP                  0x84U
 
-/* Device endpoints number including EP0. Highest EP number in use is 3. */
-#define DEV_NUM_EP                    0x04U
+/* Device endpoints number including EP0. Highest EP number in use is 4. */
+#define DEV_NUM_EP                    0x05U
 
 /* Interface numbering (must match the order in the configuration descriptor) */
 #define CDC_COMM_ITF                  0x00U
 #define CDC_DATA_ITF                  0x01U
-#define VCFG_ITF                      0x02U
+#define NCM_COMM_ITF                  0x02U
+#define NCM_DATA_ITF                  0x03U
 
 /* String descriptor indices for the per-function names. 0..5 are reserved by the
  * core (langid, mfc, product, serial, config, interface). */
 #define USBD_IDX_CDC_STR              0x06U
-#define USBD_IDX_VCFG_STR             0x07U
+#define USBD_IDX_NCM_STR              0x07U
+#define USBD_IDX_NCM_MAC_STR          0x08U
 
 #ifdef USE_USB_HS
   #define CDC_DATA_MAX_PACKET_SIZE    USB_HS_MAX_PACKET_SIZE
-  #define VCFG_MAX_PACKET_SIZE        USB_HS_MAX_PACKET_SIZE
+  #define NCM_DATA_MAX_PACKET_SIZE    USB_HS_MAX_PACKET_SIZE
 #else
   #define CDC_DATA_MAX_PACKET_SIZE    USB_FS_MAX_PACKET_SIZE
-  #define VCFG_MAX_PACKET_SIZE        USB_FS_MAX_PACKET_SIZE
+  #define NCM_DATA_MAX_PACKET_SIZE    USB_FS_MAX_PACKET_SIZE
 #endif
 #define CDC_CMD_PACKET_SIZE           8U
+#define NCM_NOTIF_PACKET_SIZE         64U /* notifications are 8-16 bytes: always a short packet */
 
 extern const ep_desc_t ep_def[];
 extern const uint32_t ep_def_count;

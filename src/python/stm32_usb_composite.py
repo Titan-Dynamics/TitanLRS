@@ -2,7 +2,7 @@
 # Keep the stm32duino USBDevice sources out of STM32 builds.
 #
 # lib/USBComposite is a full replacement for that library: it exposes a CDC-ACM
-# function *and* a vendor-class function (the WebUSB config pipe) instead of CDC
+# function *and* a CDC-NCM network function (the config API / MAVLink UDP) instead of CDC
 # alone, so the two cannot both be compiled — they define the same symbols
 # (SerialUSB, USBD_Desc, ep_def, the CDC queues, ...).
 #

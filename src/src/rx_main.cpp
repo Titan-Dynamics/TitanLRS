@@ -59,6 +59,7 @@ static inline void servoNewChannelsAvailable() {}
 #include "esp_task_wdt.h"
 #elif defined(PLATFORM_STM32)
 #include "stm32_def.h"
+#include "devThermal.h"
 #endif
 
 //
@@ -97,6 +98,7 @@ device_affinity_t ui_devices[] = {
   {&WIFI_device, 0},
 #else
   {&USBConfig_device, 1},
+  {&Thermal_device, 0},
 #endif
   {&Button_device, 0},
   {&AnalogVbat_device, 0},
@@ -140,12 +142,7 @@ bool pwmSerialDefined = false;
 uint32_t serialBaud;
 
 /* SERIAL_PROTOCOL_TX is used by CRSF output */
-#if defined(TARGET_DIY_900_RX_STM32H743_DEBUG)
-HardwareSerial SERIAL_PROTOCOL_TX(USART1);
-#elif defined(TARGET_DIY_900_RX_STM32H743)
-HardwareSerial SERIAL_PROTOCOL_TX(USART1);
-#elif defined(PLATFORM_STM32)
-// Default STM32 serial: override per-target as needed
+#if defined(PLATFORM_STM32)
 HardwareSerial SERIAL_PROTOCOL_TX(USART1);
 #else
 #define SERIAL_PROTOCOL_TX Serial
@@ -2029,10 +2026,6 @@ void resetConfigAndReboot()
 
 void setup()
 {
-#ifdef SUPPRESS_LCD
-    pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
-    pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
-#endif
     if (!options_init())
     {
         // In the failure case we set the logging to the null logger so nothing crashes
@@ -2147,10 +2140,9 @@ void loop()
     devicesUpdate(now);
 
 #if defined(PLATFORM_STM32)
-    // Drain the vendor-class config pipe every iteration, as tx_main does. Doing it from the
-    // device timeout hook instead let the receive queue fill between calls, which this
-    // core never recovers from. See lib/USBConfig/devUSBConfig.h.
-    USBConfig_DrainPort();
+    // Service the USB network (config API) every iteration, as tx_main does: received frames,
+    // lwIP timers and transmissions all run from here. See lib/USBConfig/devUSBConfig.h.
+    USBConfig_Poll();
 #endif
 
     // read and process any data from serial ports, send any queued non-RC data

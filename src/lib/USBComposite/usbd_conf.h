@@ -97,7 +97,7 @@ extern "C" {
 
 #ifndef USBD_MAX_NUM_INTERFACES
 /* 3: CDC comm + CDC data + vendor config */
-#define USBD_MAX_NUM_INTERFACES                     3U
+#define USBD_MAX_NUM_INTERFACES                     4U
 #endif /* USBD_MAX_NUM_INTERFACES */
 
 #ifndef USBD_MAX_NUM_CONFIGURATION
@@ -132,7 +132,7 @@ extern "C" {
 
 #ifndef USBD_CLASS_BOS_ENABLED
 /* On: the BOS carries the MS OS 2.0 platform capability (usbd_msos20.c),
- * which is how Windows learns to bind WinUSB to the vendor interface. */
+ * which is how Windows learns to bind its NCM driver to the network interface. */
 #define USBD_CLASS_BOS_ENABLED                      1U
 #endif /* USBD_CLASS_BOS_ENABLED */
 

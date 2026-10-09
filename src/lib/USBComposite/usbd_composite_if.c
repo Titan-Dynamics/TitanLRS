@@ -23,19 +23,6 @@
   #define USB_CDC_TRANSMIT_TIMEOUT 3
 #endif
 
-/*
- * The vendor pipe needs a far more generous one. A CDC host driver keeps a read
- * permanently pending, so an IN transfer is picked up immediately; a WebUSB or
- * libusb client only has data in flight while it has a transferIn() posted, and
- * there is a real gap between "device wrote the reply" and "page got round to
- * asking for it". At the CDC timeout that gap truncates replies. This is only a
- * deadlock escape — an unplug drops dev_state out of CONFIGURED, which ends the
- * write loop immediately regardless.
- */
-#ifndef USB_VCFG_TRANSMIT_TIMEOUT
-  #define USB_VCFG_TRANSMIT_TIMEOUT 1000
-#endif
-
 /* USB Device Core handle (one device, two functions) */
 USBD_HandleTypeDef hUSBD_Device_CDC;
 
@@ -66,13 +53,6 @@ static USBD_CDC_LineCodingTypeDef linecoding = {
   extern void dtr_togglingHook(uint8_t *buf, uint32_t *len);
   static uint8_t dtr_toggling = 0;
 #endif
-
-/* --- Vendor state --------------------------------------------------------- */
-
-CDC_TransmitQueue_TypeDef VCFG_TransmitQueue;
-CDC_ReceiveQueue_TypeDef VCFG_ReceiveQueue;
-static __IO bool vcfgReceivePended = true;
-static uint32_t vcfgTransmitStart = 0;
 
 /* --- CDC media callbacks -------------------------------------------------- */
 
@@ -192,50 +172,6 @@ static USBD_CDC_ItfTypeDef USBD_CDC_fops = {
   CDC_Itf_TransmitCplt
 };
 
-/* --- Vendor media callbacks ----------------------------------------------- */
-
-static int8_t VCFG_Itf_Init(void)
-{
-  CDC_TransmitQueue_Init(&VCFG_TransmitQueue);
-  CDC_ReceiveQueue_Init(&VCFG_ReceiveQueue);
-  vcfgReceivePended = true;
-  USBD_VCFG_SetRxBuffer(&hUSBD_Device_CDC, CDC_ReceiveQueue_ReserveBlock(&VCFG_ReceiveQueue));
-  return ((int8_t)USBD_OK);
-}
-
-static int8_t VCFG_Itf_DeInit(void)
-{
-  return ((int8_t)USBD_OK);
-}
-
-static int8_t VCFG_Itf_Receive(uint8_t *Buf, uint32_t *Len)
-{
-  UNUSED(Buf);
-  CDC_ReceiveQueue_CommitBlock(&VCFG_ReceiveQueue, (uint16_t)(*Len));
-  vcfgReceivePended = false;
-  if (!VCFG_resume_receive()) {
-    USBD_VCFG_ClearBuffer(&hUSBD_Device_CDC);
-  }
-  return ((int8_t)USBD_OK);
-}
-
-static int8_t VCFG_Itf_TransmitCplt(uint8_t *Buf, uint32_t *Len)
-{
-  UNUSED(Buf);
-  UNUSED(Len);
-  vcfgTransmitStart = 0;
-  CDC_TransmitQueue_CommitRead(&VCFG_TransmitQueue);
-  VCFG_continue_transmit();
-  return ((int8_t)USBD_OK);
-}
-
-static USBD_VCFG_ItfTypeDef USBD_VCFG_fops = {
-  VCFG_Itf_Init,
-  VCFG_Itf_DeInit,
-  VCFG_Itf_Receive,
-  VCFG_Itf_TransmitCplt
-};
-
 /* --- Device bring-up ------------------------------------------------------ */
 
 void USBComposite_init(void)
@@ -252,10 +188,9 @@ void USBComposite_init(void)
   if (!USBComposite_initialized) {
     if (USBD_Init(&hUSBD_Device_CDC, &USBD_Desc, 0) == USBD_OK) {
       if (USBD_RegisterClass(&hUSBD_Device_CDC, USBD_COMPOSITE_CLASS) == USBD_OK) {
-        /* Both media interfaces must be registered before Start: USBD_Start can
-         * complete enumeration and call the class Init(), which uses them. */
-        if ((USBD_Composite_RegisterCDC(&hUSBD_Device_CDC, &USBD_CDC_fops) == USBD_OK) &&
-            (USBD_Composite_RegisterVCFG(&hUSBD_Device_CDC, &USBD_VCFG_fops) == USBD_OK)) {
+        /* The CDC media interface must be registered before Start: USBD_Start
+         * can complete enumeration and call the class Init(), which uses it. */
+        if (USBD_Composite_RegisterCDC(&hUSBD_Device_CDC, &USBD_CDC_fops) == USBD_OK) {
           USBD_Start(&hUSBD_Device_CDC);
           USBComposite_initialized = true;
         }
@@ -343,51 +278,6 @@ void CDC_enableDTR(bool enable)
      * that opened but carried no data. */
     dtrState = true;
   }
-}
-
-/* --- Vendor flow control -------------------------------------------------- */
-
-bool VCFG_connected(void)
-{
-  uint32_t transmitTime = vcfgTransmitStart;
-  if (transmitTime) {
-    transmitTime = HAL_GetTick() - transmitTime;
-  }
-  /* No DTR equivalent on a vendor interface: being configured is as much as the
-   * device can know. Whether anyone has claimed the interface is invisible to
-   * it, so an unclaimed pipe simply backs up until the timeout above. */
-  return ((hUSBD_Device_CDC.dev_state == USBD_STATE_CONFIGURED)
-          && (transmitTime < USB_VCFG_TRANSMIT_TIMEOUT));
-}
-
-void VCFG_continue_transmit(void)
-{
-  uint16_t size;
-  uint8_t *buffer;
-  USBD_VCFG_HandleTypeDef *hvcfg = USBD_VCFG_Handle();
-
-  if (hvcfg->TxState == 0U) {
-    buffer = CDC_TransmitQueue_ReadBlock(&VCFG_TransmitQueue, &size);
-    if (size > 0) {
-      vcfgTransmitStart = HAL_GetTick();
-      USBD_VCFG_SetTxBuffer(&hUSBD_Device_CDC, buffer, size);
-      USBD_VCFG_TransmitPacket(&hUSBD_Device_CDC);
-    }
-  }
-}
-
-bool VCFG_resume_receive(void)
-{
-  if (!vcfgReceivePended) {
-    uint8_t *block = CDC_ReceiveQueue_ReserveBlock(&VCFG_ReceiveQueue);
-    if (block != NULL) {
-      vcfgReceivePended = true;
-      USBD_VCFG_SetRxBuffer(&hUSBD_Device_CDC, block);
-      USBD_VCFG_ReceivePacket(&hUSBD_Device_CDC);
-      return true;
-    }
-  }
-  return false;
 }
 
 #endif /* USBCON */

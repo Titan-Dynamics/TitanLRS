@@ -18,40 +18,26 @@ uint32_t elrs_crc32_update(uint32_t crc, const uint8_t *buf, uint32_t len)
 
 #if !defined(TARGET_NATIVE)
 #if defined(PLATFORM_STM32)
-    #if defined(HAS_W25Q64_CONFIG)
-        #include "W25Q64.h"
-        #include <new>
+    // STM32: the config lives in the SPI NOR flash named by the hardware layout (config_flash_*).
+    #include "W25Q64.h"
+    #include <new>
 
-        static uint8_t s_storage[RESERVED_EEPROM_SIZE];
+    static uint8_t s_storage[RESERVED_EEPROM_SIZE];
 
-        // Sector 0 layout: ['T','L','R','S'] [len:u16 LE] [blob:len] [crc32:u32 LE]
-        static const uint32_t W25Q64_CONFIG_ADDR  = 0x000000;
-        static const uint8_t  W25Q64_MAGIC[4]     = { 'T', 'L', 'R', 'S' };
+    // Sector 0 layout: ['T','L','R','S'] [len:u16 LE] [blob:len] [crc32:u32 LE]
+    static const uint32_t W25Q64_CONFIG_ADDR  = 0x000000;
+    static const uint8_t  W25Q64_MAGIC[4]     = { 'T', 'L', 'R', 'S' };
 
+    // Created by Begin() from the target's config-flash pins, which on the unified targets
+    // come from the hardware layout and are only known once it has loaded.
+    alignas(W25Q64) static uint8_t s_flashStorage[sizeof(W25Q64)];
+    static W25Q64 *s_flash = nullptr;
+    static bool s_flashTried = false;
 
-        // Created by Begin() from the target's config-flash pins, which on the unified targets
-        // come from the hardware layout and are only known once it has loaded.
-        alignas(W25Q64) static uint8_t s_flashStorage[sizeof(W25Q64)];
-        static W25Q64 *s_flash = nullptr;
-        static bool s_flashTried = false;
-
-        W25Q64 *elrs_ConfigFlash()
-        {
-            return s_flash;
-        }
-    #elif defined(TARGET_USE_EEPROM) && defined(USE_I2C)
-        #if !defined(TARGET_EEPROM_ADDR)
-            #define TARGET_EEPROM_ADDR 0x51
-            #warning "!! Using default EEPROM address (0x51) !!"
-        #endif
-
-        #include <Wire.h>
-        #include <extEEPROM.h>
-        extEEPROM EEPROM(kbits_2, 1, 1, TARGET_EEPROM_ADDR);
-    #else
-        #define STM32_USE_FLASH
-        #include <utility/stm32_eeprom.h>
-    #endif
+    W25Q64 *elrs_ConfigFlash()
+    {
+        return s_flash;
+    }
 #else
     #include <EEPROM.h>
 #endif
@@ -60,78 +46,67 @@ void
 ELRS_EEPROM::Begin()
 {
 #if defined(PLATFORM_STM32)
-    #if defined(HAS_W25Q64_CONFIG)
-        if (!s_flashTried)
+    if (!s_flashTried)
+    {
+        s_flashTried = true;
+        if (W25Q64_CS_PIN != UNDEF_PIN)
         {
-            s_flashTried = true;
-            if (W25Q64_CS_PIN != UNDEF_PIN)
+            W25Q64 *flash = new (s_flashStorage) W25Q64(W25Q64_CS_PIN, W25Q64_SCK_PIN, W25Q64_MISO_PIN, W25Q64_MOSI_PIN);
+            if (flash->begin())
             {
-                W25Q64 *flash = new (s_flashStorage) W25Q64(W25Q64_CS_PIN, W25Q64_SCK_PIN, W25Q64_MISO_PIN, W25Q64_MOSI_PIN);
-                if (flash->begin())
-                {
-                    s_flash = flash;
-                }
-                else
-                {
-                    ERRLN("W25Q64 not found - using defaults");
-                }
+                s_flash = flash;
+            }
+            else
+            {
+                ERRLN("W25Q64 not found - using defaults");
             }
         }
-        if (s_flash == nullptr)
-        {
-            memset(s_storage, 0, sizeof(s_storage));
-            return;
-        }
+    }
+    if (s_flash == nullptr)
+    {
+        memset(s_storage, 0, sizeof(s_storage));
+        return;
+    }
 
-        uint8_t header[6];
-        s_flash->read(W25Q64_CONFIG_ADDR, header, sizeof(header));
+    uint8_t header[6];
+    s_flash->read(W25Q64_CONFIG_ADDR, header, sizeof(header));
 
-        if (memcmp(header, W25Q64_MAGIC, 4) != 0)
-        {
-            DBGLN("W25Q64 config: no magic, using defaults");
-            memset(s_storage, 0, sizeof(s_storage));
-            return;
-        }
+    if (memcmp(header, W25Q64_MAGIC, 4) != 0)
+    {
+        DBGLN("W25Q64 config: no magic, using defaults");
+        memset(s_storage, 0, sizeof(s_storage));
+        return;
+    }
 
-        uint16_t len = (uint16_t)header[4] | ((uint16_t)header[5] << 8);
-        if (len != RESERVED_EEPROM_SIZE)
-        {
-            DBGLN("W25Q64 config: len mismatch (%u), using defaults", len);
-            memset(s_storage, 0, sizeof(s_storage));
-            return;
-        }
+    uint16_t len = (uint16_t)header[4] | ((uint16_t)header[5] << 8);
+    if (len != RESERVED_EEPROM_SIZE)
+    {
+        DBGLN("W25Q64 config: len mismatch (%u), using defaults", len);
+        memset(s_storage, 0, sizeof(s_storage));
+        return;
+    }
 
-        s_flash->read(W25Q64_CONFIG_ADDR + 6, s_storage, RESERVED_EEPROM_SIZE);
+    s_flash->read(W25Q64_CONFIG_ADDR + 6, s_storage, RESERVED_EEPROM_SIZE);
 
-        uint8_t crc_bytes[4];
-        s_flash->read(W25Q64_CONFIG_ADDR + 6 + RESERVED_EEPROM_SIZE, crc_bytes, 4);
-        uint32_t crc_stored = (uint32_t)crc_bytes[0]
-                            | ((uint32_t)crc_bytes[1] << 8)
-                            | ((uint32_t)crc_bytes[2] << 16)
-                            | ((uint32_t)crc_bytes[3] << 24);
+    uint8_t crc_bytes[4];
+    s_flash->read(W25Q64_CONFIG_ADDR + 6 + RESERVED_EEPROM_SIZE, crc_bytes, 4);
+    uint32_t crc_stored = (uint32_t)crc_bytes[0]
+                        | ((uint32_t)crc_bytes[1] << 8)
+                        | ((uint32_t)crc_bytes[2] << 16)
+                        | ((uint32_t)crc_bytes[3] << 24);
 
-        uint32_t crc = 0;
-        crc = elrs_crc32_update(crc, W25Q64_MAGIC, 4);
-        crc = elrs_crc32_update(crc, &header[4], 2);
-        crc = elrs_crc32_update(crc, s_storage, RESERVED_EEPROM_SIZE);
-        if (crc != crc_stored)
-        {
-            DBGLN("W25Q64 config: CRC mismatch, using defaults");
-            memset(s_storage, 0, sizeof(s_storage));
-            return;
-        }
+    uint32_t crc = 0;
+    crc = elrs_crc32_update(crc, W25Q64_MAGIC, 4);
+    crc = elrs_crc32_update(crc, &header[4], 2);
+    crc = elrs_crc32_update(crc, s_storage, RESERVED_EEPROM_SIZE);
+    if (crc != crc_stored)
+    {
+        DBGLN("W25Q64 config: CRC mismatch, using defaults");
+        memset(s_storage, 0, sizeof(s_storage));
+        return;
+    }
 
-        DBGLN("W25Q64 config loaded");
-    #elif defined(STM32_USE_FLASH)
-        eeprom_buffer_fill();
-    #else // !STM32_USE_FLASH
-        // I2C initialization is the responsibility of the caller
-        #if defined(TARGET_EEPROM_400K)
-            EEPROM.begin(extEEPROM::twiClock400kHz, &Wire);
-        #else
-            EEPROM.begin(extEEPROM::twiClock100kHz, &Wire);
-        #endif
-    #endif // HAS_W25Q64_CONFIG
+    DBGLN("W25Q64 config loaded");
 #else /* !PLATFORM_STM32 */
     EEPROM.begin(RESERVED_EEPROM_SIZE);
 #endif /* PLATFORM_STM32 */
@@ -146,10 +121,8 @@ ELRS_EEPROM::ReadByte(const uint32_t address)
         ERRLN("EEPROM address is out of bounds");
         return 0;
     }
-#if defined(HAS_W25Q64_CONFIG)
+#if defined(PLATFORM_STM32)
     return s_storage[address];
-#elif defined(STM32_USE_FLASH)
-    return eeprom_buffered_read_byte(address);
 #else
     return EEPROM.read(address);
 #endif
@@ -164,12 +137,8 @@ ELRS_EEPROM::WriteByte(const uint32_t address, const uint8_t value)
         ERRLN("EEPROM address is out of bounds");
         return;
     }
-#if defined(HAS_W25Q64_CONFIG)
+#if defined(PLATFORM_STM32)
     s_storage[address] = value;
-#elif defined(STM32_USE_FLASH)
-    eeprom_buffered_write_byte(address, value);
-#elif defined(PLATFORM_STM32)
-    EEPROM.update(address, value);
 #else
     EEPROM.write(address, value);
 #endif
@@ -178,7 +147,7 @@ ELRS_EEPROM::WriteByte(const uint32_t address, const uint8_t value)
 void
 ELRS_EEPROM::Commit()
 {
-#if defined(HAS_W25Q64_CONFIG)
+#if defined(PLATFORM_STM32)
     if (s_flash == nullptr)
     {
         // No config flash: settings live in RAM until the next boot.
@@ -229,15 +198,12 @@ ELRS_EEPROM::Commit()
     s_flash->pageProgram(W25Q64_CONFIG_ADDR + 6 + RESERVED_EEPROM_SIZE, crc_bytes, 4);
 
     DBGLN("W25Q64 commit %u us", (unsigned)(micros() - t0));
-#elif defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
+#else
     if (!EEPROM.commit())
     {
       ERRLN("EEPROM commit failed");
     }
-#elif defined(STM32_USE_FLASH)
-    eeprom_buffer_flush();
 #endif
-  // PLATFORM_STM32 with external flash every byte is committed as it is written
 }
 
 #endif /* !TARGET_NATIVE */

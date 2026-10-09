@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file    usbd_composite.c
-  * @brief   CDC-ACM + vendor-class composite USB device class. See the header.
+  * @brief   CDC-ACM + CDC-NCM composite USB device class. See the header.
   *
   * The CDC half is derived from ST's usbd_cdc.c.
   * Copyright (c) 2015 STMicroelectronics, licensed under the terms in that file.
@@ -14,13 +14,14 @@
 
 #include "usbd_composite.h"
 #include "usbd_msos20.h"
+#include "usbd_ncm.h"
 #include "usbd_ctlreq.h"
 
 /* Configuration descriptor ------------------------------------------------- */
 
 #define CDC_FUNCTION_DESC_SIZ    66U   /* IAD + 2 interfaces + functional + 3 EPs */
-#define VCFG_FUNCTION_DESC_SIZ   23U   /* 1 interface + 2 EPs */
-#define USBD_COMPOSITE_CFG_DESC_SIZ (9U + CDC_FUNCTION_DESC_SIZ + VCFG_FUNCTION_DESC_SIZ)
+#define NCM_FUNCTION_DESC_SIZ    85U   /* IAD + comm (+ functional, notif EP) + data alt 0/1 + 2 EPs */
+#define USBD_COMPOSITE_CFG_DESC_SIZ (9U + CDC_FUNCTION_DESC_SIZ + NCM_FUNCTION_DESC_SIZ)
 
 __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ] __ALIGN_END = {
   /* Configuration descriptor */
@@ -28,7 +29,7 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   USB_DESC_TYPE_CONFIGURATION,                /* bDescriptorType */
   LOBYTE(USBD_COMPOSITE_CFG_DESC_SIZ),        /* wTotalLength */
   HIBYTE(USBD_COMPOSITE_CFG_DESC_SIZ),
-  0x03,                                       /* bNumInterfaces: 2 CDC + 1 vendor */
+  0x04,                                       /* bNumInterfaces: 2 CDC-ACM + 2 CDC-NCM */
   0x01,                                       /* bConfigurationValue */
   0x00,                                       /* iConfiguration */
 #if (USBD_SELF_POWERED == 1U)
@@ -41,7 +42,7 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   /* ---------------- CDC-ACM function (interfaces 0 + 1) ------------------- */
 
   /* Interface association: without this Windows treats the whole device as one
-   * communications class instance and never binds the vendor function. */
+   * communications class instance and never binds the network function. */
   0x08,                                       /* bLength */
   USB_DESC_TYPE_IAD,                          /* bDescriptorType */
   CDC_COMM_ITF,                               /* bFirstInterface */
@@ -97,24 +98,81 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   0x07, USB_DESC_TYPE_ENDPOINT, CDC_IN_EP, 0x02,
   LOBYTE(CDC_DATA_MAX_PACKET_SIZE), HIBYTE(CDC_DATA_MAX_PACKET_SIZE), 0x00,
 
-  /* ---------------- Vendor config function (interface 2) ------------------ */
+  /* ---------------- CDC-NCM function (interfaces 2 + 3) ------------------- */
 
-  /* One interface, no IAD: a single-interface function does not need one. */
+  /* Interface association */
+  0x08,                                       /* bLength */
+  USB_DESC_TYPE_IAD,                          /* bDescriptorType */
+  NCM_COMM_ITF,                               /* bFirstInterface */
+  0x02,                                       /* bInterfaceCount */
+  0x02,                                       /* bFunctionClass: Communications */
+  0x0D,                                       /* bFunctionSubClass: NCM */
+  0x00,                                       /* bFunctionProtocol */
+  USBD_IDX_NCM_STR,                           /* iFunction */
+
+  /* Communication interface */
   0x09,                                       /* bLength */
   USB_DESC_TYPE_INTERFACE,                    /* bDescriptorType */
-  VCFG_ITF,                                   /* bInterfaceNumber */
+  NCM_COMM_ITF,                               /* bInterfaceNumber */
   0x00,                                       /* bAlternateSetting */
-  0x02,                                       /* bNumEndpoints */
-  0xFF,                                       /* bInterfaceClass: Vendor specific */
-  0x00,                                       /* bInterfaceSubClass */
+  0x01,                                       /* bNumEndpoints */
+  0x02,                                       /* bInterfaceClass: Communications */
+  0x0D,                                       /* bInterfaceSubClass: NCM */
   0x00,                                       /* bInterfaceProtocol */
-  USBD_IDX_VCFG_STR,                          /* iInterface */
+  USBD_IDX_NCM_STR,                           /* iInterface */
 
-  /* Bulk OUT / IN */
-  0x07, USB_DESC_TYPE_ENDPOINT, VCFG_OUT_EP, 0x02,
-  LOBYTE(VCFG_MAX_PACKET_SIZE), HIBYTE(VCFG_MAX_PACKET_SIZE), 0x00,
-  0x07, USB_DESC_TYPE_ENDPOINT, VCFG_IN_EP, 0x02,
-  LOBYTE(VCFG_MAX_PACKET_SIZE), HIBYTE(VCFG_MAX_PACKET_SIZE), 0x00,
+  /* Header functional descriptor (CDC 1.10) */
+  0x05, 0x24, 0x00, 0x10, 0x01,
+  /* Union functional descriptor */
+  0x05, 0x24, 0x06, NCM_COMM_ITF, NCM_DATA_ITF,
+  /* Ethernet networking functional descriptor */
+  0x0D,                                       /* bFunctionLength */
+  0x24,                                       /* bDescriptorType: CS_INTERFACE */
+  0x0F,                                       /* bDescriptorSubtype: Ethernet Networking */
+  USBD_IDX_NCM_MAC_STR,                       /* iMACAddress: the host end's address */
+  0x00, 0x00, 0x00, 0x00,                     /* bmEthernetStatistics: none */
+  LOBYTE(NCM_MAX_SEGMENT_SIZE),               /* wMaxSegmentSize */
+  HIBYTE(NCM_MAX_SEGMENT_SIZE),
+  0x00, 0x00,                                 /* wNumberMCFilters */
+  0x00,                                       /* bNumberPowerFilters */
+  /* NCM functional descriptor */
+  0x06,                                       /* bFunctionLength */
+  0x24,                                       /* bDescriptorType: CS_INTERFACE */
+  0x1A,                                       /* bDescriptorSubtype: NCM */
+  0x00, 0x01,                                 /* bcdNcmVersion 1.00 */
+  0x00,                                       /* bmNetworkCapabilities: none */
+
+  /* Notification endpoint */
+  0x07, USB_DESC_TYPE_ENDPOINT, NCM_NOTIF_EP, 0x03,
+  LOBYTE(NCM_NOTIF_PACKET_SIZE), HIBYTE(NCM_NOTIF_PACKET_SIZE), 0x10,
+
+  /* Data interface, alternate setting 0: no endpoints (link down) */
+  0x09,                                       /* bLength */
+  USB_DESC_TYPE_INTERFACE,                    /* bDescriptorType */
+  NCM_DATA_ITF,                               /* bInterfaceNumber */
+  0x00,                                       /* bAlternateSetting */
+  0x00,                                       /* bNumEndpoints */
+  0x0A,                                       /* bInterfaceClass: CDC Data */
+  0x00,                                       /* bInterfaceSubClass */
+  0x01,                                       /* bInterfaceProtocol: NTB */
+  0x00,                                       /* iInterface */
+
+  /* Data interface, alternate setting 1: the bulk pair (link up) */
+  0x09,                                       /* bLength */
+  USB_DESC_TYPE_INTERFACE,                    /* bDescriptorType */
+  NCM_DATA_ITF,                               /* bInterfaceNumber */
+  0x01,                                       /* bAlternateSetting */
+  0x02,                                       /* bNumEndpoints */
+  0x0A,                                       /* bInterfaceClass: CDC Data */
+  0x00,                                       /* bInterfaceSubClass */
+  0x01,                                       /* bInterfaceProtocol: NTB */
+  0x00,                                       /* iInterface */
+
+  /* Data OUT / IN */
+  0x07, USB_DESC_TYPE_ENDPOINT, NCM_OUT_EP, 0x02,
+  LOBYTE(NCM_DATA_MAX_PACKET_SIZE), HIBYTE(NCM_DATA_MAX_PACKET_SIZE), 0x00,
+  0x07, USB_DESC_TYPE_ENDPOINT, NCM_IN_EP, 0x02,
+  LOBYTE(NCM_DATA_MAX_PACKET_SIZE), HIBYTE(NCM_DATA_MAX_PACKET_SIZE), 0x00,
 };
 
 __ALIGN_BEGIN static uint8_t USBD_Composite_DeviceQualifierDesc[USB_LEN_DEV_QUALIFIER_DESC] __ALIGN_END = {
@@ -133,9 +191,7 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_DeviceQualifierDesc[USB_LEN_DEV_QUAL
 /* State --------------------------------------------------------------------- */
 
 static USBD_CDC_HandleTypeDef  hcdc;
-static USBD_VCFG_HandleTypeDef hvcfg;
 static USBD_CDC_ItfTypeDef  *cdc_fops = NULL;
-static USBD_VCFG_ItfTypeDef *vcfg_fops = NULL;
 
 /* Class callbacks ----------------------------------------------------------- */
 
@@ -143,7 +199,7 @@ static uint8_t USBD_Composite_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
 {
   UNUSED(cfgidx);
 
-  if ((cdc_fops == NULL) || (vcfg_fops == NULL)) {
+  if (cdc_fops == NULL) {
     return (uint8_t)USBD_FAIL;
   }
 
@@ -170,21 +226,8 @@ static uint8_t USBD_Composite_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
   }
   (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc.RxBuffer, CDC_DATA_MAX_PACKET_SIZE);
 
-  /* --- Vendor --- */
-  (void)USBD_LL_OpenEP(pdev, VCFG_IN_EP, USBD_EP_TYPE_BULK, VCFG_MAX_PACKET_SIZE);
-  pdev->ep_in[VCFG_IN_EP & 0x0FU].is_used = 1U;
-
-  (void)USBD_LL_OpenEP(pdev, VCFG_OUT_EP, USBD_EP_TYPE_BULK, VCFG_MAX_PACKET_SIZE);
-  pdev->ep_out[VCFG_OUT_EP & 0x0FU].is_used = 1U;
-
-  hvcfg.RxBuffer = NULL;
-  (void)vcfg_fops->Init();
-  hvcfg.TxState = 0U;
-
-  if (hvcfg.RxBuffer == NULL) {
-    return (uint8_t)USBD_EMEM;
-  }
-  (void)USBD_LL_PrepareReceive(pdev, VCFG_OUT_EP, hvcfg.RxBuffer, VCFG_MAX_PACKET_SIZE);
+  /* --- NCM: notification endpoint now, data endpoints on SET_INTERFACE(alt 1) --- */
+  NCM_ClassInit(pdev);
 
   pdev->pClassDataCmsit[0] = (void *)&hcdc;
   pdev->pClassData = (void *)&hcdc;
@@ -204,16 +247,10 @@ static uint8_t USBD_Composite_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
   pdev->ep_in[CDC_CMD_EP & 0x0FU].is_used = 0U;
   pdev->ep_in[CDC_CMD_EP & 0x0FU].bInterval = 0U;
 
-  (void)USBD_LL_CloseEP(pdev, VCFG_IN_EP);
-  pdev->ep_in[VCFG_IN_EP & 0x0FU].is_used = 0U;
-  (void)USBD_LL_CloseEP(pdev, VCFG_OUT_EP);
-  pdev->ep_out[VCFG_OUT_EP & 0x0FU].is_used = 0U;
+  NCM_ClassDeInit(pdev);
 
   if (cdc_fops != NULL) {
     (void)cdc_fops->DeInit();
-  }
-  if (vcfg_fops != NULL) {
-    (void)vcfg_fops->DeInit();
   }
 
   pdev->pClassDataCmsit[0] = NULL;
@@ -253,8 +290,9 @@ static uint8_t USBD_Composite_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyped
       return USBD_Composite_VendorReq(pdev, req);
 
     case USB_REQ_TYPE_CLASS:
-      /* The vendor function has no class requests, so anything addressed
-       * outside the CDC interfaces is a host mistake. */
+      if (LOBYTE(req->wIndex) == NCM_COMM_ITF) {
+        return NCM_ClassSetup(pdev, req);
+      }
       if ((LOBYTE(req->wIndex) != CDC_COMM_ITF) && (LOBYTE(req->wIndex) != CDC_DATA_ITF)) {
         USBD_CtlError(pdev, req);
         return (uint8_t)USBD_FAIL;
@@ -290,7 +328,10 @@ static uint8_t USBD_Composite_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyped
 
         case USB_REQ_GET_INTERFACE:
           if (pdev->dev_state == USBD_STATE_CONFIGURED) {
-            (void)USBD_CtlSendData(pdev, &ifalt, 1U);
+            /* Only the NCM data interface has an alternate setting. */
+            static uint8_t alt;
+            alt = (LOBYTE(req->wIndex) == NCM_DATA_ITF) ? NCM_GetAltSetting() : ifalt;
+            (void)USBD_CtlSendData(pdev, &alt, 1U);
           } else {
             USBD_CtlError(pdev, req);
             ret = USBD_FAIL;
@@ -299,6 +340,15 @@ static uint8_t USBD_Composite_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyped
 
         case USB_REQ_SET_INTERFACE:
           if (pdev->dev_state != USBD_STATE_CONFIGURED) {
+            USBD_CtlError(pdev, req);
+            ret = USBD_FAIL;
+          } else if (LOBYTE(req->wIndex) == NCM_DATA_ITF) {
+            /* Alternate setting 1 is the host bringing the network link up. */
+            if (NCM_SetAltSetting(pdev, LOBYTE(req->wValue)) != (uint8_t)USBD_OK) {
+              USBD_CtlError(pdev, req);
+              ret = USBD_FAIL;
+            }
+          } else if (LOBYTE(req->wValue) != 0U) {
             USBD_CtlError(pdev, req);
             ret = USBD_FAIL;
           }
@@ -330,8 +380,7 @@ static uint8_t USBD_Composite_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
 
   /* A transfer that is an exact multiple of the max packet size has to be
    * terminated with a zero-length packet, or the host keeps waiting for more.
-   * This matters more for the vendor pipe than for CDC: WebUSB's transferIn()
-   * asks for a length, and without the ZLP a 64-byte reply never completes. */
+   * An NCM transfer block can be any length, so this matters for it too. */
   const bool needsZlp =
     (pdev->ep_in[ep].total_length > 0U) &&
     ((pdev->ep_in[ep].total_length % hpcd->IN_ep[ep].maxpacket) == 0U);
@@ -347,11 +396,8 @@ static uint8_t USBD_Composite_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
     if ((cdc_fops != NULL) && (cdc_fops->TransmitCplt != NULL)) {
       (void)cdc_fops->TransmitCplt(hcdc.TxBuffer, &hcdc.TxLength, epnum);
     }
-  } else if (ep == (VCFG_IN_EP & 0x0FU)) {
-    hvcfg.TxState = 0U;
-    if ((vcfg_fops != NULL) && (vcfg_fops->TransmitCplt != NULL)) {
-      (void)vcfg_fops->TransmitCplt(hvcfg.TxBuffer, &hvcfg.TxLength);
-    }
+  } else if ((ep == (NCM_IN_EP & 0x0FU)) || (ep == (NCM_NOTIF_EP & 0x0FU))) {
+    NCM_DataIn(pdev, epnum);
   }
 
   return (uint8_t)USBD_OK;
@@ -367,12 +413,8 @@ static uint8_t USBD_Composite_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
     }
     hcdc.RxLength = USBD_LL_GetRxDataSize(pdev, epnum);
     (void)cdc_fops->Receive(hcdc.RxBuffer, &hcdc.RxLength);
-  } else if (ep == (VCFG_OUT_EP & 0x0FU)) {
-    if (vcfg_fops == NULL) {
-      return (uint8_t)USBD_FAIL;
-    }
-    hvcfg.RxLength = USBD_LL_GetRxDataSize(pdev, epnum);
-    (void)vcfg_fops->Receive(hvcfg.RxBuffer, &hvcfg.RxLength);
+  } else if (ep == (NCM_OUT_EP & 0x0FU)) {
+    NCM_DataOut(pdev, epnum);
   }
 
   return (uint8_t)USBD_OK;
@@ -380,9 +422,10 @@ static uint8_t USBD_Composite_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
 
 static uint8_t USBD_Composite_EP0_RxReady(USBD_HandleTypeDef *pdev)
 {
-  UNUSED(pdev);
+  if (NCM_EP0_RxReady(pdev)) {
+    return (uint8_t)USBD_OK;
+  }
 
-  /* Only the CDC function has an EP0 data stage. */
   if ((cdc_fops != NULL) && (hcdc.CmdOpCode != 0xFFU)) {
     (void)cdc_fops->Control(hcdc.CmdOpCode, (uint8_t *)hcdc.data, (uint16_t)hcdc.CmdLength);
     hcdc.CmdOpCode = 0xFFU;
@@ -436,24 +479,9 @@ uint8_t USBD_Composite_RegisterCDC(USBD_HandleTypeDef *pdev, USBD_CDC_ItfTypeDef
   return (uint8_t)USBD_OK;
 }
 
-uint8_t USBD_Composite_RegisterVCFG(USBD_HandleTypeDef *pdev, USBD_VCFG_ItfTypeDef *fops)
-{
-  UNUSED(pdev);
-  if (fops == NULL) {
-    return (uint8_t)USBD_FAIL;
-  }
-  vcfg_fops = fops;
-  return (uint8_t)USBD_OK;
-}
-
 USBD_CDC_HandleTypeDef *USBD_CDC_Handle(void)
 {
   return &hcdc;
-}
-
-USBD_VCFG_HandleTypeDef *USBD_VCFG_Handle(void)
-{
-  return &hvcfg;
 }
 
 uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff, uint32_t length)
@@ -491,44 +519,6 @@ uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev)
 uint8_t USBD_CDC_ClearBuffer(USBD_HandleTypeDef *pdev)
 {
   (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, NULL, 0U);
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_VCFG_SetTxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff, uint32_t length)
-{
-  UNUSED(pdev);
-  hvcfg.TxBuffer = pbuff;
-  hvcfg.TxLength = length;
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_VCFG_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff)
-{
-  UNUSED(pdev);
-  hvcfg.RxBuffer = pbuff;
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_VCFG_TransmitPacket(USBD_HandleTypeDef *pdev)
-{
-  if (hvcfg.TxState != 0U) {
-    return (uint8_t)USBD_BUSY;
-  }
-  hvcfg.TxState = 1U;
-  pdev->ep_in[VCFG_IN_EP & 0x0FU].total_length = hvcfg.TxLength;
-  (void)USBD_LL_Transmit(pdev, VCFG_IN_EP, hvcfg.TxBuffer, hvcfg.TxLength);
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_VCFG_ReceivePacket(USBD_HandleTypeDef *pdev)
-{
-  (void)USBD_LL_PrepareReceive(pdev, VCFG_OUT_EP, hvcfg.RxBuffer, VCFG_MAX_PACKET_SIZE);
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_VCFG_ClearBuffer(USBD_HandleTypeDef *pdev)
-{
-  (void)USBD_LL_PrepareReceive(pdev, VCFG_OUT_EP, NULL, 0U);
   return (uint8_t)USBD_OK;
 }
 

@@ -95,7 +95,6 @@ extern uint32_t fw_options_discriminator();
 // The effective hardware layout as JSON (empty when there is none).
 extern String& getHardware();
 
-#if defined(TITAN_UNIFIED_STM32)
 extern "C" const volatile titan_slot_t titanSlot;
 // The slot's product name (also the USB product string), or "TitanLRS" when none was flashed.
 // Reads the slot directly, so it is safe before options_init().
@@ -110,5 +109,4 @@ static inline void titan_SlotCopy(char *dst, const volatile char *src, const siz
     }
     dst[size] = '\0';
 }
-#endif
 #endif

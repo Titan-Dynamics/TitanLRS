@@ -28,18 +28,15 @@ const char *wifi_ap_address = "10.0.0.1";
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
 #elif defined(PLATFORM_STM32)
-// STM32: the per-board targets are compile-time fixed. The unified targets (TITAN_UNIFIED_STM32)
-// read their names, options and hardware layout from the firmware slot (titanSlot), as ESP reads
-// them from after its sketch. Options that the user changes over the USB config API are persisted
-// into the elrs_eeprom blob — see options_storage_stm32.h.
+// STM32: the unified targets read their names, options and hardware layout from the firmware slot
+// (titanSlot), as ESP reads them from after its sketch. Options that the user changes over the USB
+// config API are persisted into the elrs_eeprom blob — see options_storage_stm32.h.
 #include "elrs_eeprom.h"
 #include "options_storage_stm32.h"
-#if defined(TITAN_UNIFIED_STM32)
 #include "FHSS.h"
 #include "options_apply.h"
 #include "hardware_layout.h"
 #include "hardware_override_stm32.h"
-#endif
 
 // The shared EEPROM instance, defined in tx_main.cpp / rx_main.cpp
 extern ELRS_EEPROM eeprom;
@@ -54,7 +51,6 @@ firmware_options_t firmwareOptions;
 
 static bool optionsCustomised = false;
 
-#if defined(TITAN_UNIFIED_STM32)
 // The web flasher patches this block; volatile keeps GCC from constant-folding the zeroed regions.
 // GCC would place a volatile object in .data (RAM, copied from flash at startup); the section
 // keeps it in flash, where it is readable from reset.
@@ -82,7 +78,6 @@ const char *titan_ProductName(void)
 
 // The flash-discriminator of the web flash (0 if none), folded into fw_options_discriminator().
 static uint32_t slotFlashDiscriminator = 0;
-#endif
 
 // CRC16/CCITT-FALSE: init=0xFFFF, poly=0x1021, no final XOR. Takes the running remainder so a CRC
 // can span the header and the payload without copying them into one buffer.
@@ -130,13 +125,11 @@ uint32_t fw_options_discriminator()
         hash *= 16777619UL;
     }
 #endif
-#if defined(TITAN_UNIFIED_STM32)
     for (int shift = 0; shift < 32; shift += 8)
     {
         hash ^= (uint8_t)(slotFlashDiscriminator >> shift);
         hash *= 16777619UL;
     }
-#endif
     // 0 means "no discriminator" in the ESP options.json, so never produce it.
     return hash ? hash : 1U;
 }
@@ -148,6 +141,8 @@ static void applyCompileTimeDefaults()
     // No WiFi hardware on STM32; -1 is the "never" value the ESP path uses, so the field is not a
     // meaningless 0 if anything reads it. lib/ConfigJson does not publish it at all.
     firmwareOptions.wifi_auto_on_interval = -1;
+    // Seconds the fan keeps running after it is no longer needed, as the ESP default.
+    firmwareOptions.fan_min_runtime = 30U;
 #if defined(TARGET_TX)
     // Set this to a sane default; A zero interval can make
     // checkSendLinkStatsToHandset() queue link-stats every millis() tick,
@@ -197,7 +192,6 @@ static void applyCompileTimeDefaults()
 static void applyFlashedDefaults()
 {
     applyCompileTimeDefaults();
-#if defined(TITAN_UNIFIED_STM32)
     char json[ELRSOPTS_OPTIONS_SIZE + 1];
     titan_SlotCopy(json, titanSlot.options, ELRSOPTS_OPTIONS_SIZE);
     firmwareOptions.flash_discriminator = 0;
@@ -207,7 +201,6 @@ static void applyFlashedDefaults()
     }
     slotFlashDiscriminator = firmwareOptions.flash_discriminator;
     firmwareOptions.flash_discriminator = fw_options_discriminator();
-#endif
 }
 
 bool options_IsCustomised()
@@ -290,7 +283,6 @@ static void loadPersistedOptions()
     }
 }
 
-#if defined(TITAN_UNIFIED_STM32)
 /**
  * @brief Replace the slot layout with the override saved in the config flash, if there is a
  *        valid one for this flash. `config_flash_*` stay as flashed.
@@ -355,26 +347,6 @@ bool options_init()
     }
     return hasHardware;
 }
-#else
-bool options_init()
-{
-    // Compile-time defaults are the baseline; anything persisted is layered on top.
-    applyCompileTimeDefaults();
-
-    // options_init() runs before the mains bring the EEPROM up (tx_main.cpp / rx_main.cpp call
-    // eeprom.Begin() later), so bring it up here. Begin() is an idempotent flash -> RAM-mirror
-    // read, making the later call a harmless re-read of the same bytes.
-    eeprom.Begin();
-    loadPersistedOptions();
-
-    // Copy target name, truncating to fit
-    strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
-    product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
-    strncpy(device_name, STR(TARGET_NAME), ELRSOPTS_DEVICENAME_SIZE);
-    device_name[ELRSOPTS_DEVICENAME_SIZE] = '\0';
-    return true;
-}
-#endif
 #else
 #include <ArduinoJson.h>
 #include <StreamString.h>

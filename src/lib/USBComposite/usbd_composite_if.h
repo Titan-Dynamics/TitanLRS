@@ -1,9 +1,9 @@
 /**
   ******************************************************************************
   * @file    usbd_composite_if.h
-  * @brief   Media layer for the TitanLRS composite device: a transmit/receive
-  *          queue pair for the CDC port and another for the vendor config pipe,
-  *          plus the device bring-up.
+  * @brief   Media layer for the TitanLRS composite device: the transmit/receive
+  *          queue pair for the CDC port, plus the device bring-up. The NCM
+  *          function keeps its own buffers (usbd_ncm.c).
   *
   * The CDC half keeps the stm32duino names and signatures verbatim, so
   * USBSerial.cpp is unchanged apart from which function starts the device.
@@ -28,10 +28,10 @@ extern USBD_HandleTypeDef hUSBD_Device_CDC;
  * Hard ceiling on how long any USB write may block, in milliseconds.
  *
  * Both stream write() and flush() run from the main loop, which also services
- * the CRSF handset UART and the config pipe. A queue only drains when the host
+ * the CRSF handset UART and the network stack. A queue only drains when the host
  * picks up the IN transfer, so any "wait for space" loop is at the mercy of the
- * host — and a host that has stopped reading (a released WebUSB interface, a
- * COM port opened but not serviced) makes that wait unbounded. Losing the tail
+ * host — and a host that has stopped reading (a COM port opened but not
+ * serviced) makes that wait unbounded. Losing the tail
  * of a USB write is recoverable; stalling the main loop is not: the handset
  * link drops, LUA stops answering and telemetry stops.
  *
@@ -58,15 +58,6 @@ bool CDC_connected(void);
 void CDC_continue_transmit(void);
 bool CDC_resume_receive(void);
 void CDC_enableDTR(bool enable);
-
-/* --- Vendor config pipe (WebUSB / libusb) --------------------------------- */
-
-extern CDC_TransmitQueue_TypeDef VCFG_TransmitQueue;
-extern CDC_ReceiveQueue_TypeDef VCFG_ReceiveQueue;
-
-bool VCFG_connected(void);
-void VCFG_continue_transmit(void);
-bool VCFG_resume_receive(void);
 
 #ifdef __cplusplus
 }

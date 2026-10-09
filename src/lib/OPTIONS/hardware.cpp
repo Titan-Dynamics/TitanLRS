@@ -356,7 +356,6 @@ bool hardware_init()
     builtinHardwareConfig = "";
     slotHardwareDoc.clear();
 
-#if defined(TITAN_UNIFIED_STM32)
     char *json = (char *)malloc(ELRSOPTS_HARDWARE_SIZE + 1);
     if (json == nullptr)
     {
@@ -378,10 +377,6 @@ bool hardware_init()
 
     hardware_LoadDoc(slotHardwareDoc);
     return true;
-#else
-    // Per-board targets take every pin from their header; there is no layout to load.
-    return false;
-#endif
 }
 
 #elif !defined(UNIT_TEST)

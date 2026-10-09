@@ -1,12 +1,10 @@
 /**
   ******************************************************************************
   * @file    usbd_msos20.h
-  * @brief   BOS + Microsoft OS 2.0 descriptors for the vendor (config) interface.
+  * @brief   BOS + Microsoft OS 2.0 descriptors for the NCM (network) function.
   *
-  * Windows will not let a userspace process — including Chrome, and therefore
-  * WebUSB — talk to a vendor-class interface unless a driver is bound to it.
-  * Rather than ship an .inf, the device advertises "bind WinUSB to this
-  * function" itself:
+  * Windows 10 ships an NCM host driver (UsbNcm.sys) but does not bind it to an
+  * NCM function by class alone. Rather than ship an .inf, the device asks for it:
   *
   *   1. The device descriptor reports bcdUSB >= 0x0201, so Windows asks for a
   *      Binary Object Store (BOS) descriptor.
@@ -14,15 +12,9 @@
   *      vendor request code and the length of a descriptor set.
   *   3. Windows issues that vendor request (bmRequestType 0xC0, bRequest =
   *      USBD_MSOS20_VENDOR_CODE, wIndex = 7) and gets back a descriptor set
-  *      whose function subset says "interface 2 is WINUSB", plus a
-  *      DeviceInterfaceGUIDs registry property.
+  *      whose function subset says "interfaces 2-3 are WINNCM".
   *
-  * macOS and Linux need none of this (libusb can claim an unbound interface
-  * directly), but Linux needs a udev rule for non-root access.
-  *
-  * Deliberately absent: the WebUSB platform capability descriptor. It only
-  * provides the "landing page" affordance in Chrome's UI; navigator.usb works
-  * without it.
+  * macOS and Linux bind NCM by class and ignore all of this.
   ******************************************************************************
   */
 

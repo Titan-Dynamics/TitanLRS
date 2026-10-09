@@ -22,6 +22,7 @@
 #include "usbd_desc.h"
 #include "usbd_ep_conf.h"
 #include "usbd_msos20.h"
+#include "usbd_ncm.h"
 #include "utils.h"
 #include <variant.h>
 
@@ -83,10 +84,8 @@
 
 #define USBD_LANGID_STRING            0x409   /* 1033 US.S English */
 
-#if defined(TITAN_UNIFIED_STM32)
 /* lib/OPTIONS/options.cpp */
 extern const char *titan_ProductName(void);
-#endif
 
 /* Product string: Use the specified string if specified, construct
    based on BOARD_NAME and class otherwise. */
@@ -123,8 +122,8 @@ extern const char *titan_ProductName(void);
 #ifndef USBD_CDC_INTERFACE_STRING
   #define USBD_CDC_INTERFACE_STRING           "TitanLRS Serial"
 #endif
-#ifndef USBD_VCFG_INTERFACE_STRING
-  #define USBD_VCFG_INTERFACE_STRING          "TitanLRS Config"
+#ifndef USBD_NCM_INTERFACE_STRING
+  #define USBD_NCM_INTERFACE_STRING           "TitanLRS Network"
 #endif
 
 /* Private macro -------------------------------------------------------------*/
@@ -206,7 +205,7 @@ __ALIGN_BEGIN uint8_t USBD_Class_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
 #endif
   0x02,
   /* Miscellaneous / Common Class / Interface Association Descriptor. Required so
-   * hosts bind the CDC function and the vendor function separately rather than
+   * hosts bind the CDC-ACM function and the NCM function separately rather than
    * assuming the whole device is one communications class instance. */
   0xEF,                       /* bDeviceClass: Miscellaneous */
   0x02,                       /* bDeviceSubClass: Common Class */
@@ -216,21 +215,21 @@ __ALIGN_BEGIN uint8_t USBD_Class_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
   HIBYTE(USBD_VID),           /* idVendor */
   LOBYTE(USBD_PID),           /* idProduct */
   HIBYTE(USBD_PID),           /* idProduct */
-  /* bcdDevice rel. 3.00.
+  /* bcdDevice rel. 4.00.
    *
-   * Bumped from 2.00 when this became a CDC + vendor composite. Windows caches
+   * 3.00 was the CDC + vendor (WinUSB) composite; 4.00 is CDC + NCM (WINNCM).
+   * Bumped from 2.00 when this first became a composite. Windows caches
    * whether a device supports Microsoft OS descriptors, keyed on
    * VID + PID + bcdDevice (HKLM\SYSTEM\CurrentControlSet\Control\usbflags),
    * and it caches *negative* results too. A device that once enumerated at this
    * VID:PID without MS OS 2.0 descriptors will therefore never be asked for
-   * them again, WinUSB never binds to the vendor interface, and WebUSB's
-   * open() fails with "Access denied" — with nothing wrong in the descriptors
-   * themselves.
+   * them again, and the driver they name never binds — with nothing wrong in
+   * the descriptors themselves.
    *
    * Bump this again on any future change to usbd_msos20.c, or Windows machines
    * that have already seen the old version will keep the stale answer. */
   0x00,
-  0x03,
+  0x04,
   USBD_IDX_MFC_STR,           /* Index of manufacturer string */
   USBD_IDX_PRODUCT_STR,       /* Index of product string */
   USBD_IDX_SERIAL_STR,        /* Index of serial number string */
@@ -260,7 +259,7 @@ __ALIGN_BEGIN  uint8_t USBD_BOSDesc[USB_SIZ_BOS_DESC] __ALIGN_END = {
 /* USB Device Billboard BOS descriptor Template */
 /* The BillBoard BOS template that shipped here is replaced by the BOS in
  * usbd_msos20.c, which carries the Microsoft OS 2.0 platform capability that
- * gets WinUSB bound to the vendor interface. */
+ * gets the inbox NCM driver bound to the network interface. */
 
 
 /* USB Standard Device Descriptor */
@@ -316,19 +315,11 @@ uint8_t *USBD_LangIDStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
   */
 uint8_t *USBD_Class_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
 {
-#if defined(TITAN_UNIFIED_STM32)
   /* The unified targets name themselves from the product_name the web flasher patched into the
    * firmware slot. It is read straight from flash, so it is valid at enumeration time even
    * though USB comes up in premain(), before setup(). */
   UNUSED(speed);
   USBD_GetString((uint8_t *)titan_ProductName(), USBD_StrDesc, length);
-#else
-  if (speed == USBD_SPEED_HIGH) {
-    USBD_GetString((uint8_t *)USBD_CLASS_PRODUCT_HS_STRING, USBD_StrDesc, length);
-  } else {
-    USBD_GetString((uint8_t *)USBD_CLASS_PRODUCT_FS_STRING, USBD_StrDesc, length);
-  }
-#endif
   return USBD_StrDesc;
 }
 
@@ -452,9 +443,23 @@ uint8_t *USBD_Class_UserStrDescriptor(USBD_SpeedTypeDef speed, uint8_t idx, uint
     case USBD_IDX_CDC_STR:
       USBD_GetString((uint8_t *)USBD_CDC_INTERFACE_STRING, USBD_StrDesc, length);
       break;
-    case USBD_IDX_VCFG_STR:
-      USBD_GetString((uint8_t *)USBD_VCFG_INTERFACE_STRING, USBD_StrDesc, length);
+    case USBD_IDX_NCM_STR:
+      USBD_GetString((uint8_t *)USBD_NCM_INTERFACE_STRING, USBD_StrDesc, length);
       break;
+    case USBD_IDX_NCM_MAC_STR: {
+      /* The host end's Ethernet address, as 12 hex digits (CDC ECM iMACAddress). */
+      static const char hex[] = "0123456789ABCDEF";
+      uint8_t mac[6];
+      char text[13];
+      NCM_HostMac(mac);
+      for (uint8_t i = 0U; i < 6U; i++) {
+        text[2U * i] = hex[mac[i] >> 4];
+        text[2U * i + 1U] = hex[mac[i] & 0x0FU];
+      }
+      text[12] = '\0';
+      USBD_GetString((uint8_t *)text, USBD_StrDesc, length);
+      break;
+    }
     default:
       /* Unknown index: a well-formed empty string, rather than the
          uninitialised buffer (and unset length) the stock version returned. */

@@ -1,16 +1,16 @@
 /**
   ******************************************************************************
   * @file    usbd_composite.h
-  * @brief   CDC-ACM + vendor-class composite USB device class for TitanLRS.
+  * @brief   CDC-ACM + CDC-NCM composite USB device class for TitanLRS.
   *
   * One USBD class driver presenting two functions:
   *
   *   CDC-ACM (interfaces 0+1) — `Serial`, unchanged from the stock stm32duino
   *   device. MAVLink, CRSF and the debug log. One COM port, as before.
   *
-  *   Vendor  (interface 2)    — a bulk pair carrying the config protocol,
-  *   claimed directly by WebUSB / libusb. No serial node, so no COM-port
-  *   ambiguity and nothing can take it from the web app.
+  *   CDC-NCM (interfaces 2+3) — a USB network adapter (usbd_ncm.c). lib/USBNet
+  *   runs lwIP on it: the HTTP config API and MAVLink over UDP. The OS binds
+  *   its own network driver, so it never shows up as a port.
   *
   * Why one class driver rather than two registered classes: the stm32duino
   * build of the ST device library is compiled without USE_USBD_COMPOSITE, so
@@ -72,15 +72,6 @@ typedef struct _USBD_CDC_Itf {
   int8_t (*TransmitCplt)(uint8_t *Buf, uint32_t *Len, uint8_t epnum);
 } USBD_CDC_ItfTypeDef;
 
-/* The vendor function has no control requests and no line state, so its media
- * interface is the CDC one minus Control(). */
-typedef struct _USBD_VCFG_Itf {
-  int8_t (*Init)(void);
-  int8_t (*DeInit)(void);
-  int8_t (*Receive)(uint8_t *Buf, uint32_t *Len);
-  int8_t (*TransmitCplt)(uint8_t *Buf, uint32_t *Len);
-} USBD_VCFG_ItfTypeDef;
-
 typedef struct {
   uint32_t data[CDC_DATA_MAX_PACKET_SIZE / 4U]; /* forces 32-bit alignment */
   uint8_t  CmdOpCode;
@@ -93,19 +84,10 @@ typedef struct {
   __IO uint32_t RxState;
 } USBD_CDC_HandleTypeDef;
 
-typedef struct {
-  uint8_t  *RxBuffer;
-  uint8_t  *TxBuffer;
-  uint32_t RxLength;
-  uint32_t TxLength;
-  __IO uint32_t TxState;
-} USBD_VCFG_HandleTypeDef;
-
 extern USBD_ClassTypeDef USBD_Composite;
 #define USBD_COMPOSITE_CLASS &USBD_Composite
 
 uint8_t USBD_Composite_RegisterCDC(USBD_HandleTypeDef *pdev, USBD_CDC_ItfTypeDef *fops);
-uint8_t USBD_Composite_RegisterVCFG(USBD_HandleTypeDef *pdev, USBD_VCFG_ItfTypeDef *fops);
 
 uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff, uint32_t length);
 uint8_t USBD_CDC_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff);
@@ -113,14 +95,8 @@ uint8_t USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CDC_ClearBuffer(USBD_HandleTypeDef *pdev);
 
-uint8_t USBD_VCFG_SetTxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff, uint32_t length);
-uint8_t USBD_VCFG_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff);
-uint8_t USBD_VCFG_TransmitPacket(USBD_HandleTypeDef *pdev);
-uint8_t USBD_VCFG_ReceivePacket(USBD_HandleTypeDef *pdev);
-uint8_t USBD_VCFG_ClearBuffer(USBD_HandleTypeDef *pdev);
 
 USBD_CDC_HandleTypeDef *USBD_CDC_Handle(void);
-USBD_VCFG_HandleTypeDef *USBD_VCFG_Handle(void);
 
 #ifdef __cplusplus
 }

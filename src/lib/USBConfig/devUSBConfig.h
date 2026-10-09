@@ -3,34 +3,22 @@
 #if defined(PLATFORM_STM32)
 
 #include "device.h"
-#include <stdint.h>
 
+/*
+ * The USB config service: the HTTP API in usbcfg_api.h, served on the USB network interface
+ * (lib/USBNet). Registering the device brings the network up; it is registered in both the normal
+ * and the "no hardware layout" startup paths so a misconfigured board can still be fixed or
+ * reflashed.
+ */
 extern device_t USBConfig_device;
 
 /**
- * @brief Feed config-pipe bytes to the config service.
+ * @brief Service the USB network and the config API; call once per main-loop iteration.
  *
- * The service owns the vendor-class config pipe (SerialCfg, lib/USBComposite) outright on both TX
- * and RX, so these bytes have no other consumer. A session opens on a CRC-valid TLRS_HELLO and
- * closes on TLRS_BYE or USBCFG_SESSION_TIMEOUT_MS of silence.
- *
- * @return true while a session is open.
+ * Runs lwIP (received frames, timers, transmissions) and answers a waiting CRSF long-poll once
+ * there is something to send. Everything network-related happens here, in the main loop — never
+ * in an interrupt.
  */
-bool USBConfig_ProcessBytes(const uint8_t *buf, uint16_t len);
-
-/**
- * @brief True while a config session is open.
- */
-bool USBConfig_SessionActive();
-
-/**
- * @brief Drain the config pipe into the config service; call once per main-loop iteration.
- *
- * This must be driven from the main loop rather than from the device timeout hook: at 64 bytes per
- * USB frame the pipe can deliver far more than the receive queue holds inside one 10 ms hook
- * interval, and this core never recovers once that queue fills — it stops re-arming the OUT
- * endpoint for good (Issues.md BUG #5). Draining every iteration keeps the queue shallow.
- */
-void USBConfig_DrainPort();
+void USBConfig_Poll();
 
 #endif /* PLATFORM_STM32 */

@@ -1,6 +1,6 @@
 #include "targets.h"
 
-#if defined(PLATFORM_STM32) && defined(HAS_W25Q64_CONFIG)
+#if defined(PLATFORM_STM32)
 
 #include "hardware_override_stm32.h"
 #include "elrs_eeprom.h"

@@ -1,7 +1,8 @@
 // Unified STM32H743 TX — every board-specific value comes from the hardware layout the web
 // flasher patches into the firmware slot (lib/OPTIONS/options.h titanSlot), as on the ESP unified
-// targets. The macro set matches include/target/DIY_LR2021_TX_STM32H743_GEMINI.h; the radio
-// type comes from the env, the crystal and clock tree from the board.
+// targets. These are the only STM32 builds, so this header defines every pin and feature macro
+// the code uses (include/targets.h supplies no defaults). The radio type comes from the env, the
+// crystal and clock tree from the board.
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>
@@ -24,8 +25,15 @@
 #define GPIO_PIN_DIO1_2 hardware_pin(HARDWARE_radio_dio1_2)
 #define GPIO_PIN_BUSY_2 hardware_pin(HARDWARE_radio_busy_2)
 
+// Antenna switch (diversity / Gemini path select); absent from the layout when the board has none
+#define GPIO_PIN_ANT_CTRL hardware_pin(HARDWARE_ant_ctrl)
+#define GPIO_PIN_ANT_CTRL_COMPL hardware_pin(HARDWARE_ant_ctrl_compl)
+
+// No I2C peripherals (screen, g-sensor, thermal sensor)
+#define GPIO_PIN_SCL UNDEF_PIN
+#define GPIO_PIN_SDA UNDEF_PIN
+
 // SPI NOR flash holding the persisted config (elrs_eeprom) and the hardware override
-#define HAS_W25Q64_CONFIG
 #define W25Q64_CS_PIN hardware_pin(HARDWARE_config_flash_cs)
 #define W25Q64_SCK_PIN hardware_pin(HARDWARE_config_flash_sck)
 #define W25Q64_MISO_PIN hardware_pin(HARDWARE_config_flash_miso)
@@ -45,6 +53,7 @@
 #define GPIO_PIN_LED_RED (hardware_pin(HARDWARE_led_red) == UNDEF_PIN ? hardware_pin(HARDWARE_led) : hardware_pin(HARDWARE_led_red))
 #define GPIO_LED_RED_INVERTED hardware_flag(HARDWARE_led_red_invert)
 
+#define GPIO_PIN_LED_GREEN hardware_pin(HARDWARE_led_green)
 #define GPIO_PIN_LED_BLUE hardware_pin(HARDWARE_led_blue)
 #define GPIO_LED_BLUE_INVERTED hardware_flag(HARDWARE_led_blue_invert)
 #define GPIO_LED_GREEN_INVERTED hardware_flag(HARDWARE_led_green_invert)
@@ -90,3 +99,21 @@
 
 #define GPIO_PIN_PWM_OUTPUTS    ((const int16_t *)nullptr)
 #endif
+
+// Cooling fan: on/off (misc_fan_en) or PWM on a timer pin (misc_fan_pwm, with optional per-power
+// misc_fan_speeds), driven by lib/THERMAL. The tacho input is ESP32-only.
+#define GPIO_PIN_FAN_EN hardware_pin(HARDWARE_misc_fan_en)
+#define GPIO_PIN_FAN_PWM hardware_pin(HARDWARE_misc_fan_pwm)
+#define GPIO_PIN_FAN_TACHO UNDEF_PIN
+#define GPIO_PIN_FAN_SPEEDS hardware_u16_array(HARDWARE_misc_fan_speeds)
+#define GPIO_PIN_FAN_SPEEDS_COUNT hardware_int(HARDWARE_misc_fan_speeds_count)
+
+// Not supported on the STM32 targets: TX backpack, thermal and g-sensors, SPI VTX.
+#define OPT_USE_TX_BACKPACK             false
+#define GPIO_PIN_BACKPACK_EN            UNDEF_PIN
+#define GPIO_PIN_BACKPACK_BOOT          UNDEF_PIN
+#define OPT_HAS_THERMAL                 false
+#define OPT_HAS_THERMAL_LM75A           false
+#define OPT_HAS_GSENSOR                 false
+#define OPT_HAS_VTX_SPI                 false
+#define GPIO_PIN_SPI_VTX_NSS            UNDEF_PIN

@@ -128,6 +128,16 @@ SECTIONS
     _eccmram = .;       /* create a global symbol at ccmram end */
   } >CCMRAM AT> FLASH
 
+  /* Zero-cost AXI SRAM buffers (USB network stack). NOLOAD: nothing goes into the image and
+   * nothing is cleared at startup, so only place memory here that its owner initialises. */
+  .axisram (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.axisram)
+    *(.axisram*)
+    . = ALIGN(4);
+  } >CCMRAM
+
   /* Uninitialized data section */
   . = ALIGN(4);
   .bss (NOLOAD) :
