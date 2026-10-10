@@ -5,6 +5,11 @@
 #include "logging.h"
 #include <SPIEx.h>
 
+#if defined(PLATFORM_STM32)
+// Radio SPI SCK speed
+#define LR2021_SPI_HZ 10000000UL // 10MHz
+#endif
+
 LR2021Hal *LR2021Hal::instance = NULL;
 
 LR2021Hal::LR2021Hal()
@@ -78,7 +83,7 @@ void LR2021Hal::init()
     SPIEx.setMISO(GPIO_PIN_MISO);
     SPIEx.setSCLK(GPIO_PIN_SCK);
     SPIEx.begin();
-    SPIEx.setClockDivider(SPI_CLOCK_DIV8); // SPI4 kernel clk (PLL2Q) is 80 MHz on the H7 -> 10 MHz SCK
+    SPIEx.beginTransaction(SPISettings(LR2021_SPI_HZ, MSBFIRST, SPI_MODE0));
 #endif
 
     attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);

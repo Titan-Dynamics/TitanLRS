@@ -74,7 +74,46 @@ def appendToFirmware(firmware_file, product_name, lua_name, defines, config, lay
         firmware_file.write(config['prior_target_name'].upper().encode())
         firmware_file.write(b'\0')
 
-def doConfiguration(file, defines, config, moduletype, frequency, platform, device_name, rx_as_tx):
+# STM32 unified firmware carries a fixed slot (lib/OPTIONS/options.h titan_slot_t) instead of having
+# the configuration appended: "TLRSOPTS", LE16 version, LE16 reserved, then the same four regions
+# ESP firmware finds after its image.
+TITAN_SLOT_MAGIC = b'TLRSOPTS'
+TITAN_SLOT_VERSION = 1
+
+def writeToTitanSlot(firmware_file, product_name, lua_name, defines, config, layout_file):
+    firmware_file.seek(0, 0)
+    image = firmware_file.read()
+    if image.count(TITAN_SLOT_MAGIC) != 1:
+        sys.stderr.write('The firmware file does not contain exactly one TitanLRS configuration slot!\n')
+        exit(1)
+    slot = image.index(TITAN_SLOT_MAGIC)
+    (version,) = struct.unpack('<H', image[slot + 8:slot + 10])
+    if version != TITAN_SLOT_VERSION:
+        sys.stderr.write(f'Unsupported TitanLRS configuration slot version {version}\n')
+        exit(1)
+
+    hardware = b''
+    if layout_file is not None:
+        try:
+            with open(layout_file) as h:
+                layout = json.load(h)
+                if 'overlay' in config:
+                    layout.update(config['overlay'])
+                hardware = json.JSONEncoder().encode(layout).encode()
+        except EnvironmentError:
+            sys.stderr.write(f'Error opening file "{layout_file}"\n')
+            exit(1)
+        if len(hardware) > 2048:
+            sys.stderr.write(f'Hardware layout "{layout_file}" is larger than 2048 bytes\n')
+            exit(1)
+
+    firmware_file.seek(slot + 12, 0)
+    firmware_file.write((product_name.encode() + (b'\0' * 128))[0:128])
+    firmware_file.write((lua_name.encode() + (b'\0' * 16))[0:16])
+    firmware_file.write((defines.encode() + (b'\0' * 512))[0:512])
+    firmware_file.write((hardware + (b'\0' * 2048))[0:2048])
+
+def doConfiguration(file, defines, config, moduletype, frequency, platform, device_name, rx_as_tx, firmware=None):
     product_name = "Unified"
     lua_name = "Unified"
     layout = None
@@ -89,12 +128,23 @@ def doConfiguration(file, defines, config, moduletype, frequency, platform, devi
     elif not sys.stdin.isatty():
         print('Not running in an interactive shell, leaving the firmware "bare".\n')
         print('The current compile options (user defines) have been included.')
-        print('You will be able to configure the hardware via the web UI on the device.')
+        if platform == 'stm32':
+            print('The device will have no hardware layout until one is flashed with the web flasher.')
+        else:
+            print('You will be able to configure the hardware via the web UI on the device.')
     else:
         products = []
-        for k in jmespath.search(f'[*."{moduletype}_{frequency}".*][][?platform==`{platform}`][]', targets):
-            products.append(k)
-        if frequency == 'dual':
+        if platform == 'stm32':
+            # Only the targets this unified STM32 build serves; the older STM32 entries are for
+            # per-board firmware that has no configuration slot.
+            for radio in [frequency, '2400', '900']:
+                for k in jmespath.search(f'[*."{moduletype}_{radio}".*][][?platform==`{platform}`][]', targets):
+                    if k.get('firmware') == firmware and k not in products:
+                        products.append(k)
+        else:
+            for k in jmespath.search(f'[*."{moduletype}_{frequency}".*][][?platform==`{platform}`][]', targets):
+                products.append(k)
+        if frequency == 'dual' and platform != 'stm32':
             for k in jmespath.search(f'[*."{moduletype}_2400".*][][?platform==`{platform}`][]', targets):
                 if '_LR1121_' in k['firmware']:
                     products.append(k)
@@ -117,7 +167,10 @@ def doConfiguration(file, defines, config, moduletype, frequency, platform, devi
         layout = f"hardware/{dir}/{config['layout_file']}"
 
     lua_name = lua_name if device_name is None else device_name
-    appendToFirmware(file, product_name, lua_name, defines, config, layout, rx_as_tx)
+    if platform == 'stm32':
+        writeToTitanSlot(file, product_name, lua_name, defines, config, layout)
+    else:
+        appendToFirmware(file, product_name, lua_name, defines, config, layout, rx_as_tx)
 
 def appendConfiguration(source, target, env):
     target_name = env.get('PIOENV', '').upper()
@@ -135,7 +188,11 @@ def appendConfiguration(source, target, env):
         moduletype = 'tx' if '_TX_' in target_name else 'rx'
         frequency = '2400' if '_2400_' in target_name else '900' if '_900_' in target_name else 'dual'
 
-    if env.get('PIOPLATFORM', '') == 'espressif32':
+    firmware = None
+    if env.get('PIOPLATFORM', '') == 'ststm32':
+        platform = 'stm32'
+        firmware = env.get('PIOENV', '').split('_via_')[0]
+    elif env.get('PIOPLATFORM', '') == 'espressif32':
         platform = 'esp32'
         if 'esp32-s3' in env.get('BOARD', ''):
             platform = 'esp32-s3'
@@ -147,7 +204,7 @@ def appendConfiguration(source, target, env):
     defines = json.JSONEncoder().encode(env['OPTIONS_JSON'])
 
     with open(str(target[0]), "r+b") as firmware_file:
-        doConfiguration(firmware_file, defines, config, moduletype, frequency, platform, device_name, None)
+        doConfiguration(firmware_file, defines, config, moduletype, frequency, platform, device_name, None, firmware)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Configure Unified Firmware")

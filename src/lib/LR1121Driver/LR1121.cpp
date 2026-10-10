@@ -3,47 +3,13 @@
 #include "LR1121_hal.h"
 #include "logging.h"
 
-#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
 #include <LittleFS.h>
-#endif
 #include <SPIEx.h>
 
 #define LR1121_FIRMWARE_TYPE 0xF3
 
 LR1121Hal hal;
 LR1121Driver *LR1121Driver::instance = NULL;
-
-#if defined(OPT_USE_LR1121_TCXO)
-#define LR1121_TCXO_DELAY_RAW                     0x0000A5UL
-
-static void LR1121ConfigureTcxo(const SX12XX_Radio_Number_t radioNumber)
-{
-#if !defined(LR1121_TCXO_VOLTAGE)
-    DBGLN("LR1121_TCXO_VOLTAGE is not defined, skipping SetTcxoMode");
-    return;
-#else
-    // 6.3.2 SetTcxoMode
-    // RegTcxoTune sets the TCXO voltage for TCXOs that are powered via the LR1121 internal supply
-    const uint8_t tcxoVoltageRaw = LR1121_TCXO_VOLTAGE;
-    if (tcxoVoltageRaw > 0x07)
-    {
-        DBGLN("LR1121_TCXO_VOLTAGE out of range [0..7], skipping SetTcxoMode");
-        return;
-    }
-
-    const uint32_t timeout = (uint32_t)LR1121_TCXO_DELAY_RAW;
-
-    uint8_t tcxoBuf[4] = {
-        tcxoVoltageRaw,
-        (uint8_t)(timeout >> 16),
-        (uint8_t)(timeout >> 8),
-        (uint8_t)(timeout),
-    };
-
-    hal.WriteCommand(LR11XX_SYSTEM_SET_TCXO_MODE_OC, tcxoBuf, sizeof(tcxoBuf), radioNumber);
-#endif
-}
-#endif
 
 //DEBUG_LR1121_OTA_TIMING
 
@@ -105,11 +71,7 @@ void LR1121Driver::End()
 bool LR1121Driver::CheckVersion(const SX12XX_Radio_Number_t radioNumber)
 {
     firmware_version_t version = GetFirmwareVersion(radioNumber);
-    if (
-#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
-        !LittleFS.exists("/lr1121.txt") &&
-#endif
-        (version.type != LR1121_FIRMWARE_TYPE || version.version != LR11XX_FIRMWARE_VERSION))
+    if (!LittleFS.exists("/lr1121.txt") && (version.type != LR1121_FIRMWARE_TYPE || version.version != LR11XX_FIRMWARE_VERSION))
     {
         DBGLN("Upgrading radio #%d", radioNumber);
         // do upgrade
@@ -145,47 +107,21 @@ bool LR1121Driver::CheckVersion(const SX12XX_Radio_Number_t radioNumber)
 
 bool LR1121Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
 {
-    // hal.init() is called once; SPI and interrupt setup must not be repeated.
     hal.init();
+    hal.reset();
 
-    for (int attempt = 1; attempt <= 3; attempt++)
+    // Validate that the LR1121(s) are working.
+    if (!CheckVersion(SX12XX_Radio_1)) return false;
+    if (GPIO_PIN_NSS_2 != UNDEF_PIN)
     {
-        if (attempt > 1)
-        {
-            DBGLN("LR1121 init retry %d/3", attempt);
-            delay(50);
-        }
+        if (!CheckVersion(SX12XX_Radio_2)) return false;
+    }
 
-        // do-while(false) lets any failure path break to the retry without
-        // needing goto or a separate helper function.
-        bool success = false;
-        do {
-            hal.reset();
+    hal.IsrCallback_1 = &LR1121Driver::IsrCallback_1;
+    hal.IsrCallback_2 = &LR1121Driver::IsrCallback_2;
 
-            // Fast-fail: if BUSY is still HIGH after reset the chip is
-            // unresponsive. Skip the rest of init and retry immediately.
-            if (GPIO_PIN_BUSY != UNDEF_PIN && digitalRead(GPIO_PIN_BUSY) == HIGH)
-            {
-                DBGLN("LR1121 BUSY stuck HIGH after reset");
-                break;
-            }
-
-            // Validate that the LR1121(s) are working.
-            if (!CheckVersion(SX12XX_Radio_1)) break;
-            if (GPIO_PIN_NSS_2 != UNDEF_PIN)
-            {
-                if (!CheckVersion(SX12XX_Radio_2)) break;
-            }
-
-            hal.IsrCallback_1 = &LR1121Driver::IsrCallback_1;
-            hal.IsrCallback_2 = &LR1121Driver::IsrCallback_2;
-
-            #if defined(OPT_USE_LR1121_TCXO)
-            LR1121ConfigureTcxo(SX12XX_Radio_All);
-            #endif
-
-            //Clear Errors
-            hal.WriteCommand(LR11XX_SYSTEM_CLEAR_ERRORS_OC, SX12XX_Radio_All); // Remove later?  Might not be required???
+    //Clear Errors
+    hal.WriteCommand(LR11XX_SYSTEM_CLEAR_ERRORS_OC, SX12XX_Radio_All); // Remove later?  Might not be required???
 
 /*
 Do not enable for dual radio TX.
@@ -193,58 +129,32 @@ When AUTOFS is set and tlm received by only 1 of the 2 radios,  that radio will 
 into Standby mode.  After the following SPI command for tx mode, busy will go high for differing periods of time because 1 is
 transitioning from FS mode and the other from Standby mode. This causes the tx done dio of the 2 radios to occur at very different times.
 */
-            // 7.2.5 SetRxTxFallbackMode
-            uint8_t FBbuf[1] = {LR11XX_RADIO_FALLBACK_FS};
-            fallBackMode = LR1121_MODE_FS;
-            hal.WriteCommand(LR11XX_RADIO_SET_RX_TX_FALLBACK_MODE_OC, FBbuf, sizeof(FBbuf), SX12XX_Radio_All);
+    // 7.2.5 SetRxTxFallbackMode
+    uint8_t FBbuf[1] = {LR11XX_RADIO_FALLBACK_FS};
+    fallBackMode = LR1121_MODE_FS;
+    hal.WriteCommand(LR11XX_RADIO_SET_RX_TX_FALLBACK_MODE_OC, FBbuf, sizeof(FBbuf), SX12XX_Radio_All);
 
-            // 7.2.12 SetRxBoosted
-            uint8_t abuf[1] = {1};
-            hal.WriteCommand(LR11XX_RADIO_SET_RX_BOOSTED_OC, abuf, sizeof(abuf), SX12XX_Radio_All);
+    // 7.2.12 SetRxBoosted
+    uint8_t abuf[1] = {1};
+    hal.WriteCommand(LR11XX_RADIO_SET_RX_BOOSTED_OC, abuf, sizeof(abuf), SX12XX_Radio_All);
 
-            SetDioAsRfSwitch();
-            SetDioIrqParams();
+    SetDioAsRfSwitch();
+    SetDioIrqParams();
 
-            if (OPT_USE_HARDWARE_DCDC)
-            {
-                // 5.1.1 SetRegMode
-                uint8_t RegMode[1] = {1};
-                hal.WriteCommand(LR11XX_SYSTEM_SET_REGMODE_OC, RegMode, sizeof(RegMode), SX12XX_Radio_All); // Enable DCDC converter instead of LDO
-            }
-
-            // 2.1.3.1 CalibImage
-            uint8_t CalImagebuf[2];
-            CalImagebuf[0] = ((minimumFrequency / 1000000 ) - 1) / 4;       // Freq1 = floor( (fmin_mhz - 1)/4)
-            CalImagebuf[1] = 1 + ((maximumFrequency / 1000000 ) + 1) / 4;   // Freq2 = ceil( (fmax_mhz + 1)/4)
-            hal.WriteCommand(LR11XX_SYSTEM_CALIBRATE_IMAGE_OC, CalImagebuf, sizeof(CalImagebuf), SX12XX_Radio_All);
-
-            // CalibImage takes ~230ms.  Wait for it to finish (up to 500ms) before
-            // returning so that Config() is never called while calibration is still
-            // running on the BUSY line.
-            {
-                uint32_t deadline = millis() + 500;
-                while (!hal.WaitOnBusy(SX12XX_Radio_All))
-                {
-                    if ((int32_t)(millis() - deadline) >= 0) break;
-                    delay(5);
-                }
-                // If BUSY is still HIGH the calibration timed out; retry.
-                if (GPIO_PIN_BUSY != UNDEF_PIN && digitalRead(GPIO_PIN_BUSY) == HIGH)
-                {
-                    DBGLN("LR1121 CalibImage timeout");
-                    break;
-                }
-            }
-
-            success = true;
-        } while (false);
-
-        if (success) return true;
-        DBGLN("LR1121 init attempt %d failed", attempt);
+    if (OPT_USE_HARDWARE_DCDC)
+    {
+        // 5.1.1 SetRegMode
+        uint8_t RegMode[1] = {1};
+        hal.WriteCommand(LR11XX_SYSTEM_SET_REGMODE_OC, RegMode, sizeof(RegMode), SX12XX_Radio_All); // Enable DCDC converter instead of LDO
     }
 
-    DBGLN("LR1121 failed to init after 3 attempts");
-    return false;
+    // 2.1.3.1 CalibImage
+    uint8_t CalImagebuf[2];
+    CalImagebuf[0] = ((minimumFrequency / 1000000 ) - 1) / 4;       // Freq1 = floor( (fmin_mhz - 1)/4)
+    CalImagebuf[1] = 1 + ((maximumFrequency / 1000000 ) + 1) / 4;   // Freq2 = ceil( (fmax_mhz + 1)/4)
+    hal.WriteCommand(LR11XX_SYSTEM_CALIBRATE_IMAGE_OC, CalImagebuf, sizeof(CalImagebuf), SX12XX_Radio_All);
+
+    return true;
 }
 
 // 12.2.1 SetTxCw
@@ -286,9 +196,6 @@ void LR1121Driver::Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t regfreq,
     uint8_t buf[1] = {useFSK ? LR11XX_RADIO_PKT_TYPE_GFSK : LR11XX_RADIO_PKT_TYPE_LORA};
     hal.WriteCommand(LR11XX_RADIO_SET_PKT_TYPE_OC, buf, sizeof(buf), radioNumber);
 
-    // Call SetRfFrequency before SetModulationParams to prevent boot lockups on LR1121
-    SetFrequencyReg(regfreq, radioNumber, false);
-
     codec = &copyCodec;
     if (useFSK)
     {
@@ -321,6 +228,8 @@ void LR1121Driver::Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t regfreq,
 
         SetPacketParamsLoRa(PreambleLength, packetLengthType, PayloadLength, inverted, radioNumber);
     }
+
+    SetFrequencyReg(regfreq, radioNumber, false);
 
     ClearIrqStatus(radioNumber);
 
@@ -939,14 +848,10 @@ int LR1121Driver::BeginUpdate(const SX12XX_Radio_Number_t radioNumber, const uin
     DBGLN("Reboot 1121 to bootloader mode");
     uint8_t mode = 3;
     hal.WriteCommand(LR11XX_SYSTEM_REBOOT_OC, &mode, 1, radioNumber);
+    while(!hal.WaitOnBusy(radioNumber))
     {
-        uint32_t deadline = millis() + 2000;
-        while(!hal.WaitOnBusy(radioNumber))
-        {
-            DBGLN("Waiting...");
-            if ((int32_t)(millis() - deadline) >= 0) return -1;
-            delay(10);
-        }
+        DBGLN("Waiting...");
+        delay(10);
     }
 
     // Ensure we're in BL mode
@@ -961,21 +866,15 @@ int LR1121Driver::BeginUpdate(const SX12XX_Radio_Number_t radioNumber, const uin
     // Erase flash
     DBGLN("Erasing");
     hal.WriteCommand(LR11XX_BL_ERASE_FLASH_OC, radioNumber);
+    while(!hal.WaitOnBusy(radioNumber))
     {
-        uint32_t deadline = millis() + 10000;
-        while(!hal.WaitOnBusy(radioNumber))
-        {
-            DBGLN("Waiting...");
-            if ((int32_t)(millis() - deadline) >= 0) return -1;
-            delay(100);
-        }
+        DBGLN("Waiting...");
+        delay(100);
     }
     DBGLN("Erased");
 
     lr1121UpdateState->left_over = 0;
-#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.setHwCs(false);
-#endif
 
     pinMode(radioNumber == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, OUTPUT);
     digitalWrite(radioNumber == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, HIGH);
@@ -1001,11 +900,7 @@ static void writeBytes(const uint8_t *data, const uint32_t data_size) {
 
     // Have to do this the OLD way, so we can pump out more than 64 bytes in one message
     digitalWrite(lr1121UpdateState->updatingRadio == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, LOW);
-#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.transferBytes(lr1121UpdateState->packet.header, nullptr, 6 + write_size);
-#elif defined(PLATFORM_STM32)
-    SPIEx.transfer(lr1121UpdateState->packet.header, 6 + write_size);
-#endif
     digitalWrite(lr1121UpdateState->updatingRadio == SX12XX_Radio_1 ? GPIO_PIN_NSS : GPIO_PIN_NSS_2, HIGH);
 
     while (!hal.WaitOnBusy(lr1121UpdateState->updatingRadio))
@@ -1037,28 +932,20 @@ int LR1121Driver::EndUpdate()
     int retCode = 0;
     writeBytes(nullptr, 0);
 
-#if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
     SPIEx.setHwCs(true);
-    #if defined(PLATFORM_ESP32)
-        if (GPIO_PIN_NSS_2 != UNDEF_PIN)
-        {
-            spiAttachSS(SPIEx.bus(), 1, GPIO_PIN_NSS_2);
-        }
-    #endif
-#endif
+    if (GPIO_PIN_NSS_2 != UNDEF_PIN)
+    {
+        spiAttachSS(SPIEx.bus(), 1, GPIO_PIN_NSS_2);
+    }
 
     if (lr1121UpdateState->totalSize == lr1121UpdateState->expectedFilesize)
     {
         DBGLN("Reboot LR1121");
         uint8_t buf = 0;
         hal.WriteCommand(LR11XX_BL_REBOOT_OC, &buf, 1, lr1121UpdateState->updatingRadio);
+        while(!hal.WaitOnBusy(lr1121UpdateState->updatingRadio))
         {
-            uint32_t deadline = millis() + 2000;
-            while(!hal.WaitOnBusy(lr1121UpdateState->updatingRadio))
-            {
-                if ((int32_t)(millis() - deadline) >= 0) return -1;
-                delay(1);
-            }
+            delay(1);
         }
 
         DBGLN("Check not in BL mode");

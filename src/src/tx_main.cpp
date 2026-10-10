@@ -19,6 +19,11 @@
 #include "devButton.h"
 #if !defined(PLATFORM_STM32)
 #include "devVTX.h"
+#else
+#include "devUSBConfig.h"
+#include "devThermal.h"
+#include "mavlink_udp.h"
+#include "stm32_dfu.h"
 #endif
 #if defined(PLATFORM_ESP32)
 #include "devScreen.h"
@@ -66,6 +71,10 @@ FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; // Buffer for current stubbon sender packet (mavlink only)
 
 unsigned long rebootTime = 0;
+#if defined(PLATFORM_STM32)
+// Set by the USB config API's TLRS_DFU; reboots into ROM DFU from loop(), as rebootTime does.
+unsigned long dfuRequestTime = 0;
+#endif
 #if !defined(PLATFORM_STM32)
 extern bool webserverPreventAutoStart;
 #else
@@ -120,6 +129,9 @@ device_affinity_t ui_devices[] = {
   {&ADC_device, 1},
 #if !defined(PLATFORM_STM32)
   {&WIFI_device, 0},
+#else
+  {&USBConfig_device, 1},
+  {&Thermal_device, 0},
 #endif
   {&Button_device, 0},
 #if defined(PLATFORM_ESP32)
@@ -1185,6 +1197,29 @@ static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
   crsfParser.processBytes(&usbConnector, buf, size);
 }
 
+#if defined(PLATFORM_STM32)
+// MAVLink from a GCS on the USB network interface (UDP). The same uplink path as MAVLink on the
+// USB serial port, minus the CRSF parsing: nothing but MAVLink comes in over UDP.
+static void HandleMavlinkUdp(const uint8_t *buf, uint16_t size)
+{
+  if (connectionState == noCrossfire && isThisAMavPacket((uint8_t *)buf, size))
+  {
+    config.SetLinkMode(TX_MAVLINK_MODE);
+    UARTconnected();
+  }
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+  {
+    uartInputBuffer.lock();
+    // Whole datagrams only: a partial MAVLink frame is worse than a dropped one.
+    if (uartInputBuffer.free() >= size)
+    {
+      uartInputBuffer.pushBytes(buf, size);
+    }
+    uartInputBuffer.unlock();
+  }
+}
+#endif
+
 static void HandleUARTin()
 {
   if (firmwareOptions.is_airport)
@@ -1429,6 +1464,14 @@ bool setupHardwareFromOptions()
     };
     devicesRegister(wifi_device, ARRAY_SIZE(wifi_device));
     devicesInit();
+#else
+    // No WiFi to fix the layout with; keep the USB config API up instead, so the web flasher can
+    // still reach HELLO and TLRS_DFU and reflash the board.
+    static device_affinity_t usbconfig_device[] = {
+        {&USBConfig_device, 1}
+    };
+    devicesRegister(usbconfig_device, ARRAY_SIZE(usbconfig_device));
+    devicesInit();
 #endif
     setConnectionState(hardwareUndefined);
     return false;
@@ -1512,10 +1555,6 @@ static void checkSendLinkStatsToHandset(uint32_t now)
 
 void setup()
 {
-#ifdef SUPPRESS_LCD
-  pinMode(GPIO_PIN_LCD_CS, OUTPUT);        digitalWrite(GPIO_PIN_LCD_CS, HIGH);
-  pinMode(GPIO_PIN_LCD_BACKLIGHT, OUTPUT); digitalWrite(GPIO_PIN_LCD_BACKLIGHT, HIGH);
-#endif
   if (setupHardwareFromOptions())
   {
     setupTarget();
@@ -1594,6 +1633,9 @@ void setup()
   registerButtonFunction(ACTION_INCREASE_POWER, cyclePower);
 
   devicesStart();
+#if defined(PLATFORM_STM32)
+  MavlinkUdp_Begin(HandleMavlinkUdp);
+#endif
 
   if (firmwareOptions.is_airport)
   {
@@ -1624,6 +1666,12 @@ void loop()
   // Update UI devices
   devicesUpdate(now);
 
+#if defined(PLATFORM_STM32)
+  // Service the USB network (config API) every iteration: received frames, lwIP timers and
+  // transmissions all run from here. See lib/USBConfig/devUSBConfig.h.
+  USBConfig_Poll();
+#endif
+
   // Not a device because it must be run on the loop core
   checkBackpackUpdate();
 
@@ -1635,6 +1683,11 @@ void loop()
     ESP.restart();
 #endif
   }
+#if defined(STM32_DFU_SUPPORTED)
+  if (dfuRequestTime != 0 && now > dfuRequestTime) {
+    stm32_RequestDfu();
+  }
+#endif
 
   executeDeferredFunction(micros());
 
@@ -1664,6 +1717,10 @@ void loop()
           convert_mavlink_to_crsf_telem(CRSF_ADDRESS_RADIO_TRANSMITTER, CRSFinBuffer, count);
           // forward raw mavlink data to USB
           TxUSB->write(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
+#if defined(PLATFORM_STM32)
+          // ... and to a GCS on the USB network interface
+          MavlinkUdp_Send(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
+#endif
           // And to the backpack if we have one
           if (TxUSB != BackpackOrLogStrm)
           {

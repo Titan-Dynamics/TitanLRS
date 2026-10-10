@@ -7,6 +7,7 @@ import {unsafeHTML} from 'lit/directives/unsafe-html.js'
 import FEATURES from "./features.js"
 import {elrsState, formatBand} from './utils/state.js'
 import {cuteAlert} from "./utils/feedback.js";
+import {transport} from "./utils/transport.js";
 
 import './pages/info-panel.js'
 
@@ -144,9 +145,7 @@ export class App extends LitElement {
 
     async loadInitialData() {
         try {
-            const resp = await fetch('/config')
-            if (!resp.ok) throw new Error('Failed to load config')
-            const data = await resp.json()
+            const data = await transport.getConfig()
             elrsState.settings = data.settings || {}
             elrsState.options = data.options || {}
             elrsState.config = data.config || {}

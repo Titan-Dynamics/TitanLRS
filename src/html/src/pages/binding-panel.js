@@ -23,11 +23,24 @@ class BindingPanel extends LitElement {
     }
 
     firstUpdated(_changedProperties) {
-        this.uid = elrsState.config.uid
+        this.uid = this._savedUID()
         this.bindType = elrsState.config.vbind
-        this.originalUID = elrsState.config.uid
+        this.originalUID = this.uid
         this.originalUIDType = (elrsState.settings && elrsState.settings.uidtype) ? elrsState.settings.uidtype : ''
         this._updateUIDType(this.originalUIDType)
+    }
+
+    // The UID this panel edits, which is not always the one the radio is running on.
+    _savedUID() {
+        // FEATURE:IS_TX
+        // On a TX the binding phrase lives in the options block and is only copied into the
+        // running UID during setup(), so `config.uid` keeps reporting the pre-save value until
+        // the module reboots. Read the saved value, or the panel appears to discard the save
+        // every time it is re-rendered (tab switch, reconnect).
+        const saved = elrsState.options && elrsState.options.uid
+        if (Array.isArray(saved) && saved.length) return saved.slice()
+        // /FEATURE:IS_TX
+        return elrsState.config.uid
     }
 
     render() {
@@ -114,7 +127,9 @@ which will be copied to the UID field and used as-is.
                     <!-- /FEATURE:NOT IS_TX -->
                     <button class="td-btn td-btn-primary"
                             ?disabled=${!this.checkChanged() || this.uidSource === 'invalid'}
-                            @click="${this._submitOptions}">Save Binding</button>
+                            @click="${this._submitOptions}">
+                        Save &amp; Reboot
+                    </button>
                 </div>
             </div>
         `
@@ -198,6 +213,10 @@ which will be copied to the UID field and used as-is.
             this.uidSource = 'current'
             this._updateUIDType('Not bound')
             return this.requestUpdate()
+        }, {
+            title: 'Reset to Unbound',
+            message: 'This clears the binding on this receiver and reboots it. It will wait to be bound again. Continue?',
+            confirmText: 'Reset & Reboot',
         })
     }
 
@@ -236,6 +255,7 @@ which will be copied to the UID field and used as-is.
 
         // FEATURE:IS_TX
         let tx_changes = { customised: true, uid: this.uid }
+        // The UID is only applied during setup(), so this is a confirm-save-reboot flow.
         saveOptions(tx_changes, () => {
             this.originalUID = this.uid
             this.originalUIDType = 'Overridden'
@@ -244,7 +264,7 @@ which will be copied to the UID field and used as-is.
             this.uidSource = 'current'
             this._updateUIDType(this.originalUIDType)
             return this.requestUpdate()
-        })
+        }, {reboot: true})
         // /FEATURE:IS_TX
         // FEATURE:NOT IS_TX
         const rx_changes = { uid: this.uid, vbind: this.bindType }

@@ -59,9 +59,11 @@
 #define GPIO_PIN_FIVE_WAY_INPUT3 hardware_pin(HARDWARE_five_way3)
 
 #define GPIO_PIN_BUTTON hardware_pin(HARDWARE_button)
+#define GPIO_BUTTON_ACTIVE_HIGH hardware_flag(HARDWARE_button_active_high)
 #define USER_BUTTON_LED hardware_pin(HARDWARE_button_led_index)
 #define GPIO_PIN_BUTTON2 hardware_pin(HARDWARE_button2)
 #define USER_BUTTON2_LED hardware_pin(HARDWARE_button2_led_index)
+#define GPIO_BUTTON2_ACTIVE_HIGH hardware_flag(HARDWARE_button2_active_high)
 
 // Lighting
 #define GPIO_PIN_LED_BLUE hardware_pin(HARDWARE_led_blue)

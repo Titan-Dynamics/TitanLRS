@@ -451,9 +451,9 @@ const HARDWARE_SCHEMA = [
             },
             {
                 id: 'led_red_invert',
-                label: 'Red LED inverted',
+                label: 'LED / Red LED inverted',
                 type: 'checkbox',
-                desc: 'LEDs are active LOW unless this is checked'
+                desc: 'Inverts the single LED pin, or the Red LED pin if set. Active LOW unless checked'
             },
             {
                 id: 'led_green',
@@ -494,6 +494,12 @@ const HARDWARE_SCHEMA = [
                 desc: 'Single/first (active low) button'
             },
             {
+                id: 'button_active_high',
+                label: 'Button 1 active high',
+                type: 'checkbox',
+                desc: 'Check if button 1 pulls the pin high when pressed'
+            },
+            {
                 id: 'button_led_index',
                 label: 'Button 1 RGB Index',
                 type: 'uint',
@@ -507,10 +513,57 @@ const HARDWARE_SCHEMA = [
                 desc: 'Second (active low) button'
             },
             {
+                id: 'button2_active_high',
+                label: 'Button 2 active high',
+                type: 'checkbox',
+                desc: 'Check if button 2 pulls the pin high when pressed'
+            },
+            {
                 id: 'button2_led_index',
                 label: 'Button 2 RGB Index',
                 type: 'uint',
                 desc: 'Index of button LED in RGB string, leave empty for no RGB LED'
+            },
+        ]
+    },
+
+    {
+        title: 'Config Flash (W25Q64)', rows: [
+            {
+                id: 'config_flash_cs',
+                label: 'CS pin',
+                type: 'uint',
+                size: 4,
+                readonly: true,
+                icon: 'output',
+                desc: 'Chip select of the SPI flash holding the saved settings - STM32 targets only, set when flashed'
+            },
+            {
+                id: 'config_flash_sck',
+                label: 'SCK pin',
+                type: 'uint',
+                size: 4,
+                readonly: true,
+                icon: 'output',
+                desc: 'Clock pin of the config flash'
+            },
+            {
+                id: 'config_flash_miso',
+                label: 'MISO pin',
+                type: 'uint',
+                size: 4,
+                readonly: true,
+                icon: 'input',
+                desc: 'Data in from the config flash'
+            },
+            {
+                id: 'config_flash_mosi',
+                label: 'MOSI pin',
+                type: 'uint',
+                size: 4,
+                readonly: true,
+                icon: 'output',
+                desc: 'Data out to the config flash'
             },
         ]
     },

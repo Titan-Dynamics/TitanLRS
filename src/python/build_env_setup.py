@@ -5,11 +5,12 @@ import shutil
 platform = env.get('PIOPLATFORM', '')
 stm = platform in ['ststm32']
 
-if platform != 'native' and not stm:
+if platform != 'native':
     import UnifiedConfiguration
+    import elrs_helpers
+if platform != 'native' and not stm:
     import upload_via_esp8266_backpack
     import esp_compress
-    import elrs_helpers
     import BFinitPassthrough
     import ETXinitPassthrough
 
@@ -100,7 +101,7 @@ try:
     os.remove(env['PROJECT_BUILD_DIR'] + '/' + env['PIOENV'] +'/'+ env['PROGNAME'] + '.bin')
 except FileNotFoundError:
     None
-if platform != 'native' and not stm:
+if platform != 'native':
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", UnifiedConfiguration.appendConfiguration)
 if platform in ['espressif8266'] and "_WIFI" in target_name:
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", esp_compress.compressFirmware)
@@ -112,6 +113,6 @@ def copyBootApp0bin(source, target, env):
 if platform in ['espressif32']:
     env.AddPreAction("$BUILD_DIR/${PROGNAME}.bin", copyBootApp0bin)
 
-if platform in ['espressif32', 'espressif8266']:
+if platform in ['espressif32', 'espressif8266', 'ststm32']:
     if not os.path.exists('hardware'):
-        elrs_helpers.git_cmd('clone', 'https://github.com/ExpressLRS/targets', 'hardware')
+        elrs_helpers.git_cmd('clone', 'https://github.com/Titan-Dynamics/targets', 'hardware')

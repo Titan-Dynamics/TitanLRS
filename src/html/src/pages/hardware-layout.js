@@ -12,6 +12,9 @@ export class HardwareLayout extends LitElement {
 
     static SCHEMA = HARDWARE_SCHEMA
 
+    // Rows set when the device is flashed; shown, never edited or saved.
+    static READONLY = new Set(HARDWARE_SCHEMA.flatMap(section => section.rows).filter(row => row.readonly).map(row => row.id))
+
     createRenderRoot() {
         return this
     }
@@ -105,6 +108,11 @@ export class HardwareLayout extends LitElement {
                                    type="text" class="td-input td-input-mono" style="width: 60px;"
                                    @keypress="${_intInput}"/>`
             case 'uint':
+                if (row.readonly) {
+                    return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
+                                       type="text" class="td-input td-input-mono" readonly
+                                       style="width: 60px; color: var(--td-fg-mute);"/>`
+                }
                 return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
                                    type="text" class="td-input td-input-mono" style="width: 60px;"
                                    @keypress="${_uintInput}"/>`
@@ -176,7 +184,7 @@ export class HardwareLayout extends LitElement {
         const form = document.getElementById('upload_hardware')
         const formData = new FormData(form)
         const body = JSON.stringify(Object.fromEntries(formData), (k, v) => {
-            if (v === '') return undefined
+            if (v === '' || this.constructor.READONLY.has(k)) return undefined
             const el = document.getElementById(k)
             if (el && el.type === 'checkbox') return v === 'on'
             if (el && el.classList.contains('array')) {

@@ -1,7 +1,8 @@
 import {html, LitElement} from "lit"
 import {customElement} from "lit/decorators.js"
 import '../components/filedrag.js'
-import {saveJSONWithReboot} from "../utils/feedback.js"
+import {saveWithReboot} from "../utils/feedback.js"
+import {downloadExport, transport} from "../utils/transport.js"
 
 @customElement('models-panel')
 class ModelsPanel extends LitElement {
@@ -20,8 +21,7 @@ class ModelsPanel extends LitElement {
                     <p class="td-small td-mute" style="margin-bottom: var(--td-s-3);">
                         Backup global transmitter module and model configurations.
                     </p>
-                    <a href="/config?export" download="models.json" target="_blank"
-                       class="td-btn td-btn-primary" style="text-decoration: none;">Export module settings</a>
+                    <button class="td-btn td-btn-primary" @click="${this.download}">Export module settings</button>
                 </div>
             </div>
             <div class="td-card">
@@ -40,13 +40,17 @@ class ModelsPanel extends LitElement {
         `
     }
 
+    download() {
+        downloadExport('models.json').catch(() => {})
+    }
+
     upload(e) {
         const files = e.detail.files
         const reader = new FileReader()
-        reader.onload = (x) => saveJSONWithReboot(
+        reader.onload = (x) => saveWithReboot(
             'Upload Model Configuration',
             'An error occurred while uploading model configuration file',
-            '/import',
+            (text) => transport.importConfig(text),
             x.target.result,
             () => { return 'Model configuration updated, reboot for them to take effect' }
         )

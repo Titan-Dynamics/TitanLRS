@@ -948,7 +948,10 @@ void TXModuleEndpoint::registerParameters()
 
   // WIFI folder
   registerParameter(&luaWiFiFolder);
+#if !defined(PLATFORM_STM32)
+  // The STM32 TX has no WiFi. The folder stays for the RX and backpack items.
   registerParameter(&luaWebUpdate, wifiBleCallback, luaWiFiFolder.common.id);
+#endif
   if (HAS_RADIO) {
     registerParameter(&luaRxWebUpdate, sendCallback, luaWiFiFolder.common.id);
 

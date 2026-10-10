@@ -1,0 +1,15 @@
+{
+  "serial_rx": "PB11", "serial_tx": "PB10",
+  "radio_nss": "PE0", "radio_sck": "PE12", "radio_miso": "PE13", "radio_mosi": "PE14",
+  "radio_rst": "PE7", "radio_dio1": "PE1", "radio_busy": "PE9",
+  "radio_nss_2": "PE8", "radio_rst_2": "PE5", "radio_dio1_2": "PE6", "radio_busy_2": "PE15",
+  "radio_dcdc": true,
+  "config_flash_cs": "PD6", "config_flash_sck": "PB3", "config_flash_miso": "PB4", "config_flash_mosi": "PD7",
+  "led_red": "PE3",
+  "button": "PE2", "button_active_high": true,
+  "power_min": 0, "power_high": 3, "power_max": 3, "power_default": 0,
+  "power_control": 0,
+  "power_values": [19, 25, 31, 37],
+  "power_values2": [19, 25, 31, 37],
+  "power_values_dual": [0, 8, 16, 24]
+}

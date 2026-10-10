@@ -6,14 +6,14 @@ import {elrsState} from "../utils/state.js";
 
 @customElement('continuous-wave')
 export class ContinuousWave extends LitElement {
-    @query('#optionsSetSubGHz') accessor optionsSetSubGHz
-    @query('#radio2') accessor radio2
     @query('#measured') accessor measured
 
     @state() accessor data = undefined
     @state() accessor started = false
     @state() accessor result = {}
     @state() accessor cwFreq;
+    @state() accessor setSubGHz = false
+    @state() accessor radio = 1
 
     _text = "Loading..."
 
@@ -39,33 +39,21 @@ export class ContinuousWave extends LitElement {
                             <div class="td-card-row" style="border-bottom: none; padding-bottom: 0;">
                                 <span class="td-label">Radio</span>
                                 <div class="td-segment" style="width: fit-content;">
-                                    <button id="radio1" type="button" class="is-active" ?disabled=${this.started}>Radio 1</button>
-                                    <button id="radio2" type="button" ?disabled=${this.started}>Radio 2</button>
+                                    <button type="button" class="${this.radio === 1 ? 'is-active' : ''}" ?disabled=${this.started}
+                                            @click="${() => { this.radio = 1 }}">Radio 1</button>
+                                    <button type="button" class="${this.radio === 2 ? 'is-active' : ''}" ?disabled=${this.started}
+                                            @click="${() => { this.radio = 2 }}">Radio 2</button>
                                 </div>
                             </div>
                         ` : ''}
 
                         <!-- FEATURE:HAS_LR1121 -->
                         ${elrsState.settings.has_high_band && elrsState.settings.has_low_band ? html`
-<<<<<<< HEAD
                             <div class="td-card-row" style="border-bottom: none; padding-bottom: 0;">
-                                <span class="td-label">Set 915 MHz</span>
-                                <span class="td-toggle ${this.optionsSetSubGHz?.checked ? 'is-on' : ''}"
-                                      id="optionsSetSubGHz"
+                                <span class="td-label">Set ${(this.data.center / 1000000)} MHz</span>
+                                <span class="td-toggle ${this.setSubGHz ? 'is-on' : ''}"
                                       ?disabled=${this.started}
-                                      @click="${this._updateFreq}"></span>
-=======
-                            <br>
-                            Basic support is available for the LR1121 and setting ${(this.data.center / 1000000)} MHz.
-                            <br>
-                            <div class="mui-checkbox">
-                                <input type="checkbox"
-                                       name="setSubGHz"
-                                       id="optionsSetSubGHz"
-                                       ?disabled=${this.started}
-                                       @click="${this._updateFreq}">
-                                <label for="optionsSetSubGHz">Set ${(this.data.center / 1000000)} MHz</label>
->>>>>>> upstream/4.x-maint
+                                      @click="${this._toggleSubGHz}"></span>
                             </div>
                         ` : ''}
                         <!-- /FEATURE:HAS_LR1121 -->
@@ -147,11 +135,17 @@ export class ContinuousWave extends LitElement {
         this._updateFreq()
     }
 
+    _toggleSubGHz() {
+        if (this.started) return
+        this.setSubGHz = !this.setSubGHz
+        this._updateFreq()
+    }
+
     _updateFreq() {
         this.cwFreq = this.data.center
         if (FEATURES.HAS_LR1121) {
             if (elrsState.settings?.has_high_band && elrsState.settings?.has_low_band) {
-                if (!this.optionsSetSubGHz || !this.optionsSetSubGHz.checked) {
+                if (!this.setSubGHz) {
                     this.cwFreq = this.data.center2
                 }
             } else if (elrsState.settings?.has_high_band) {
@@ -166,11 +160,11 @@ export class ContinuousWave extends LitElement {
         e.preventDefault()
         this.started = true
         const formdata = new FormData()
-        formdata.append('radio', this.radio2?.checked ? 2 : 1)
+        formdata.append('radio', this.radio)
         if (FEATURES.HAS_LR1121) {
             let subGHz = 0
             if (elrsState.settings.has_high_band && elrsState.settings.has_low_band) {
-                subGHz = this.optionsSetSubGHz.checked ? 1 : 0
+                subGHz = this.setSubGHz ? 1 : 0
             } else if (elrsState.settings.has_low_band) {
                 subGHz = 1
             }

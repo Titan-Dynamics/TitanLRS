@@ -28,16 +28,121 @@ const char *wifi_ap_address = "10.0.0.1";
 char device_name[] = DEVICE_NAME;
 firmware_options_t firmwareOptions;
 #elif defined(PLATFORM_STM32)
-// STM32: compile-time fixed target, no runtime JSON loading
+// STM32: the unified targets read their names, options and hardware layout from the firmware slot
+// (titanSlot), as ESP reads them from after its sketch. Options that the user changes over the USB
+// config API are persisted into the elrs_eeprom blob — see options_storage_stm32.h.
+#include "elrs_eeprom.h"
+#include "options_storage_stm32.h"
+#include "FHSS.h"
+#include "options_apply.h"
+#include "hardware_layout.h"
+#include "hardware_override_stm32.h"
+
+// The shared EEPROM instance, defined in tx_main.cpp / rx_main.cpp
+extern ELRS_EEPROM eeprom;
+
+static_assert(FW_OPTIONS_EEPROM_OFFSET + sizeof(fw_options_header_t) + sizeof(firmware_options_t)
+                  <= RESERVED_EEPROM_SIZE,
+              "persisted firmware_options_t does not fit in the EEPROM blob");
+
 char product_name[ELRSOPTS_PRODUCTNAME_SIZE+1];
 char device_name[ELRSOPTS_DEVICENAME_SIZE+1];
 firmware_options_t firmwareOptions;
 
-bool options_init()
+static bool optionsCustomised = false;
+
+// The web flasher patches this block; volatile keeps GCC from constant-folding the zeroed regions.
+// GCC would place a volatile object in .data (RAM, copied from flash at startup); the section
+// keeps it in flash, where it is readable from reset.
+__attribute__((used, aligned(4), section(".rodata.titanSlot"))) const volatile titan_slot_t titanSlot = {
+    {'T', 'L', 'R', 'S', 'O', 'P', 'T', 'S'}, TITAN_SLOT_VERSION, 0, {0}, {0}, {0}, {0}};
+static_assert(sizeof(titan_slot_t) == 2716, "titan_slot_t layout is shared with the web flasher");
+
+const char *titan_ProductName(void)
 {
-    // Set defaults for firmware options
+    // A USB string descriptor holds at most 126 UTF-16 characters (bLength is one byte), and
+    // USBD_GetString() does not bound its copy, so the name is truncated to that.
+    static char name[127];
+    if (titanSlot.product_name[0] == '\0')
+    {
+        return "TitanLRS";
+    }
+    size_t i = 0;
+    for (; i < sizeof(name) - 1 && titanSlot.product_name[i] != '\0'; ++i)
+    {
+        name[i] = titanSlot.product_name[i];
+    }
+    name[i] = '\0';
+    return name;
+}
+
+// The flash-discriminator of the web flash (0 if none), folded into fw_options_discriminator().
+static uint32_t slotFlashDiscriminator = 0;
+
+// CRC16/CCITT-FALSE: init=0xFFFF, poly=0x1021, no final XOR. Takes the running remainder so a CRC
+// can span the header and the payload without copying them into one buffer.
+static uint16_t fw_options_crc(uint16_t crc, const uint8_t *data, size_t len)
+{
+    while (len--)
+    {
+        crc ^= (uint16_t)(*data++) << 8;
+        for (int i = 0; i < 8; i++)
+        {
+            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+// CRC of a header (up to but not including its own `crc` member) followed by the options payload.
+static uint16_t fw_options_blobCrc(const fw_options_header_t &hdr, const firmware_options_t &opts)
+{
+    uint16_t crc = fw_options_crc(0xFFFF, (const uint8_t *)&hdr, offsetof(fw_options_header_t, crc));
+    return fw_options_crc(crc, (const uint8_t *)&opts, sizeof(opts));
+}
+
+/**
+ * @brief Build-identity value stored alongside the options.
+ *
+ * Mirrors the ESP "flash-discriminator" contract: re-flashing the device (new firmware commit) or
+ * flashing with a different binding phrase invalidates any stored overrides, so the freshly
+ * flashed values win. FNV-1a over LATEST_COMMIT and MY_UID, plus on the unified targets the
+ * flash-discriminator the web flasher writes into the slot, which is random per flash.
+ */
+uint32_t fw_options_discriminator()
+{
+    uint32_t hash = 2166136261UL;
+    for (const char *p = commit; *p; ++p)
+    {
+        hash ^= (uint8_t)*p;
+        hash *= 16777619UL;
+    }
+#if defined(MY_UID)
+    const uint8_t myUid[] = { MY_UID };
+    for (size_t i = 0; i < sizeof(myUid); ++i)
+    {
+        hash ^= myUid[i];
+        hash *= 16777619UL;
+    }
+#endif
+    for (int shift = 0; shift < 32; shift += 8)
+    {
+        hash ^= (uint8_t)(slotFlashDiscriminator >> shift);
+        hash *= 16777619UL;
+    }
+    // 0 means "no discriminator" in the ESP options.json, so never produce it.
+    return hash ? hash : 1U;
+}
+
+static void applyCompileTimeDefaults()
+{
     memset(&firmwareOptions, 0, sizeof(firmwareOptions));
     firmwareOptions.uart_baud = 420000;
+    // No WiFi hardware on STM32; -1 is the "never" value the ESP path uses, so the field is not a
+    // meaningless 0 if anything reads it. lib/ConfigJson does not publish it at all.
+    firmwareOptions.wifi_auto_on_interval = -1;
+    // Seconds the fan keeps running after it is no longer needed, as the ESP default.
+    firmwareOptions.fan_min_runtime = 30U;
 #if defined(TARGET_TX)
     // Set this to a sane default; A zero interval can make
     // checkSendLinkStatsToHandset() queue link-stats every millis() tick,
@@ -54,12 +159,193 @@ bool options_init()
     memcpy(firmwareOptions.uid, myUid, sizeof(firmwareOptions.uid));
     firmwareOptions.hasUID = true;
 #endif
-    // Copy target name, truncating to fit
-    strncpy(product_name, STR(TARGET_NAME), ELRSOPTS_PRODUCTNAME_SIZE);
-    product_name[ELRSOPTS_PRODUCTNAME_SIZE] = '\0';
-    strncpy(device_name, STR(TARGET_NAME), ELRSOPTS_DEVICENAME_SIZE);
-    device_name[ELRSOPTS_DEVICENAME_SIZE] = '\0';
-    return true;
+    // Regulatory domain — index into FHSS.cpp's domains[]. The upstream ESP path gets this from
+    // options.json; on STM32 it comes from the build define unless persisted otherwise. Without
+    // this the domain would always read 0 (AU915), which is wrong on every other build.
+#if defined(Regulatory_Domain_AU_915)
+    firmwareOptions.domain = 0;
+#elif defined(Regulatory_Domain_FCC_915)
+    firmwareOptions.domain = 1;
+#elif defined(Regulatory_Domain_EU_868)
+    firmwareOptions.domain = 2;
+#elif defined(Regulatory_Domain_IN_866)
+    firmwareOptions.domain = 3;
+#elif defined(Regulatory_Domain_AU_433)
+    firmwareOptions.domain = 4;
+#elif defined(Regulatory_Domain_EU_433)
+    firmwareOptions.domain = 5;
+#elif defined(Regulatory_Domain_US_433)
+    firmwareOptions.domain = 6;
+#elif defined(Regulatory_Domain_US_433_WIDE)
+    firmwareOptions.domain = 7;
+#endif
+    // 2.4 GHz domains (ISM_2400 / EU_CE_2400) index the single-entry 2.4 GHz table, so 0 is correct.
+
+    firmwareOptions.flash_discriminator = fw_options_discriminator();
+    optionsCustomised = false;
+}
+
+/**
+ * @brief The defaults "Reset to defaults" returns to: the compile-time defaults, with the options
+ *        flashed into the slot applied on top on the unified targets.
+ */
+static void applyFlashedDefaults()
+{
+    applyCompileTimeDefaults();
+    char json[ELRSOPTS_OPTIONS_SIZE + 1];
+    titan_SlotCopy(json, titanSlot.options, ELRSOPTS_OPTIONS_SIZE);
+    firmwareOptions.flash_discriminator = 0;
+    if (json[0] != '\0' && !options_ApplyJson(json, firmwareOptions, FHSSdomainCount))
+    {
+        DBGLN("options: flashed options do not parse, using compile-time defaults");
+    }
+    slotFlashDiscriminator = firmwareOptions.flash_discriminator;
+    firmwareOptions.flash_discriminator = fw_options_discriminator();
+}
+
+bool options_IsCustomised()
+{
+    return optionsCustomised;
+}
+
+void options_SetCustomised(const bool customised)
+{
+    optionsCustomised = customised;
+}
+
+void saveOptions()
+{
+    fw_options_header_t hdr;
+    hdr.magic      = FW_OPTIONS_MAGIC;
+    hdr.version    = FW_OPTIONS_VERSION;
+    hdr.size       = (uint16_t)sizeof(firmware_options_t);
+    hdr.customised = optionsCustomised ? 1 : 0;
+    hdr._reserved  = 0;
+    hdr.crc        = fw_options_blobCrc(hdr, firmwareOptions);
+
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    eeprom.Put(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), firmwareOptions);
+    eeprom.Commit();
+}
+
+/**
+ * @brief Discard every stored override and go back to the flashed values (mirrors the ESP
+ *        options_SetTrueDefaults(), which writes a near-empty options.json).
+ */
+void options_SetTrueDefaults()
+{
+    // The ESP version retains the regulatory domain "as there is no sensible default"; on STM32
+    // there is one — the domain the firmware was built for, or the one flashed into the slot —
+    // so everything is re-seeded.
+    applyFlashedDefaults();
+    saveOptions();
+}
+
+/**
+ * @brief Layer the options persisted in the EEPROM blob over the defaults already in
+ *        firmwareOptions, or seed the blob with those defaults when it holds nothing valid.
+ */
+static void loadPersistedOptions()
+{
+    fw_options_header_t hdr;
+    eeprom.Get(FW_OPTIONS_EEPROM_OFFSET, hdr);
+    if (hdr.magic != FW_OPTIONS_MAGIC || hdr.version != FW_OPTIONS_VERSION)
+    {
+        DBGLN("options: no stored blob, seeding compile-time defaults");
+        saveOptions();
+    }
+    else if (hdr.size != sizeof(firmware_options_t))
+    {
+        DBGLN("options: stored size %u != %u, discarding", (unsigned)hdr.size,
+              (unsigned)sizeof(firmware_options_t));
+        saveOptions();
+    }
+    else
+    {
+        firmware_options_t loaded;
+        eeprom.Get(FW_OPTIONS_EEPROM_OFFSET + sizeof(hdr), loaded);
+        if (fw_options_blobCrc(hdr, loaded) != hdr.crc)
+        {
+            DBGLN("options: stored CRC mismatch, discarding");
+            saveOptions();
+        }
+        else if (loaded.flash_discriminator != firmwareOptions.flash_discriminator)
+        {
+            DBGLN("options: reflashed (discriminator changed), discarding stored options");
+            saveOptions();
+        }
+        else
+        {
+            firmwareOptions = loaded;
+            optionsCustomised = hdr.customised != 0;
+            DBGLN("options: loaded from flash (customised=%u)", (unsigned)optionsCustomised);
+        }
+    }
+}
+
+/**
+ * @brief Replace the slot layout with the override saved in the config flash, if there is a
+ *        valid one for this flash. `config_flash_*` stay as flashed.
+ */
+static void applyHardwareOverride()
+{
+    String json;
+    if (!hwOverride_Load(json))
+    {
+        return;
+    }
+    JsonDocument overrideDoc;
+    if (deserializeJson(overrideDoc, json) || !overrideDoc.is<JsonObject>())
+    {
+        DBGLN("hardware: saved override does not parse, using the flashed layout");
+        return;
+    }
+    JsonDocument effective = hardware_ApplyOverride(hardware_SlotDoc(), overrideDoc);
+    hardware_LoadDoc(effective);
+    DBGLN("hardware: using the saved override");
+}
+
+bool options_init()
+{
+    // Names, then options, then hardware, then the EEPROM — the ESP order.
+    titan_SlotCopy(product_name, titanSlot.product_name, ELRSOPTS_PRODUCTNAME_SIZE);
+    titan_SlotCopy(device_name, titanSlot.device_name, ELRSOPTS_DEVICENAME_SIZE);
+#if defined(TARGET_RX)
+    const char *defaultName = "Unified RX";
+#else
+    const char *defaultName = "Unified TX";
+#endif
+    if (product_name[0] == '\0')
+    {
+        strcpy(product_name, defaultName);
+    }
+    if (device_name[0] == '\0')
+    {
+        strcpy(device_name, defaultName);
+    }
+
+    applyFlashedDefaults();
+
+    bool hasHardware = hardware_init();
+
+    // The EEPROM (and the hardware override in it) lives in the config flash named by the layout.
+    // Without one, options stay RAM-only and revert on every boot.
+    if (hasHardware && W25Q64_CS_PIN != UNDEF_PIN)
+    {
+        eeprom.Begin();
+        applyHardwareOverride();
+        loadPersistedOptions();
+    }
+
+    // A layout without the radio bus would leave setup() driving an unconfigured SPI peripheral.
+    // Treat it as no layout, so the board stays reachable over USB for DFU and the config API.
+    if (hasHardware && (GPIO_PIN_NSS == UNDEF_PIN || GPIO_PIN_SCK == UNDEF_PIN ||
+                        GPIO_PIN_MISO == UNDEF_PIN || GPIO_PIN_MOSI == UNDEF_PIN))
+    {
+        DBGLN("hardware: layout has no radio SPI pins");
+        hasHardware = false;
+    }
+    return hasHardware;
 }
 #else
 #include <ArduinoJson.h>

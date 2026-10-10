@@ -2,6 +2,7 @@ import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, formatBand} from "../utils/state.js";
 import {SERIAL_OPTIONS1} from '../utils/globals.js'
+import {downloadExport, transport} from "../utils/transport.js";
 
 @customElement('info-panel')
 class InfoPanel extends LitElement {
@@ -27,7 +28,7 @@ class InfoPanel extends LitElement {
                     </h1>
                     <div class="td-row td-gap-2" style="flex-shrink: 0; flex-wrap: wrap;">
                         <button class="td-btn td-btn-danger" @click="${this._reboot}">Reboot Device</button>
-                        <a class="td-btn" href="/config?export" download="config.json" style="text-decoration: none;">Export Config</a>
+                        <button class="td-btn" @click="${this._export}">Export Config</button>
                         <a class="td-btn td-btn-primary" href="#update" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
                             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="flex-shrink:0;"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/></svg>
                             Flash Firmware
@@ -95,7 +96,11 @@ class InfoPanel extends LitElement {
     }
 
     _reboot() {
-        fetch('/reboot', { method: 'POST' }).catch(() => {})
+        Promise.resolve(transport.reboot()).catch(() => {})
+    }
+
+    _export() {
+        downloadExport('config.json').catch(() => {})
     }
 
     _hasCustomSettings() {

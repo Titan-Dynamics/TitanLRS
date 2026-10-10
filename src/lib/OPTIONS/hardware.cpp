@@ -1,30 +1,10 @@
-#if defined(PLATFORM_STM32)
-// STM32: hardware config is compile-time from target headers, no JSON loading needed
 #include "options.h"
 #include "hardware.h"
+#include "hardware_layout.h"
+#include "hardware_override_stm32.h"
+#include "elrs_eeprom.h"
 
-static struct {
-    int int_value;
-    bool bool_value;
-    float float_value;
-    int16_t array_value[10];
-} hardware[HARDWARE_LAST] = {0};
-
-String builtinHardwareConfig;
-String& getHardware() { return builtinHardwareConfig; }
-int hardware_pin(nameType name) { return hardware[name].int_value; }
-bool hardware_flag(nameType name) { return hardware[name].bool_value; }
-int hardware_int(nameType name) { return hardware[name].int_value; }
-float hardware_float(nameType name) { return hardware[name].float_value; }
-const int16_t* hardware_i16_array(nameType name) { return hardware[name].array_value; }
-const uint16_t* hardware_u16_array(nameType name) { return (uint16_t *)hardware[name].array_value; }
-
-#elif !defined(UNIT_TEST)
-#include "options.h"
-#include "helpers.h"
-#include "logging.h"
-#include <LittleFS.h>
-#include <ArduinoJson.h>
+#include <string.h>
 
 typedef enum {
     INT,
@@ -90,8 +70,10 @@ static const struct {
     {HARDWARE_five_way3, "five_way3", INT},
     {HARDWARE_button, "button", INT},
     {HARDWARE_button_led_index, "button_led_index", INT},
+    {HARDWARE_button_active_high, "button_active_high", BOOL},
     {HARDWARE_button2, "button2", INT},
     {HARDWARE_button2_led_index, "button2_led_index", INT},
+    {HARDWARE_button2_active_high, "button2_active_high", BOOL},
     {HARDWARE_led, "led", INT},
     {HARDWARE_led_blue, "led_blue", INT},
     {HARDWARE_led_blue_invert, "led_blue_invert", BOOL},
@@ -136,6 +118,10 @@ static const struct {
     {HARDWARE_misc_fan_speeds_count, "misc_fan_speeds", COUNT},
     {HARDWARE_gsensor_stk8xxx, "gsensor_stk8xxx", BOOL},
     {HARDWARE_thermal_lm75a, "thermal_lm75a", BOOL},
+    {HARDWARE_config_flash_cs, "config_flash_cs", INT},
+    {HARDWARE_config_flash_sck, "config_flash_sck", INT},
+    {HARDWARE_config_flash_miso, "config_flash_miso", INT},
+    {HARDWARE_config_flash_mosi, "config_flash_mosi", INT},
     {HARDWARE_pwm_outputs, "pwm_outputs", ARRAY},
     {HARDWARE_pwm_outputs_count, "pwm_outputs", COUNT},
     {HARDWARE_vbat, "vbat", INT},
@@ -163,25 +149,54 @@ typedef union {
 } data_holder_t;
 
 static data_holder_t hardware[HARDWARE_LAST];
-static String builtinHardwareConfig;
 
-String& getHardware()
+int hardware_ParsePinName(const char *name)
 {
-    File file = LittleFS.open("/hardware.json", "r");
-    if (!file || file.isDirectory())
+    // "P" + port letter A..K + pin number 0..15, nothing else
+    if (name == nullptr || name[0] != 'P' || name[1] < 'A' || name[1] > 'K')
     {
-        if (file)
-        {
-            file.close();
-        }
-        // Try JSON at the end of the firmware
-        return builtinHardwareConfig;
+        return -1;
     }
-    builtinHardwareConfig = file.readString();
-    return builtinHardwareConfig;
+    const int port = name[1] - 'A';
+    const char *num = &name[2];
+    const size_t digits = strlen(num);
+    if (digits == 0 || digits > 2 || num[0] < '0' || num[0] > '9')
+    {
+        return -1;
+    }
+    int pin = num[0] - '0';
+    if (digits == 2)
+    {
+        if (num[0] != '1' || num[1] < '0' || num[1] > '5')
+        {
+            return -1;
+        }
+        pin = 10 + (num[1] - '0');
+    }
+    return (port << 4) | pin;
 }
 
-static void hardware_ClearAllFields()
+// A pin given by name in the layout. STM32 resolves it to the Arduino digital pin; the native
+// tests keep the PinName value, and the ESP targets have no pin names.
+static int hardware_PinFromName(const char *name)
+{
+#if defined(PLATFORM_STM32)
+    const int pinName = hardware_ParsePinName(name);
+    if (pinName < 0)
+    {
+        return UNDEF_PIN;
+    }
+    const uint32_t pin = pinNametoDigitalPin((PinName)pinName);
+    return pin >= NUM_DIGITAL_PINS ? UNDEF_PIN : (int)pin;
+#elif defined(UNIT_TEST)
+    return hardware_ParsePinName(name);
+#else
+    (void)name;
+    return -1;
+#endif
+}
+
+void hardware_ClearAllFields()
 {
     for (auto field : fields) {
         switch (field.type) {
@@ -195,6 +210,7 @@ static void hardware_ClearAllFields()
                 hardware[field.position].float_value = 0.0;
                 break;
             case ARRAY:
+                delete[] hardware[field.position].array_value;
                 hardware[field.position].array_value = nullptr;
                 break;
             case COUNT:
@@ -204,13 +220,20 @@ static void hardware_ClearAllFields()
     }
 }
 
-static void hardware_LoadFieldsFromDoc(JsonDocument &doc)
+void hardware_LoadFieldsFromDoc(JsonDocument &doc)
 {
     for (auto field : fields) {
         if (doc[field.name].is<JsonVariant>()) {
             switch (field.type) {
                 case INT:
-                    hardware[field.position].int_value = doc[field.name];
+                    if (doc[field.name].is<const char *>())
+                    {
+                        hardware[field.position].int_value = hardware_PinFromName(doc[field.name].as<const char *>());
+                    }
+                    else
+                    {
+                        hardware[field.position].int_value = doc[field.name];
+                    }
                     break;
                 case BOOL:
                     hardware[field.position].bool_value = doc[field.name];
@@ -234,6 +257,149 @@ static void hardware_LoadFieldsFromDoc(JsonDocument &doc)
             }
         }
     }
+}
+
+static const char *const configFlashKeys[] = {
+    "config_flash_cs", "config_flash_sck", "config_flash_miso", "config_flash_mosi"
+};
+
+JsonDocument hardware_ApplyOverride(JsonDocument &slotDoc, JsonDocument &overrideDoc)
+{
+    JsonDocument effective = overrideDoc;
+    for (const char *key : configFlashKeys)
+    {
+        if (slotDoc[key].is<JsonVariant>())
+        {
+            effective[key] = slotDoc[key];
+        }
+        else
+        {
+            effective.remove(key);
+        }
+    }
+    effective["customised"] = true;
+    return effective;
+}
+
+bool hwOverride_IsValid(const hw_override_header_t &header, const uint8_t *payload, const uint32_t discriminator)
+{
+    static const uint8_t magic[4] = {'T', 'L', 'H', 'W'};
+    if (memcmp(header.magic, magic, sizeof(magic)) != 0 || header.version != HW_OVERRIDE_VERSION)
+    {
+        return false;
+    }
+    const uint16_t len = header.len;
+    if (len == 0 || len > ELRSOPTS_HARDWARE_SIZE || header.discriminator != discriminator)
+    {
+        return false;
+    }
+    return elrs_crc32_update(0, payload, len) == header.crc32;
+}
+
+int hardware_pin(nameType name)
+{
+    return hardware[name].int_value;
+}
+
+bool hardware_flag(nameType name)
+{
+    return hardware[name].bool_value;
+}
+
+int hardware_int(nameType name)
+{
+    return hardware[name].int_value;
+}
+
+float hardware_float(nameType name)
+{
+    return hardware[name].float_value;
+}
+
+const int16_t* hardware_i16_array(nameType name)
+{
+    return hardware[name].array_value;
+}
+
+const uint16_t* hardware_u16_array(nameType name)
+{
+    return (uint16_t *)hardware[name].array_value;
+}
+
+#if defined(PLATFORM_STM32)
+// STM32: the layout comes from the firmware slot (options.h titanSlot), patched in by the web
+// flasher, optionally replaced at boot by an override from the config flash (options.cpp).
+static JsonDocument slotHardwareDoc;
+static String builtinHardwareConfig;
+
+String& getHardware()
+{
+    return builtinHardwareConfig;
+}
+
+JsonDocument &hardware_SlotDoc()
+{
+    return slotHardwareDoc;
+}
+
+void hardware_LoadDoc(JsonDocument &doc)
+{
+    hardware_ClearAllFields();
+    builtinHardwareConfig = "";
+    serializeJson(doc, builtinHardwareConfig);
+    hardware_LoadFieldsFromDoc(doc);
+}
+
+bool hardware_init()
+{
+    hardware_ClearAllFields();
+    builtinHardwareConfig = "";
+    slotHardwareDoc.clear();
+
+    char *json = (char *)malloc(ELRSOPTS_HARDWARE_SIZE + 1);
+    if (json == nullptr)
+    {
+        return false;
+    }
+    titan_SlotCopy(json, titanSlot.hardware, ELRSOPTS_HARDWARE_SIZE);
+    if (json[0] == '\0')
+    {
+        free(json);
+        return false;
+    }
+    const DeserializationError error = deserializeJson(slotHardwareDoc, (const char *)json);
+    free(json);
+    if (error || !slotHardwareDoc.is<JsonObject>())
+    {
+        slotHardwareDoc.clear();
+        return false;
+    }
+
+    hardware_LoadDoc(slotHardwareDoc);
+    return true;
+}
+
+#elif !defined(UNIT_TEST)
+#include "helpers.h"
+#include "logging.h"
+#include <LittleFS.h>
+
+static String builtinHardwareConfig;
+
+String& getHardware()
+{
+    File file = LittleFS.open("/hardware.json", "r");
+    if (!file || file.isDirectory())
+    {
+        if (file)
+        {
+            file.close();
+        }
+        // Try JSON at the end of the firmware
+        return builtinHardwareConfig;
+    }
+    builtinHardwareConfig = file.readString();
+    return builtinHardwareConfig;
 }
 
 bool hardware_init(EspFlashStream &strmFlash)
@@ -269,35 +435,5 @@ bool hardware_init(EspFlashStream &strmFlash)
     hardware_LoadFieldsFromDoc(doc);
 
     return true;
-}
-
-int hardware_pin(nameType name)
-{
-    return hardware[name].int_value;
-}
-
-bool hardware_flag(nameType name)
-{
-    return hardware[name].bool_value;
-}
-
-int hardware_int(nameType name)
-{
-    return hardware[name].int_value;
-}
-
-float hardware_float(nameType name)
-{
-    return hardware[name].float_value;
-}
-
-const int16_t* hardware_i16_array(nameType name)
-{
-    return hardware[name].array_value;
-}
-
-const uint16_t* hardware_u16_array(nameType name)
-{
-    return (uint16_t *)hardware[name].array_value;
 }
 #endif

@@ -1,5 +1,6 @@
 import {State} from "@lit-app/state";
-import {errorAlert, postJSON, saveJSONWithReboot} from "./feedback.js";
+import {saveAndReboot, saveWithReboot} from "./feedback.js";
+import {transport} from "./transport.js";
 
 class ElrsState extends State {
     config = {}
@@ -18,7 +19,9 @@ export function formatBand() {
     }
 }
 
-export function saveConfig(changes, successCB) {
+// Merge posted changes over the live config, carrying the PWM channel settings across (they are
+// held as objects in the state but posted as raw values).
+function mergeConfig(changes) {
     const currentPWM = elrsState.config.pwm
     if (changes.pwm) {
         // update pwm settings
@@ -32,34 +35,60 @@ export function saveConfig(changes, successCB) {
             changes.pwm.push(currentPWM[i].config)
         }
     }
-    const newConfig = {...elrsState.config, ...changes}
-    saveJSONWithReboot('Configuration Update Succeeded', 'Configuration Update Failed', '/config', newConfig, () => {
-        elrsState.config = {...newConfig, pwm: currentPWM}
-        if (successCB) successCB()
-    })
+    return {newConfig: {...elrsState.config, ...changes}, currentPWM}
 }
 
-export function saveOptions(changes, successCB) {
+/**
+ * Save device configuration.
+ *
+ * Config changes take effect at boot, so this is the same confirm-save-reboot flow the options
+ * saves use — one behaviour and one set of button labels across every panel, TX and RX. `dialog`
+ * overrides the wording for saves that are not a plain "Save" (e.g. Reset to Unbound).
+ */
+export function saveConfig(changes, successCB, {title = 'Save & Reboot', ...dialog} = {}) {
+    const {newConfig, currentPWM} = mergeConfig(changes)
+    return saveAndReboot(title, 'Configuration Update Failed',
+        (cfg) => transport.saveConfig(cfg), newConfig, () => {
+            elrsState.config = {...newConfig, pwm: currentPWM}
+            if (successCB) successCB()
+        }, dialog)
+}
+
+/**
+ * Save firmware options.
+ *
+ * Every option is applied during setup() (UID, regulatory domain, baud rates), so callers whose
+ * panel offers a "Save & Reboot" button pass `reboot: true` to get the confirm-save-reboot flow
+ * instead of the save-then-offer-a-reboot one.
+ */
+export function saveOptions(changes, successCB, {reboot = false} = {}) {
     const newOptions = {...elrsState.options, ...changes, customised: true}
-    saveJSONWithReboot('Configuration Update Succeeded', 'Configuration Update Failed', '/options.json', newOptions, () => {
+    const apply = () => {
         elrsState.options = newOptions
         if (successCB) successCB()
-    })
+    }
+    const save = (opts) => transport.saveOptions(opts)
+    if (reboot) {
+        return saveAndReboot('Save & Reboot', 'Configuration Update Failed', save, newOptions, apply)
+    }
+    return saveWithReboot('Configuration Update Succeeded', 'Configuration Update Failed',
+        save, newOptions, apply)
 }
 
+// Options + config in one transaction. The options half is always reboot-to-apply, so this is
+// always the confirm-save-reboot flow.
 export function saveOptionsAndConfig(changes, successCB) {
     const newOptions = {...elrsState.options, ...changes.options, customised: true}
-    postJSON('/options.json', newOptions, {
-        onload: async () => {
-            saveConfig(changes.config, () => {
-                elrsState.options = newOptions
-                if (successCB) successCB()
-            })
-        },
-        onerror: async (xhr) => {
-            await errorAlert('Configuration Update Failed', xhr.responseText || 'Request failed')
-        }
-    })
+    const {newConfig, currentPWM} = mergeConfig(changes.config)
+    return saveAndReboot('Save & Reboot', 'Configuration Update Failed',
+        () => Promise.resolve()
+            .then(() => transport.saveOptions(newOptions))
+            .then(() => transport.saveConfig(newConfig)),
+        null, () => {
+            elrsState.options = newOptions
+            elrsState.config = {...newConfig, pwm: currentPWM}
+            if (successCB) successCB()
+        })
 }
 
 export let elrsState = new ElrsState()

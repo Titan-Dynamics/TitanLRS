@@ -40,6 +40,9 @@ extern uint32_t freq_spread;
 extern uint8_t FHSSsequence[];
 extern uint_fast8_t sync_channel;
 extern const fhss_config_t *FHSSconfig;
+// Number of entries in domains[] for the compiled radio (8 for sub-GHz, 1 for 2.4 GHz-only).
+// Needed to range-check a runtime regulatory-domain change before it indexes the table.
+extern const uint8_t FHSSdomainCount;
 
 // DualBand Variables
 extern bool FHSSusePrimaryFreqBand;
