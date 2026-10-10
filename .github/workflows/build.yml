@@ -206,7 +206,7 @@ jobs:
       - name: Checkout targets repo
         uses: actions/checkout@v4
         with:
-          repository: ExpressLRS/targets
+          repository: Titan-Dynamics/targets
           path: src/hardware
 
       - name: Get firmware artifacts
