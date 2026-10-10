@@ -30,7 +30,9 @@
     button:      '<rect x="2" y="6" width="12" height="4" rx="2"/><circle cx="11" cy="8" r="1"/>',
     log:         '<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5 5h6M5 8h6M5 11h3"/>',
     flash:       '<path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/>',
-    chart:       '<path d="M2 13V3M2 13h11"/><rect x="4" y="9" width="2" height="4"/><rect x="7" y="6" width="2" height="7"/><rect x="10" y="3" width="2" height="10"/>'
+    chart:       '<path d="M2 13V3M2 13h11"/><rect x="4" y="9" width="2" height="4"/><rect x="7" y="6" width="2" height="7"/><rect x="10" y="3" width="2" height="10"/>',
+    eye:         '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/>',
+    eyeOff:      '<path d="M6.5 3.7A7 7 0 0 1 8 3.5c4.5 0 7 4.5 7 4.5a12 12 0 0 1-1.7 2.2M4.2 4.9C2.2 6.1 1 8 1 8s2.5 4.5 7 4.5a7 7 0 0 0 3-.7"/><path d="M6.6 6.6a2 2 0 0 0 2.8 2.8"/><path d="M2 2l12 12"/>'
   };
 
   function icon(name) {

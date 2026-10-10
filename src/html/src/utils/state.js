@@ -10,13 +10,46 @@ class ElrsState extends State {
 
 export function formatBand() {
     if (elrsState.settings) {
-        if (elrsState.settings.reg_domain_low && elrsState.settings.reg_domain_high) {
+        if (elrsState.settings.has_low_band && elrsState.settings.has_high_band) {
             return elrsState.settings.reg_domain_low + '/' + elrsState.settings.reg_domain_high
         }
-        if (elrsState.settings.reg_domain_low)
+        if (elrsState.settings.has_low_band)
             return elrsState.settings.reg_domain_low
         return elrsState.settings.reg_domain_high
     }
+}
+
+/**
+ * Human-readable WiFi state for the info page ("Client [ssid] -55dBm excellent signal", "AP mode").
+ *
+ * Returns '' when the device is not reached over WiFi at all: the STM32 USB config API reports
+ * `mode: "USB"` (and an absent mode means the same), and upstream's formatter would otherwise
+ * call that "AP mode". Callers hide the row on ''.
+ */
+export function formatWifiRssi() {
+    const settings = elrsState.settings
+    if (!settings || !settings.mode || settings.mode === 'USB') return ''
+
+    let wifiDesc = settings.mode === 'STA' ? `Client [${settings.ssid}]` : 'AP mode'
+
+    // If we have dBm and it isn't 0, add it
+    const dbm = settings.wifi_dbm
+    if (dbm) {
+        wifiDesc += ` ${dbm}dBm `
+        if (dbm > -30)
+            wifiDesc += '**GODLIKE**'
+        else if (dbm > -60)
+            wifiDesc += 'excellent signal'
+        else if (dbm === -69)
+            wifiDesc += 'nice signal'
+        else if (dbm > -80)
+            wifiDesc += 'good signal'
+        else if (dbm > -90)
+            wifiDesc += 'poor signal'
+        else
+            wifiDesc += 'Unusable'
+    }
+    return wifiDesc
 }
 
 // Merge posted changes over the live config, carrying the PWM channel settings across (they are

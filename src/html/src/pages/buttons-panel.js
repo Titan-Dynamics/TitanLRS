@@ -1,8 +1,13 @@
 import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, saveConfig} from "../utils/state.js";
-import {_, _renderOptions} from "../utils/libs.js";
+import {_renderOptions} from "../utils/libs.js";
 import {transport} from "../utils/transport.js";
+
+const ACTION_OPTIONS = ['Unused', 'Increase Power', 'Go to VTX Band Menu', 'Go to VTX Channel Menu',
+    'Send VTX Settings', 'Start WiFi', 'Send Bind Command', 'Start BLE Joystick']
+const LONG_PRESS_OPTIONS = ['0.5 s', '1 s', '1.5 s', '2 s', '2.5 s', '3 s', '3.5 s', '4 s']
+const COUNT_OPTIONS = ['1×', '2×', '3×', '4×', '5×', '6×', '7×', '8×']
 
 @customElement('buttons-panel')
 class ButtonsPanel extends LitElement {
@@ -10,21 +15,24 @@ class ButtonsPanel extends LitElement {
     colorTimer = undefined;
     colorUpdated = false;
     buttonActions = [];
+    loadedButtonActionsJson = '[]';
+    currentButtonActionsJson = '[]';
+    buttonActionsInitialized = false;
 
     createRenderRoot() {
         this._timeoutCurrentColors = this._timeoutCurrentColors.bind(this);
-        this._checkEnableButtonActionSave = this._checkEnableButtonActionSave.bind(this);
         return this;
     }
 
     render() {
+        this._initializeButtonActions();
         return html`
             <div class="td-h2" style="margin-bottom: var(--td-s-4);">Buttons &amp; Actions</div>
             <div class="td-card">
                 <div class="td-card-header">
                     <span class="td-h4">Button action mapping</span>
                 </div>
-                ${elrsState.config['button-actions'] ? html`
+                ${this.buttonActions.length ? html`
                     <table class="td-table td-table-roomy">
                         <thead>
                             <tr>
@@ -35,59 +43,48 @@ class ButtonsPanel extends LitElement {
                             </tr>
                         </thead>
                         <tbody id="button-actions">
-                            ${this._appendButtonActions()}
+                            ${this.buttonActions.map((button, b) =>
+                                button.action.map((v, p) => this._appendButtonActionRow(b, p, v))
+                            )}
                         </tbody>
                     </table>
                 ` : ''}
-                ${this.buttonActions[0] && this.buttonActions[0]['color'] !== undefined ? html`
-                    <div class="td-card-row">
-                        <span class="td-label">Button 1 color</span>
-                        <input type="color"
-                               @input="${(e) => this._changeCurrentColors(e, 0)}"
-                               .value="${this._toRGB(this.buttonActions[0]['color'])}"/>
-                    </div>
-                ` : ''}
-                ${this.buttonActions[1] && this.buttonActions[1]['color'] !== undefined ? html`
-                    <div class="td-card-row">
-                        <span class="td-label">Button 2 color</span>
-                        <input type="color"
-                               @input="${(e) => this._changeCurrentColors(e, 1)}"
-                               .value="${this._toRGB(this.buttonActions[1]['color'])}"/>
-                    </div>
-                ` : ''}
+                ${this._renderColorInput(0, 'Button 1 color')}
+                ${this._renderColorInput(1, 'Button 2 color')}
                 <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center;">
                     <div style="flex: 1;"></div>
                     <button class="td-btn td-btn-primary"
                             @click="${this._submitButtonActions}"
-                            ?disabled="${this._checkEnableButtonActionSave()}">Save &amp; Reboot</button>
+                            ?disabled="${this._isSaveDisabled()}">Save &amp; Reboot</button>
                 </div>
             </div>
         `;
     }
 
-    _appendButtonActions() {
-        let result = []
-        this.buttonActions = elrsState.config['button-actions'];
-        for (const [b, _v] of Object.entries(this.buttonActions)) {
-            for (const [p, v] of Object.entries(_v.action)) {
-                result.push(this._appendButtonActionRow(parseInt(b), parseInt(p), v));
-            }
-        }
-        return result
+    _renderColorInput(index, label) {
+        const color = this.buttonActions[index]?.color
+        if (color === undefined) return ''
+        return html`
+            <div class="td-card-row">
+                <span class="td-label">${label}</span>
+                <input type="color"
+                       @input="${(e) => this._changeCurrentColors(e, index)}"
+                       .value="${this._toRGB(color)}"/>
+            </div>
+        `
     }
 
     _appendButtonActionRow(b, p, v) {
         return html`
             <tr>
-                <td class="td-mono">Button ${parseInt(b) + 1}</td>
+                <td class="td-mono">Button ${b + 1}</td>
                 <td>
                     <select class="td-select" style="width: auto;" @change="${(e) => this._changeAction(b, p, parseInt(e.target.value))}">
-                        ${_renderOptions(['Unused','Increase Power','Go to VTX Band Menu','Go to VTX Channel Menu',
-                            'Send VTX Settings','Start WiFi','Enter Binding Mode','Start BLE Joystick'], v.action)}
+                        ${_renderOptions(ACTION_OPTIONS, v.action)}
                     </select>
                 </td>
                 <td>
-                    <select id="select-press-${b}-${p}" class="td-select" style="width: auto;"
+                    <select class="td-select" style="width: auto;"
                             @change="${(e) => this._changePress(b, p, e.target.value)}"
                             ?disabled="${v.action === 0}">
                         ${v.action === 0 ? html`<option value="" disabled selected></option>` : ''}
@@ -96,13 +93,13 @@ class ButtonsPanel extends LitElement {
                     </select>
                 </td>
                 <td>
-                    <select id="select-timing-${b}-${p}" class="td-select" style="width: auto;"
-                            @change="${(e) => this._changeCount(b, p, parseInt(e.target.value))}"
+                    <select class="td-select" style="width: auto;"
+                            @change="${(e) => this._changeCount(b, p, Number(e.target.value))}"
                             ?disabled="${v.action === 0}">
                         ${v.action === 0 ? html`<option value="" disabled selected></option>` : ''}
                         ${v['is-long-press'] === true
-                            ? _renderOptions(['0.5 s','1 s','1.5 s','2 s','2.5 s','3 s','3.5 s','4 s'], v.count)
-                            : _renderOptions(['1×','2×','3×','4×','5×','6×','7×','8×'], v.count)}
+                            ? _renderOptions(LONG_PRESS_OPTIONS, v.count)
+                            : _renderOptions(COUNT_OPTIONS, v.count)}
                     </select>
                 </td>
             </tr>
@@ -111,7 +108,11 @@ class ButtonsPanel extends LitElement {
 
     _submitButtonActions(e) {
         e.preventDefault();
-        saveConfig({'button-actions': this.buttonActions})
+        saveConfig({'button-actions': this.buttonActions}, () => {
+            this._refreshButtonActionsJson()
+            this.loadedButtonActionsJson = this.currentButtonActionsJson
+            this.requestUpdate()
+        })
     }
 
     _toRGB(c) {
@@ -131,6 +132,8 @@ class ButtonsPanel extends LitElement {
 
     _changeCurrentColors(e, index) {
         this.buttonActions[index].color = this._to8bit(e.target.value);
+        this._refreshButtonActionsJson();
+        this.requestUpdate();
         if (this.colorTimer === undefined) {
             this._sendCurrentColors();
             this.colorTimer = setInterval(this._timeoutCurrentColors, 50);
@@ -155,33 +158,57 @@ class ButtonsPanel extends LitElement {
         }
     }
 
-    _checkEnableButtonActionSave() {
-        for (const [b, _v] of Object.entries(this.buttonActions)) {
-            for (const [p, v] of Object.entries(_v.action)) {
-                if (v.action !== 0 && (_(`select-press-${b}-${p}`)?.value === '' || _(`select-timing-${b}-${p}`)?.value === '')) {
-                    return true;
-                }
-            }
+    // Save stays disabled until the edited actions differ from what was loaded.
+    _isSaveDisabled() {
+        return this.currentButtonActionsJson === this.loadedButtonActionsJson
+    }
+
+    checkChanged() {
+        return !this._isSaveDisabled()
+    }
+
+    _initializeButtonActions() {
+        if (this.buttonActionsInitialized || !elrsState.config['button-actions']) {
+            return
         }
-        return false;
+        // Edit a copy, so an abandoned edit doesn't leak into elrsState
+        this.buttonActions = JSON.parse(JSON.stringify(elrsState.config['button-actions'] ?? []))
+        this._refreshButtonActionsJson()
+        this.loadedButtonActionsJson = this.currentButtonActionsJson
+        this.buttonActionsInitialized = true
+    }
+
+    _refreshButtonActionsJson() {
+        this.currentButtonActionsJson = JSON.stringify(this.buttonActions)
     }
 
     _changeAction(b, p, value) {
-        (this.buttonActions)[b].action[p].action = value;
+        const actionConfig = this.buttonActions[b].action[p]
+        actionConfig.action = value
         if (value === 0) {
-            _(`select-press-${b}-${p}`).value = '';
-            _(`select-timing-${b}-${p}`).value = '';
+            actionConfig['is-long-press'] = undefined
+            actionConfig.count = undefined
+        } else {
+            if (actionConfig['is-long-press'] !== true && actionConfig['is-long-press'] !== false) {
+                actionConfig['is-long-press'] = false // default to short press
+            }
+            if (!Number.isInteger(actionConfig.count)) {
+                actionConfig.count = 0 // default to first count option
+            }
         }
+        this._refreshButtonActionsJson()
         this.requestUpdate()
     }
 
     _changePress(b, p, value) {
-        (this.buttonActions)[b].action[p]['is-long-press'] = (value === 'true');
+        this.buttonActions[b].action[p]['is-long-press'] = (value === 'true');
+        this._refreshButtonActionsJson()
         this.requestUpdate()
     }
 
     _changeCount(b, p, value) {
-        (this.buttonActions)[b].action[p].count = parseInt(value);
+        this.buttonActions[b].action[p].count = value;
+        this._refreshButtonActionsJson()
         this.requestUpdate()
     }
 }

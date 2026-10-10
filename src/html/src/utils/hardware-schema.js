@@ -505,9 +505,9 @@ const HARDWARE_SCHEMA = [
             },
             {
                 id: 'led_red_invert',
-                label: 'LED / Red LED inverted',
+                label: 'Red LED inverted',
                 type: 'checkbox',
-                desc: 'Inverts the single LED pin, or the Red LED pin if set. Active LOW unless checked'
+                desc: 'LEDs are active LOW unless this is checked'
             },
             {
                 id: 'led_green',
@@ -548,13 +548,14 @@ const HARDWARE_SCHEMA = [
                 icon: 'output',
                 desc: 'Single/first (active low) button'
             },
-            /* FEATURE: IS_TX */
+            // TLRS: read by both the TX and RX targets (Unified_*_RX.h too), so not TX-only
             {
                 id: 'button_active_high',
                 label: 'Button 1 active high',
                 type: 'checkbox',
                 desc: 'Check if button 1 pulls the pin high when pressed'
             },
+            /* FEATURE: IS_TX */
             {
                 id: 'button_led_index',
                 label: 'Button 1 RGB Index',

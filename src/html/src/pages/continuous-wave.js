@@ -1,7 +1,6 @@
 import {html, LitElement} from 'lit';
 import {customElement, query, state} from 'lit/decorators.js';
-import FEATURES from "../features.js";
-import {post} from "../utils/feedback.js";
+import {loadJSON, post} from "../utils/feedback.js";
 import {elrsState} from "../utils/state.js";
 
 @customElement('continuous-wave')
@@ -15,7 +14,8 @@ export class ContinuousWave extends LitElement {
     @state() accessor setSubGHz = false
     @state() accessor radio = 1
 
-    _text = "Loading..."
+    @state() accessor _text = "Loading..."
+    loadPromise = null
 
     createRenderRoot() {
         return this
@@ -47,7 +47,7 @@ export class ContinuousWave extends LitElement {
                             </div>
                         ` : ''}
 
-                        <!-- FEATURE:HAS_LR1121 -->
+                        <!-- FEATURE:HAS_DUAL_BAND -->
                         ${elrsState.settings.has_high_band && elrsState.settings.has_low_band ? html`
                             <div class="td-card-row" style="border-bottom: none; padding-bottom: 0;">
                                 <span class="td-label">Set ${(this.data.center / 1000000)} MHz</span>
@@ -56,7 +56,7 @@ export class ContinuousWave extends LitElement {
                                       @click="${this._toggleSubGHz}"></span>
                             </div>
                         ` : ''}
-                        <!-- /FEATURE:HAS_LR1121 -->
+                        <!-- /FEATURE:HAS_DUAL_BAND -->
 
                         <div style="padding: var(--td-s-4) 0 0;">
                             <button class="td-btn td-btn-primary" ?disabled=${this.started}
@@ -118,16 +118,22 @@ export class ContinuousWave extends LitElement {
 
     connectedCallback() {
         super.connectedCallback()
-        const xmlhttp = new XMLHttpRequest()
-        xmlhttp.onreadystatechange = () => {
-            if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
-                this._updateParams(JSON.parse(xmlhttp.responseText))
-            } else {
-                this._text = "Failed to load data."
-            }
+        this.pageReady().catch(() => {})
+    }
+
+    // Called by the app after the page is shown, and from connectedCallback; loads /cw once.
+    pageReady() {
+        if (!this.loadPromise) {
+            this.loadPromise = loadJSON('/cw', 'Failed to load continuous wave settings.')
+                .then((data) => {
+                    this._updateParams(data)
+                }, (error) => {
+                    this.loadPromise = null
+                    this._text = "Failed to load data."
+                    throw error
+                })
         }
-        xmlhttp.open('GET', '/cw', true)
-        xmlhttp.send()
+        return this.loadPromise
     }
 
     _updateParams(data) {
@@ -143,15 +149,15 @@ export class ContinuousWave extends LitElement {
 
     _updateFreq() {
         this.cwFreq = this.data.center
-        if (FEATURES.HAS_LR1121) {
-            if (elrsState.settings?.has_high_band && elrsState.settings?.has_low_band) {
-                if (!this.setSubGHz) {
-                    this.cwFreq = this.data.center2
-                }
-            } else if (elrsState.settings?.has_high_band) {
+        // FEATURE:HAS_DUAL_BAND
+        if (elrsState.settings?.has_high_band && elrsState.settings?.has_low_band) {
+            if (!this.setSubGHz) {
                 this.cwFreq = this.data.center2
             }
+        } else if (elrsState.settings?.has_high_band) {
+            this.cwFreq = this.data.center2
         }
+        // /FEATURE:HAS_DUAL_BAND
         this._measured()
     }
 
@@ -161,28 +167,40 @@ export class ContinuousWave extends LitElement {
         this.started = true
         const formdata = new FormData()
         formdata.append('radio', this.radio)
-        if (FEATURES.HAS_LR1121) {
-            let subGHz = 0
-            if (elrsState.settings.has_high_band && elrsState.settings.has_low_band) {
-                subGHz = this.setSubGHz ? 1 : 0
-            } else if (elrsState.settings.has_low_band) {
-                subGHz = 1
-            }
-            formdata.append('subGHz', subGHz)
+        // FEATURE:HAS_DUAL_BAND
+        let subGHz = 0
+        if (elrsState.settings.has_high_band && elrsState.settings.has_low_band) {
+            subGHz = this.setSubGHz ? 1 : 0
+        } else if (elrsState.settings.has_low_band) {
+            subGHz = 1
         }
+        formdata.append('subGHz', subGHz)
+        // /FEATURE:HAS_DUAL_BAND
         post('/cw', formdata)
     }
 
     _measured() {
-        let xtalNominal = 52000000
-        let warn_offset = 90000
-        let bad_offset = 180000
-
-        if (FEATURES.HAS_SX127X || FEATURES.HAS_LR1121) {
-            xtalNominal = 32000000
-            warn_offset = 100000
-            bad_offset = 125000
-        }
+        // Exactly one radio-family block survives the feature-block pass for any build.
+        // FEATURE:HAS_SX127X
+        const xtalNominal = 32000000
+        const warn_offset = 100000
+        const bad_offset = 125000
+        // /FEATURE:HAS_SX127X
+        // FEATURE:HAS_SX128X
+        const xtalNominal = 52000000
+        const warn_offset = 90000
+        const bad_offset = 180000
+        // /FEATURE:HAS_SX128X
+        // FEATURE:HAS_LR1121
+        const xtalNominal = 32000000
+        const warn_offset = 100000
+        const bad_offset = 125000
+        // /FEATURE:HAS_LR1121
+        // FEATURE:HAS_LR2021
+        const xtalNominal = 32000000
+        const warn_offset = 100000
+        const bad_offset = 125000
+        // /FEATURE:HAS_LR2021
 
         if (!this.measured) return
         const calc = (this.measured.value / this.cwFreq) * xtalNominal

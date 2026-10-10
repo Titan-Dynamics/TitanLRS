@@ -1,5 +1,6 @@
 import {html, LitElement} from "lit"
 import {customElement, query, state} from "lit/decorators.js"
+import {tdIcon} from "../utils/td-icon.js"
 import {elrsState} from "../utils/state.js"
 import {postWithFeedback} from "../utils/feedback.js"
 import {autocomplete} from "../utils/autocomplete.js"
@@ -14,6 +15,9 @@ class WifiPanel extends LitElement {
     @state() accessor selectedValue = '0'
     @state() accessor showLoader = true
     @state() accessor wifiOnInterval
+    @state() accessor wifiSsid = ''
+    @state() accessor wifiPassword = ''
+    @state() accessor passwordVisible = false
 
     running = false
 
@@ -24,7 +28,20 @@ class WifiPanel extends LitElement {
 
     createRenderRoot() {
         this.wifiOnInterval = elrsState.options['wifi-on-interval'] === undefined ? 60 : elrsState.options['wifi-on-interval']
+        this.wifiSsid = elrsState.options['wifi-ssid'] ?? ''
+        this.wifiPassword = elrsState.options['wifi-password'] ?? ''
         return this
+    }
+
+    // Blank means "disabled"; keep it undefined rather than NaN so checkChanged() stays sane.
+    _parseWifiOnInterval(value) {
+        if (value === '') return undefined
+        const parsed = Number.parseInt(value, 10)
+        return Number.isNaN(parsed) ? undefined : parsed
+    }
+
+    _togglePasswordVisibility() {
+        this.passwordVisible = !this.passwordVisible
     }
 
     disconnectedCallback() {
@@ -73,10 +90,10 @@ class WifiPanel extends LitElement {
                         <div class="td-card-row">
                             <span class="td-label">WiFi auto-on interval</span>
                             <div class="td-input-group" style="width: 120px;">
-                                <input class="td-input td-input-mono" id="interval" type="number" size="3"
+                                <input class="td-input td-input-mono" id="interval" name="wifi-on-interval" type="number" size="3"
                                        placeholder="Disabled"
-                                       @input="${(e) => this.wifiOnInterval = parseInt(e.target.value)}"
-                                       .value="${this.wifiOnInterval}"/>
+                                       @input="${(e) => this.wifiOnInterval = this._parseWifiOnInterval(e.target.value)}"
+                                       .value="${this.wifiOnInterval?.toString() ?? ''}"/>
                                 <span class="td-btn" style="cursor:default; background: var(--td-bg-3);">s</span>
                             </div>
                         </div>
@@ -89,16 +106,24 @@ class WifiPanel extends LitElement {
                                 ${this.showLoader ? html`<span class="td-small td-mute" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);">Scanning...</span>` : ''}
                                 <input class="td-input" id="ssid" name="network" type="text"
                                        placeholder="SSID" autocomplete="off"
-                                       @input="${() => this.requestUpdate()}"
-                                       value="${elrsState.options['wifi-ssid']}"/>
+                                       @input="${(e) => this.wifiSsid = e.target.value}"
+                                       .value="${this.wifiSsid}"/>
                             </div>
                         </div>
                         <div class="td-card-row">
                             <span class="td-label">Password</span>
-                            <input class="td-input" id="pwd" name="password" type="password" size="64"
-                                   placeholder="Password" autocomplete="off"
-                                   @input="${() => this.requestUpdate()}"
-                                   value="${elrsState.options['wifi-password']}"/>
+                            <div class="td-input-group" style="flex: 1;">
+                                <input class="td-input" id="pwd" name="password" size="64"
+                                       type="${this.passwordVisible ? 'text' : 'password'}"
+                                       placeholder="Password" autocomplete="off"
+                                       @input="${(e) => this.wifiPassword = e.target.value}"
+                                       .value="${this.wifiPassword}"/>
+                                <button class="td-btn td-btn-icon" type="button"
+                                        title="${this.passwordVisible ? 'Hide password' : 'Show password'}"
+                                        @click="${this._togglePasswordVisibility}">
+                                    ${tdIcon(this.passwordVisible ? 'eye' : 'eyeOff')}
+                                </button>
+                            </div>
                         </div>
                     ` : ''}
 
@@ -129,11 +154,12 @@ class WifiPanel extends LitElement {
                 }, function () {
                     elrsState.options = {
                         ...elrsState.options,
-                        'wifi-ssid': self.network.value,
-                        'wifi-password': self.password.value,
+                        'wifi-ssid': self.wifiSsid,
+                        'wifi-password': self.wifiPassword,
                         'wifi-on-interval': self.wifiOnInterval,
                         customised: true
                     }
+                    self.requestUpdate()
                 })(event)
                 break
             case '1':
@@ -153,6 +179,7 @@ class WifiPanel extends LitElement {
                         'wifi-on-interval': self.wifiOnInterval,
                         customised: true
                     }
+                    self.requestUpdate()
                 })(event)
                 break
         }
@@ -184,8 +211,8 @@ class WifiPanel extends LitElement {
     checkChanged() {
         let changed = false
         changed |= this.wifiOnInterval !== elrsState.options['wifi-on-interval']
-        changed |= this.network?.value !== elrsState.options['wifi-ssid']
-        changed |= this.password?.value !== elrsState.options['wifi-password']
+        changed |= this.wifiSsid !== (elrsState.options['wifi-ssid'] ?? '')
+        changed |= this.wifiPassword !== (elrsState.options['wifi-password'] ?? '')
         return !!changed
     }
 }

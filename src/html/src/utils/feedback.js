@@ -107,6 +107,29 @@ function postJSONAsync(url, data) {
   })
 }
 
+// URL-based JSON GET, for the same ESP-only panels as above (continuous-wave, hardware-layout).
+// Resolves with the parsed body; rejects with an Error carrying `errorMessage` (or the response
+// text) on a non-200 status, a network error or unparseable JSON.
+export function loadJSON(url, errorMessage = 'Failed to load data') {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return
+      if (xhr.status === 200) {
+        try {
+          resolve(JSON.parse(xhr.responseText))
+        } catch {
+          reject(new Error(errorMessage))
+        }
+      } else {
+        reject(new Error(errorMessage || xhr.responseText || 'Request failed'))
+      }
+    }
+    xhr.open('GET', url, true)
+    xhr.send()
+  })
+}
+
 // URL-based click handler, kept for the same ESP-only panels as above.
 export function postWithFeedback(title, errorMsg, url, getdata, success) {
   return function (e) {

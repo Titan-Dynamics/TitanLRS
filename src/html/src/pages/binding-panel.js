@@ -17,17 +17,21 @@ class BindingPanel extends LitElement {
     originalUIDType = ''
     originalUID = []
 
-    createRenderRoot() {
+    constructor() {
+        super()
         this._submitOptions = this._submitOptions.bind(this)
-        return this
-    }
 
-    firstUpdated(_changedProperties) {
+        // Initialise state before the first render rather than in firstUpdated(), which would
+        // trigger a second update cycle (lit "change-in-update" warning).
         this.uid = this._savedUID()
         this.bindType = elrsState.config.vbind
         this.originalUID = this.uid
         this.originalUIDType = (elrsState.settings && elrsState.settings.uidtype) ? elrsState.settings.uidtype : ''
         this._updateUIDType(this.originalUIDType)
+    }
+
+    createRenderRoot() {
+        return this
     }
 
     // The UID this panel edits, which is not always the one the radio is running on.

@@ -3,15 +3,13 @@ import './assets/td.css'
 import './assets/td-extensions.css'
 import {LitElement, html} from 'lit'
 import {customElement, query, state} from "lit/decorators.js"
-import {unsafeHTML} from 'lit/directives/unsafe-html.js'
-import FEATURES from "./features.js"
 import {elrsState, formatBand} from './utils/state.js'
-import {cuteAlert} from "./utils/feedback.js";
+import {cuteAlert, errorAlert} from "./utils/feedback.js";
 import {transport} from "./utils/transport.js";
+import {tdIcon} from "./utils/td-icon.js";
 
 import './pages/info-panel.js'
 
-const tdIcon = name => unsafeHTML(TD.icon(name))
 
 const ROUTE_LABELS = {
     info: 'Information', binding: 'Binding', options: 'Options',
@@ -174,20 +172,33 @@ export class App extends LitElement {
         if (el) el.classList.add('is-active')
     }
 
+    // Exactly one of each FEATURE pair survives the build, so each case has a single return.
     buildRouteContent(route) {
         switch (route) {
             case 'info':        return '<info-panel></info-panel>'
             case 'binding':     return '<binding-panel></binding-panel>'
-            case 'options':     return FEATURES.IS_TX ? '<tx-options-panel></tx-options-panel>' : '<rx-options-panel></rx-options-panel>'
+            case 'options':
+                // FEATURE:IS_TX
+                return '<tx-options-panel></tx-options-panel>'
+                // /FEATURE:IS_TX
+                // FEATURE:NOT IS_TX
+                return '<rx-options-panel></rx-options-panel>'
+                // /FEATURE:NOT IS_TX
             case 'wifi':        return '<wifi-panel></wifi-panel>'
             case 'update':      return '<update-panel></update-panel>'
-            case 'connections': return !FEATURES.IS_TX && elrsState.config.pwm !== undefined ? '<connections-panel></connections-panel>' : ''
-            case 'serial':      return !FEATURES.IS_TX ? '<serial-panel></serial-panel>' : ''
-            case 'buttons':     return FEATURES.IS_TX ? '<buttons-panel></buttons-panel>' : ''
+            // FEATURE:NOT IS_TX
+            case 'connections': return elrsState.config.pwm !== undefined ? '<connections-panel></connections-panel>' : ''
+            case 'serial':      return '<serial-panel></serial-panel>'
+            // /FEATURE:NOT IS_TX
+            // FEATURE:IS_TX
+            case 'buttons':     return '<buttons-panel></buttons-panel>'
+            // /FEATURE:IS_TX
             case 'hardware':    return '<hardware-layout></hardware-layout>'
             case 'cw':          return '<continuous-wave></continuous-wave>'
             case 'models':      return '<models-panel></models-panel>'
-            case 'lr1121':      return FEATURES.HAS_LR1121 ? '<lr1121-updater></lr1121-updater>' : ''
+            // FEATURE:HAS_LR1121
+            case 'lr1121':      return '<lr1121-updater></lr1121-updater>'
+            // /FEATURE:HAS_LR1121
             default:            return ''
         }
     }
@@ -195,27 +206,11 @@ export class App extends LitElement {
     generalGroupLoaded = false
     advancedGroupLoaded = false
 
+    // Pages are lazy-loaded in two groups (src/page-groups/*.js) to keep the first paint small.
     async loadGeneralGroup() {
         if (this.generalGroupLoaded) return
         try {
-            const imports = [
-                import('./pages/binding-panel.js'),
-                import('./pages/wifi-panel.js'),
-                import('./pages/update-panel.js')
-            ]
-            // FEATURE:IS_TX
-            imports.push(import('./pages/tx-options-panel.js'))
-            // FEATURE:NOT IS_8285
-            imports.push(import('./pages/models-panel.js'))
-            // /FEATURE:NOT IS_8285
-            imports.push(import('./pages/buttons-panel.js'))
-            // /FEATURE:IS_TX
-            // FEATURE:NOT IS_TX
-            imports.push(import('./pages/rx-options-panel.js'))
-            imports.push(import('./pages/connections-panel.js'))
-            imports.push(import('./pages/serial-panel.js'))
-            // /FEATURE:NOT IS_TX
-            await Promise.all(imports)
+            await import('./page-groups/general-group.js')
         } finally {
             this.generalGroupLoaded = true
         }
@@ -224,14 +219,7 @@ export class App extends LitElement {
     async loadAdvancedGroup() {
         if (this.advancedGroupLoaded) return
         try {
-            const imports = [
-                import('./pages/hardware-layout.js'),
-                import('./pages/continuous-wave.js')
-            ]
-            // FEATURE:HAS_LR1121
-            imports.push(import('./pages/lr1121-updater.js'))
-            // /FEATURE:HAS_LR1121
-            await Promise.all(imports)
+            await import('./page-groups/advanced-group.js')
         } finally {
             this.advancedGroupLoaded = true
         }
@@ -317,6 +305,16 @@ export class App extends LitElement {
         await this.replaceMainWithTransition(content)
         this.scrollMainToTop()
         this.currentRoute = route
+        this.notifyPageReady()
+    }
+
+    // Pages that load their own data expose pageReady() (idempotent; returns the load promise).
+    notifyPageReady() {
+        const page = this.mainEl?.firstElementChild
+        if (typeof page?.pageReady !== 'function') return
+        Promise.resolve()
+            .then(() => page.pageReady())
+            .catch((e) => errorAlert('Load Failed', (e && e.message) || 'Failed to load page data. Retry or power cycle the device.'))
     }
 
     showSidedrawer() {

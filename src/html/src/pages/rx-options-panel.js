@@ -40,7 +40,7 @@ class RxOptionsPanel extends LitElement {
                     <select class="td-select" style="width: auto;"
                             @change="${(e) => this.domain = parseInt(e.target.value)}"
                             .value="${this.domain}">
-                        ${['AU915', 'FCC915', 'EU868', 'IN866', 'AU433', 'EU433', 'US433', 'US433-Wide'].map((d, i) => html`
+                        ${['AU915', 'FCC915', 'EU868', 'IN866', 'AU433', 'EU433', 'US433', 'US433-Wide', 'TH920'].map((d, i) => html`
                             <option value="${i}" ?selected="${this.domain === i}">${d}</option>
                         `)}
                     </select>

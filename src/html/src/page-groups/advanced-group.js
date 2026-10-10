@@ -1,8 +1,6 @@
 import '../pages/hardware-layout.js'
 
-// FEATURE:NOT IS_TX
-import '../pages/voltage-calibration-panel.js'
-// /FEATURE:NOT IS_TX
+// TLRS: voltage-calibration-panel.js is deferred (not restyled / not in the nav yet), so not imported
 
 import '../pages/continuous-wave.js'
 
