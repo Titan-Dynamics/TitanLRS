@@ -23,6 +23,7 @@
 #include "rx-serial/SerialAirPort.h"
 #include "rx-serial/SerialHoTT_TLM.h"
 #include "rx-serial/SerialMavlink.h"
+#include "rx-serial/rx_mavlink.h"
 #include "rx-serial/SerialTramp.h"
 #include "rx-serial/SerialSmartAudio.h"
 #include "rx-serial/SerialDisplayport.h"
@@ -1986,6 +1987,11 @@ static void CheckConfigChangePending()
 {
     if (config.IsModified() && !InBindingMode && connectionState < NO_CONFIG_SAVE_STATES)
     {
+        // The commit drops the link: let the reply to a MAVLink parameter write go out first
+        if (RxMavlink_HoldCommit(millis(), DataDlSender.IsActive()))
+        {
+            return;
+        }
         LostConnection(false);
         uint32_t changes = config.Commit();
         devicesTriggerEvent(changes);

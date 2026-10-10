@@ -41,6 +41,9 @@ public:
     void SetTlmRatio(uint8_t idx);
     void SetPowerMax(uint8_t idx);
     void SetDynamicPower(uint8_t idx);
+    // Why the setting cannot be changed right now, or nullptr if it can
+    const char *TlmRatioLockReason() const;
+    const char *SwitchModeLockReason() const;
 protected:
     void devicePingCalled() override;
     void updateModelID();

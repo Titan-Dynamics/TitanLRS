@@ -24,7 +24,7 @@ static void ap_send_crsf_passthrough_single(crsf_addr_e destination, uint16_t ap
     crsfpassthrough.p.appid = appid;
     crsfpassthrough.p.data = data;
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough.p)));
     crsfRouter.deliverMessageTo(destination, &crsfpassthrough.h);
 }
 
@@ -46,7 +46,7 @@ static void ap_send_crsf_passthrough_text(crsf_addr_e destination, const char *t
     crsftext.p.severity = severity;
     memcpy(crsftext.p.text, text, sizeof(crsftext.p.text));
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsftext, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsftext)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsftext, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsftext.p)));
     crsfRouter.deliverMessageTo(destination, &crsftext.h);
 }
 
@@ -75,7 +75,7 @@ static void ap_send_crsf_passthrough_multi(crsf_addr_e destination, uint16_t app
     crsfpassthrough.p.items[1].appid = appid2;
     crsfpassthrough.p.items[1].data = data2;
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough.p)));
     crsfRouter.deliverMessageTo(destination, &crsfpassthrough.h);
 }
 
@@ -95,7 +95,8 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
     {
         mavlink_message_t msg;
         mavlink_status_t status;
-        bool have_message = mavlink_frame_char(MAVLINK_COMM_0, CRSFinBuffer[CRSF_FRAME_NOT_COUNTED_BYTES + i], &msg, &status);
+        // Only frames that pass their CRC: a corrupted or cut frame must not reach the pilot's radio
+        bool have_message = mavlink_frame_char(MAVLINK_COMM_0, CRSFinBuffer[CRSF_FRAME_NOT_COUNTED_BYTES + i], &msg, &status) == MAVLINK_FRAMING_OK;
         // convert mavlink messages to CRSF messages
         if (have_message)
         {
@@ -124,7 +125,7 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                 // mAh
                 crsfbatt.p.capacity = 0;
                 if (battery_status.current_consumed > 0){ // int32_t, -1 means invalid
-                    crsfbatt.p.capacity = htobe32(std::min(((uint32_t) battery_status.current_consumed), (uint32_t) 0xFFFFFFU)); // 24bit value
+                    crsfbatt.p.capacity = htobe32(std::min(((uint32_t) battery_status.current_consumed), (uint32_t) 0xFFFFFFU)) >> 8; // 24bit big-endian value
                 }
                 // 0-100%
                 crsfbatt.p.remaining = 0;
@@ -215,7 +216,7 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                     crsffm.p.flight_mode[len] = '*';
                     crsffm.p.flight_mode[len + 1] = '\0';
                 }
-                crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsffm, CRSF_FRAMETYPE_FLIGHT_MODE, CRSF_FRAME_SIZE(sizeof(crsffm)));
+                crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsffm, CRSF_FRAMETYPE_FLIGHT_MODE, CRSF_FRAME_SIZE(sizeof(crsffm.p)));
                 crsfRouter.deliverMessageTo(destination, &crsffm.h);
 
                 /**

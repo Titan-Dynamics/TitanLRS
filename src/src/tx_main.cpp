@@ -3,6 +3,7 @@
 #include "CRSFHandset.h"
 #include "CRSFParameters.h"
 #include "dynpower.h"
+#include "tx_mavlink.h"
 #include "msp.h"
 #include "msptypes.h"
 #include "stubborn_receiver.h"
@@ -1191,6 +1192,7 @@ static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
     uartInputBuffer.lock();
     uartInputBuffer.pushBytes(buf, size);
     uartInputBuffer.unlock();
+    TxMavlink_ProcessFromGcs(GCS_LINK_USB_SERIAL, buf, size);
   }
 
   // Always try to parse any CRSF packets from the USB serial input
@@ -1216,6 +1218,7 @@ static void HandleMavlinkUdp(const uint8_t *buf, uint16_t size)
       uartInputBuffer.pushBytes(buf, size);
     }
     uartInputBuffer.unlock();
+    TxMavlink_ProcessFromGcs(GCS_LINK_UDP, buf, size);
   }
 }
 #endif
@@ -1312,6 +1315,9 @@ static void HandleUARTin()
         uartInputBuffer.lock();
         uartInputBuffer.pushBytes(buf, size);
         uartInputBuffer.unlock();
+#if defined(PLATFORM_ESP32)
+        TxMavlink_ProcessFromGcs(GCS_LINK_BACKPACK, buf, size);
+#endif
 
         if (connectionState == noCrossfire)
         {
@@ -1705,6 +1711,10 @@ void loop()
   VtxPitmodeSwitchUpdate();
 #endif
   checkSendLinkStatsToHandset(now);
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+  {
+    TxMavlink_Update(now);
+  }
 
   if (DataDlReceiver.HasFinishedData())
   {
@@ -1715,17 +1725,8 @@ void loop()
           const uint8_t count = CRSFinBuffer[CRSF_TELEMETRY_LENGTH_INDEX];
           // Convert to CRSF telemetry where we can and send to handset
           convert_mavlink_to_crsf_telem(CRSF_ADDRESS_RADIO_TRANSMITTER, CRSFinBuffer, count);
-          // forward raw mavlink data to USB
-          TxUSB->write(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
-#if defined(PLATFORM_STM32)
-          // ... and to a GCS on the USB network interface
-          MavlinkUdp_Send(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
-#endif
-          // And to the backpack if we have one
-          if (TxUSB != BackpackOrLogStrm)
-          {
-            sendMAVLinkTelemetryToBackpack(CRSFinBuffer);
-          }
+          // to USB, UDP (STM32) and the backpack (ESP32)
+          TxMavlink_ForwardToGcs(CRSFinBuffer + CRSF_FRAME_NOT_COUNTED_BYTES, count);
         }
       }
       else

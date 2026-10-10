@@ -81,6 +81,9 @@ jobs:
         platformio pkg update
         PLATFORMIO_BUILD_FLAGS="-DRegulatory_Domain_ISM_2400" pio test -e native
 
+    - name: Check MAVLink parameter docs
+      run: python src/python/gen_param_metadata.py --check
+
   targets:
     needs:
       - build-and-validate-artifacts
@@ -229,6 +232,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
+      - name: Add MAVLink parameter metadata to firmware folder
+        run: |
+          mkdir -p dist/firmware/mavlink
+          python src/python/gen_param_metadata.py --xml dist/firmware/mavlink/TitanLRS.apm.pdef.xml --markdown dist/firmware/mavlink/MAVLinkParams.md
 
       - name: Build flasher "binary" with shiv
         run: |

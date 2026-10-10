@@ -674,16 +674,23 @@ void TXModuleEndpoint::SetPacketRateIdx(uint8_t idx, bool forceChange)
   }
 }
 
-void TXModuleEndpoint::SetSwitchMode(uint8_t idx)
+const char *TXModuleEndpoint::SwitchModeLockReason() const
 {
-  // Only allow changing switch mode when disconnected since we need to guarantee
-  // the pack and unpack functions are matched
-  bool isDisconnected = connectionState == disconnected;
   // Don't allow the switch mode to change if the TX is in mavlink mode
   // Wide switchmode is not compatible with mavlink, and the switchmode is
   // auto-configured when entering mavlink mode
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+    return "locked in MAVLink mode";
+  // Only allow changing switch mode when disconnected since we need to guarantee
+  // the pack and unpack functions are matched
+  if (connectionState != disconnected)
+    return "only while disconnected";
+  return nullptr;
+}
+void TXModuleEndpoint::SetSwitchMode(uint8_t idx)
+{
   bool isMavlinkMode = config.GetLinkMode() == TX_MAVLINK_MODE;
-  if (isDisconnected && !isMavlinkMode)
+  if (SwitchModeLockReason() == nullptr)
   {
     config.SetSwitchMode(idx);
     OtaUpdateSerializers((OtaSwitchMode_e)idx, ExpressLRS_currAirRate_Modparams->PayloadLength);
@@ -701,14 +708,21 @@ void TXModuleEndpoint::SetAntennaMode(uint8_t idx)
   config.SetAntennaMode(newAntennaMode);
 }
 
+const char *TXModuleEndpoint::TlmRatioLockReason() const
+{
+  // Don't allow TLM ratio changes if using AIRPORT or Mavlink
+  if (config.GetLinkMode() == TX_MAVLINK_MODE)
+    return "locked in MAVLink mode";
+  if (firmwareOptions.is_airport)
+    return "locked in AirPort mode";
+  return nullptr;
+}
 void TXModuleEndpoint::SetTlmRatio(uint8_t idx)
 {
   const auto eRatio = (expresslrs_tlm_ratio_e)idx;
   if (eRatio <= TLM_RATIO_DISARMED)
   {
-    const bool isMavlinkMode = config.GetLinkMode() == TX_MAVLINK_MODE;
-    // Don't allow TLM ratio changes if using AIRPORT or Mavlink
-    if (!firmwareOptions.is_airport && !isMavlinkMode)
+    if (TlmRatioLockReason() == nullptr)
     {
       config.SetTlm(eRatio);
       // Update the telemetry ratio immediately, rather than wait the agonizing 5 seconds for the next sync
