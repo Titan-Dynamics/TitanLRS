@@ -4,7 +4,6 @@
 #include "button.h"
 #include "config.h"
 #include "helpers.h"
-#include "handset.h"
 
 static Button button1;
 static Button button2;
@@ -95,7 +94,7 @@ static int start()
 static int event()
 {
 #if defined(TARGET_TX)
-    if (handset->IsArmed())
+    if (isArmed)
     {
         return DURATION_NEVER;
     }

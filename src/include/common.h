@@ -2,24 +2,24 @@
 
 #ifndef UNIT_TEST
 #include "targets.h"
-#include <device.h>
+#include "device.h"
+
 
 #if defined(RADIO_SX127X)
 #include "SX127xDriver.h"
-#elif defined(RADIO_LR2021)
-#include "LR2021Driver.h"
-#elif defined(RADIO_LR1121)
-#include "LR1121Driver.h"
 #elif defined(RADIO_SX128X)
 #include "SX1280Driver.h"
+#elif defined(RADIO_LR1121)
+#include "LR1121Driver.h"
+#elif defined(RADIO_LR2021)
+#include "LR2021Driver.h"
 #else
 #error "Radio configuration is not valid!"
 #endif
 #else
 #include <cstdint>
+#include "SX12xxDriverCommon.h"
 #endif // UNIT_TEST
-
-#define UID_LEN             6
 
 typedef enum : uint8_t
 {
@@ -117,17 +117,6 @@ typedef enum : uint8_t
     RATE_LORA_DUAL_150HZ,
 } expresslrs_RFrates_e;
 
-enum {
-    RADIO_TYPE_SX127x_LORA,
-    RADIO_TYPE_LR1121_LORA_900,
-    RADIO_TYPE_LR1121_LORA_2G4,
-    RADIO_TYPE_LR1121_GFSK_900,
-    RADIO_TYPE_LR1121_GFSK_2G4,
-    RADIO_TYPE_LR1121_LORA_DUAL,
-    RADIO_TYPE_SX128x_LORA,
-    RADIO_TYPE_SX128x_FLRC,
-};
-
 typedef enum : uint8_t
 {
     TX_RADIO_MODE_GEMINI = 0,
@@ -147,7 +136,6 @@ typedef enum : uint8_t
 #define SNR_SCALE(snr) ((int8_t)((float)snr * RADIO_SNR_SCALE))
 #define SNR_DESCALE(snrScaled) (snrScaled / RADIO_SNR_SCALE)
 // Bound is any of the last 4 bytes nonzero (unbound is all zeroes)
-#define UID_IS_BOUND(uid) (uid[2] != 0 || uid[3] != 0 || uid[4] != 0 || uid[5] != 0)
 
 typedef struct expresslrs_rf_pref_params_s
 {
@@ -167,13 +155,13 @@ typedef struct expresslrs_rf_pref_params_s
 typedef struct expresslrs_mod_settings_s
 {
     uint8_t index;
-    uint8_t radio_type;
+    RadioBandMod::Combined radio_type;
     expresslrs_RFrates_e enum_rate;
     uint8_t bw;
     uint8_t sf;
     uint8_t cr;
     uint8_t PreambleLen;
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
     uint8_t bw2;
     uint8_t sf2;
     uint8_t cr2;
@@ -230,6 +218,7 @@ enum eServoOutputFailsafeMode : uint8_t
 
 enum eSerialProtocol : uint8_t
 {
+    // Values are persisted in rx_config_t; append new protocols only.
     PROTOCOL_CRSF,
     PROTOCOL_INVERTED_CRSF,
     PROTOCOL_SBUS,
@@ -239,12 +228,14 @@ enum eSerialProtocol : uint8_t
     PROTOCOL_HOTT_TLM,
     PROTOCOL_MAVLINK,
     PROTOCOL_MSP_DISPLAYPORT,
-    PROTOCOL_GPS
+    PROTOCOL_GPS,
+    PROTOCOL_SCORPION_TLM
 };
 
 #if defined(PLATFORM_ESP32)
 enum eSerial1Protocol : uint8_t
 {
+    // Values are persisted in rx_config_t; append new protocols only.
     PROTOCOL_SERIAL1_OFF,
     PROTOCOL_SERIAL1_CRSF,
     PROTOCOL_SERIAL1_INVERTED_CRSF,
@@ -256,7 +247,8 @@ enum eSerial1Protocol : uint8_t
     PROTOCOL_SERIAL1_TRAMP,
     PROTOCOL_SERIAL1_SMARTAUDIO,
     PROTOCOL_SERIAL1_MSP_DISPLAYPORT,
-    PROTOCOL_SERIAL1_GPS
+    PROTOCOL_SERIAL1_GPS,
+    PROTOCOL_SERIAL1_SCORPION_TLM
 };
 #endif
 
@@ -284,11 +276,6 @@ enum eAuxChannels : uint8_t
     CRSF_NUM_CHANNELS = 16
 };
 
-//ELRS SPECIFIC OTA CRC
-//Koopman formatting https://users.ece.cmu.edu/~koopman/crc/
-#define ELRS_CRC_POLY 0x07 // 0x83
-#define ELRS_CRC14_POLY 0x2E57 // 0x372B
-
 #ifndef UNIT_TEST
 #if defined(RADIO_SX127X)
 #define RATE_MAX 6
@@ -296,12 +283,11 @@ enum eAuxChannels : uint8_t
 
 extern SX127xDriver Radio;
 
-#elif defined(RADIO_LR2021)
-#define RATE_MAX 20
-#define RATE_BINDING RATE_LORA_900_50HZ
-#define RATE_DUALBAND_BINDING RATE_LORA_2G4_50HZ
+#elif defined(RADIO_SX128X)
+#define RATE_MAX 10     // 2xFLRC + 2xDVDA + 4xLoRa + 2xFullRes
+#define RATE_BINDING RATE_LORA_2G4_50HZ
 
-extern LR2021Driver Radio;
+extern SX1280Driver Radio;
 
 #elif defined(RADIO_LR1121)
 #define RATE_MAX 20
@@ -310,11 +296,13 @@ extern LR2021Driver Radio;
 
 extern LR1121Driver Radio;
 
-#elif defined(RADIO_SX128X)
-#define RATE_MAX 10     // 2xFLRC + 2xDVDA + 4xLoRa + 2xFullRes
-#define RATE_BINDING RATE_LORA_2G4_50HZ
+#elif defined(RADIO_LR2021)
+#define RATE_MAX 24
+#define RATE_BINDING RATE_LORA_900_50HZ
+#define RATE_DUALBAND_BINDING RATE_LORA_2G4_50HZ
 
-extern SX1280Driver Radio;
+extern LR2021Driver Radio;
+
 #endif
 #endif // UNIT_TEST
 
@@ -324,9 +312,9 @@ uint8_t get_elrs_HandsetRate_max(uint8_t rateIndex, uint32_t minInterval);
 
 uint8_t TLMratioEnumToValue(expresslrs_tlm_ratio_e const enumval);
 uint8_t TLMBurstMaxForRateRatio(uint16_t const rateHz, uint8_t const ratioDiv);
-uint8_t enumRatetoIndex(expresslrs_RFrates_e const eRate);
+bool enumRatetoIndex(expresslrs_RFrates_e const eRate, uint8_t &idx);
+uint8_t enumRatetoIndexSafe(expresslrs_RFrates_e const eRate);
 
-extern uint8_t UID[UID_LEN];
 extern bool connectionHasModelMatch;
 extern bool teamraceHasModelMatch;
 extern bool InBindingMode;
@@ -347,11 +335,9 @@ extern bool crsfBatterySensorDetected;
 extern bool crsfBaroSensorDetected;
 
 void ChannelDataReset();
-uint32_t uidMacSeedGet();
 bool isDualRadio();
-void EnterBindingModeSafely(); // defined in rx_main/tx_main
 
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
 bool isSupportedRFRate(uint8_t index);
 #else
 inline bool isSupportedRFRate(uint8_t index) { return true; }

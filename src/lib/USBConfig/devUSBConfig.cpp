@@ -25,7 +25,9 @@
 #include "handset.h"
 #endif
 
-extern unsigned long rebootTime;
+#include "rxtx_intf.h"
+#include "OTA.h"
+
 extern unsigned long dfuRequestTime;
 
 // The CRSF tunnel is dropped from the router once the browser has not polled for this long.
@@ -49,7 +51,7 @@ static uint32_t s_crsfPollDeadline = 0;
 static bool moduleIsBusy()
 {
 #if defined(TARGET_TX)
-    return handset != nullptr && handset->IsArmed();
+    return isArmed;
 #else
     return false;
 #endif
@@ -320,7 +322,7 @@ static void handleReboot(HttpResponse &res)
         return;
     }
     sendStatus(res, "Rebooting");
-    rebootTime = millis() + 100;
+    scheduleRebootTime(100);
 }
 
 static void handleReset(const HttpRequest &req, HttpResponse &res)
@@ -346,7 +348,7 @@ static void handleReset(const HttpRequest &req, HttpResponse &res)
     }
     ConfigJson_Reset(resetConfig, resetOptions);
     sendStatus(res, "Reset - rebooting");
-    rebootTime = millis() + 100;
+    scheduleRebootTime(100);
 }
 
 static void handleDfu(HttpResponse &res)

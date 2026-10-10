@@ -116,17 +116,6 @@ public:
      */
     uint32_t GetRCdataLastRecv() const { return RCdataLastRecv; }
 
-    /**
-     * Set the "armed" state of the module.
-     * @param armed true if the module is in the "armed" state
-     */
-    void SetArmed(const bool armed) { moduleArmed = armed; }
-
-    /**
-     * @return true if the protocol detects that the arming state is active
-     */
-    bool IsArmed() const { return moduleArmed; }
-
 #if defined(DEBUG_TX_FREERUN)
     /**
      * @brief Can be used to force a connected callback for debugging
@@ -147,7 +136,6 @@ protected:
 
 private:
     volatile uint32_t RCdataLastRecv = 0;
-    bool moduleArmed = false;
 };
 
 #ifdef TARGET_TX

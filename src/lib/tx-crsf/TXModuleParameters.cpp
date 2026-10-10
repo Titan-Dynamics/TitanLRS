@@ -6,33 +6,43 @@
 #include "FHSS.h"
 #include "OTA.h"
 #include "POWERMGNT.h"
+#include "SX12xxDriverCommon.h"
 #include "config.h"
 #include "helpers.h"
 #include "deferred.h"
 #include "msptypes.h"
 
-#define STR_LUA_ALLAUX         "AUX1;AUX2;AUX3;AUX4;AUX5;AUX6;AUX7;AUX8;AUX9;AUX10"
+#define STR_LUA_ALLAUX         "AUX1;AUX2;AUX3;AUX4;AUX5;AUX6;AUX7;AUX8;AUX9;AUX10;AUX11;AUX12"
 
 #define STR_LUA_ALLAUX_UPDOWN  "AUX1" LUASYM_ARROW_UP ";AUX1" LUASYM_ARROW_DN ";AUX2" LUASYM_ARROW_UP ";AUX2" LUASYM_ARROW_DN \
                                ";AUX3" LUASYM_ARROW_UP ";AUX3" LUASYM_ARROW_DN ";AUX4" LUASYM_ARROW_UP ";AUX4" LUASYM_ARROW_DN \
                                ";AUX5" LUASYM_ARROW_UP ";AUX5" LUASYM_ARROW_DN ";AUX6" LUASYM_ARROW_UP ";AUX6" LUASYM_ARROW_DN \
                                ";AUX7" LUASYM_ARROW_UP ";AUX7" LUASYM_ARROW_DN ";AUX8" LUASYM_ARROW_UP ";AUX8" LUASYM_ARROW_DN \
-                               ";AUX9" LUASYM_ARROW_UP ";AUX9" LUASYM_ARROW_DN ";AUX10" LUASYM_ARROW_UP ";AUX10" LUASYM_ARROW_DN
+                               ";AUX9" LUASYM_ARROW_UP ";AUX9" LUASYM_ARROW_DN ";AUX10" LUASYM_ARROW_UP ";AUX10" LUASYM_ARROW_DN \
+                               ";AUX11" LUASYM_ARROW_UP ";AUX11" LUASYM_ARROW_DN ";AUX12" LUASYM_ARROW_UP ";AUX12" LUASYM_ARROW_DN
 
 #if defined(RADIO_SX127X)
 #define STR_LUA_PACKETRATES \
     "D50Hz(-112dBm);25Hz(-123dBm);50Hz(-120dBm);100Hz(-117dBm);100Hz Full(-112dBm);200Hz(-112dBm)"
-#elif defined(RADIO_LR11XX)
+#elif defined(RADIO_SX128X)
+#define STR_LUA_PACKETRATES \
+"50Hz(-115dBm);100Hz Full(-112dBm);150Hz(-112dBm);250Hz(-108dBm);333Hz Full(-105dBm);500Hz(-105dBm);" \
+"D250(-104dBm);D500(-104dBm);F500(-104dBm);F1000(-104dBm)"
+#elif defined(RADIO_LR1121)
 #define STR_LUA_PACKETRATES \
     "100Hz Full(-112dBm);150Hz(-112dBm);" \
     "50Hz(-115dBm);100Hz Full(-112dBm);150Hz(-112dBm);250Hz(-108dBm);333Hz Full(-105dBm);500Hz(-105dBm);" \
     "DK250(-103dBm);DK500(-103dBm);K1000(-103dBm);" \
     "D50Hz(-112dBm);25Hz(-123dBm);50Hz(-120dBm);100Hz(-117dBm);100Hz Full(-112dBm);200Hz(-112dBm);200Hz Full(-111dBm);250Hz(-111dBm);" \
     "K1000 Full(-101dBm)"
-#elif defined(RADIO_SX128X)
+#elif defined(RADIO_LR2021)
 #define STR_LUA_PACKETRATES \
+    "100Hz Full(-112dBm);150Hz(-112dBm);" \
     "50Hz(-115dBm);100Hz Full(-112dBm);150Hz(-112dBm);250Hz(-108dBm);333Hz Full(-105dBm);500Hz(-105dBm);" \
-    "D250(-104dBm);D500(-104dBm);F500(-104dBm);F1000(-104dBm)"
+    "DK250(-103dBm);DK500(-103dBm);K1000(-103dBm);" \
+    "D250(-104dBm);D500(-104dBm);F500(-104dBm);F1000(-104dBm);" \
+    "D50Hz(-112dBm);25Hz(-123dBm);50Hz(-120dBm);100Hz(-117dBm);100Hz Full(-112dBm);200Hz(-112dBm);200Hz Full(-111dBm);250Hz(-111dBm);" \
+    "K1000 Full(-101dBm)"
 #else
 #error Invalid radio configuration!
 #endif
@@ -42,7 +52,7 @@
 extern char backpackVersion[];
 
 #if defined(Regulatory_Domain_EU_CE_2400)
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
 char strPowerLevels[] = "10/10;25/25;25/50;25/100;25/250;25/500;25/1000;25/2000;MatchTX ";
 #else
 char strPowerLevels[] = "10;25;50;100;250;500;1000;2000;MatchTX ";
@@ -50,7 +60,6 @@ char strPowerLevels[] = "10;25;50;100;250;500;1000;2000;MatchTX ";
 #else
 char strPowerLevels[] = "10;25;50;100;250;500;1000;2000;MatchTX ";
 #endif
-static char version_domain[20+1+6+1];
 static char pwrFolderDynamicName[] = "TX Power (1000 Dynamic)";
 static char vtxFolderDynamicName[] = "VTX Admin (OFF:C:1 Aux11 )";
 static char modelMatchUnit[] = " (ID: 00)";
@@ -65,21 +74,16 @@ static constexpr char switchmodeOpts8chMav[] = ";16ch Rate/2;";
 static constexpr char antennamodeOpts[] = "Gemini;Ant 1;Ant 2;Switch";
 static constexpr char antennamodeOptsDualBand[] = "Gemini;;;";
 static constexpr char linkModeOpts[] = "Normal;MAVLink";
-static constexpr char luastrDvrAux[] = "Off;" STR_LUA_ALLAUX_UPDOWN;
+static constexpr char luastrDvrAux[] = "Off;" STR_LUA_ALLAUX_UPDOWN ";Armed;!Armed";
 static constexpr char luastrDvrDelay[] = "0s;5s;15s;30s;45s;1min;2min";
 static constexpr char luastrHeadTrackingEnable[] = "Off;On;" STR_LUA_ALLAUX_UPDOWN;
 static constexpr char luastrHeadTrackingStart[] = "EdgeTX;" STR_LUA_ALLAUX;
 static constexpr char luastrOffOn[] = "Off;On";
 static char luastrPacketRates[] = STR_LUA_PACKETRATES;
 
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
 static char luastrRFBands[32];
-static enum RFMode : uint8_t
-{
-    RF_MODE_900 = 0,
-    RF_MODE_2G4 = 1,
-    RF_MODE_DUAL = 2,
-} rfMode;
+static RadioBandMod::Band currentRfBand;
 
 static selectionParameter luaRFBand = {
     {"RF Band", CRSF_TEXT_SELECTION},
@@ -131,7 +135,7 @@ static selectionParameter luaFanThreshold = {
 
 #if defined(Regulatory_Domain_EU_CE_2400)
 static stringParameter luaCELimit = {
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
     {"25/100mW 868M/2G4 CE LIMIT", CRSF_INFO},
 #else
     {"100mW 2G4 CE LIMIT", CRSF_INFO},
@@ -173,11 +177,6 @@ static selectionParameter luaModelMatch = {
 static commandParameter luaBind = {
     {"Bind", CRSF_COMMAND},
     lcsIdle, // step
-    STR_EMPTYSPACE
-};
-
-static stringParameter luaInfo = {
-    {"Bad/Good", (crsf_value_type_e)(CRSF_INFO | CRSF_FIELD_ELRS_HIDDEN)},
     STR_EMPTYSPACE
 };
 
@@ -230,9 +229,9 @@ static folderParameter luaVtxFolder = {
 };
 
 static selectionParameter luaVtxBand = {
-    {"Band", CRSF_TEXT_SELECTION},
+    {"Band/Enable", CRSF_TEXT_SELECTION},
     0, // value
-    "Off;A;B;E;F;R;L",
+    "Disabled;A;B;E;F;R;L",
     STR_EMPTYSPACE
 };
 
@@ -327,7 +326,6 @@ extern bool RxWiFiReadyToSend;
 extern bool BackpackTelemReadyToSend;
 extern bool TxBackpackWiFiReadyToSend;
 extern bool VRxBackpackWiFiReadyToSend;
-extern unsigned long rebootTime;
 extern void setWifiUpdateMode();
 
 void TXModuleEndpoint::supressCriticalErrors()
@@ -343,9 +341,6 @@ void TXModuleEndpoint::supressCriticalErrors()
 void TXModuleEndpoint::devicePingCalled()
 {
     supressCriticalErrors();
-    utoa(CRSFHandset::BadPktsCountResult, luaBadGoodString, 10);
-    strcat(luaBadGoodString, "/");
-    utoa(CRSFHandset::GoodPktsCountResult, luaBadGoodString + strlen(luaBadGoodString), 10);
 }
 
 void TXModuleEndpoint::setWarningFlag(const warningFlags flag, const bool value)
@@ -372,6 +367,11 @@ void TXModuleEndpoint::sendELRSstatus(const crsf_addr_e origin)
     "Baud rate too low",  //critical warning2, changing packet rate and baud rate too low
     ""   //critical warning1, reserved for future use
   };
+
+  setWarningFlag(LUA_FLAG_MODEL_MATCH, connectionState == connected && connectionHasModelMatch == false);
+  setWarningFlag(LUA_FLAG_CONNECTED, connectionState == connected);
+  setWarningFlag(LUA_FLAG_ISARMED, isArmed);
+
   auto warningInfo = "";
 
   for (int i = 7; i >= 0; i--)
@@ -385,10 +385,6 @@ void TXModuleEndpoint::sendELRSstatus(const crsf_addr_e origin)
   const uint8_t payloadSize = sizeof(elrsStatusParameter) + strlen(warningInfo) + 1;
   uint8_t buffer[sizeof(crsf_ext_header_t) + payloadSize + 1];
   const auto params = (elrsStatusParameter *)&buffer[sizeof(crsf_ext_header_t)];
-
-  setWarningFlag(LUA_FLAG_MODEL_MATCH, connectionState == connected && connectionHasModelMatch == false);
-  setWarningFlag(LUA_FLAG_CONNECTED, connectionState == connected);
-  setWarningFlag(LUA_FLAG_ISARMED, handset->IsArmed());
 
   params->pktsBad = CRSFHandset::BadPktsCountResult;
   params->pktsGood = htobe16(CRSFHandset::GoodPktsCountResult);
@@ -450,27 +446,28 @@ void TXModuleEndpoint::updateTlmBandwidth()
 
 void TXModuleEndpoint::updateBackpackOpts()
 {
-  if (config.GetBackpackDisable())
-  {
-    // If backpack is disabled, set all the Backpack select options to "Disabled"
-    LUA_FIELD_HIDE(luaDvrAux);
-    LUA_FIELD_HIDE(luaDvrStartDelay);
-    LUA_FIELD_HIDE(luaDvrStopDelay);
-    LUA_FIELD_HIDE(luaHeadTrackingEnableChannel);
-    LUA_FIELD_HIDE(luaHeadTrackingStartChannel);
-    LUA_FIELD_HIDE(luaBackpackTelemetry);
-    LUA_FIELD_HIDE(luaBackpackVersion);
-  }
-  else
-  {
-    LUA_FIELD_SHOW(luaDvrAux);
-    LUA_FIELD_SHOW(luaDvrStartDelay);
-    LUA_FIELD_SHOW(luaDvrStopDelay);
-    LUA_FIELD_SHOW(luaHeadTrackingEnableChannel);
-    LUA_FIELD_SHOW(luaHeadTrackingStartChannel);
-    LUA_FIELD_SHOW(luaBackpackTelemetry);
-    LUA_FIELD_SHOW(luaBackpackVersion);
-  }
+  const bool isBackpackEnabled = config.GetBackpackDisable() == false;
+
+  LUA_FIELD_VISIBLE(luaDvrAux, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaDvrStartDelay, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaDvrStopDelay, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaHeadTrackingEnableChannel, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaHeadTrackingStartChannel, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaBackpackTelemetry, isBackpackEnabled);
+  LUA_FIELD_VISIBLE(luaBackpackVersion, isBackpackEnabled);
+}
+
+void TXModuleEndpoint::updateVtxAdminOpts()
+{
+  const bool isVtxAdminEnabled = config.GetVtxBand() != 0;
+
+  LUA_FIELD_VISIBLE(luaVtxChannel, isVtxAdminEnabled);
+  LUA_FIELD_VISIBLE(luaVtxPwr, isVtxAdminEnabled);
+  LUA_FIELD_VISIBLE(luaVtxPit, isVtxAdminEnabled);
+  // Pit mode can only be sent as part of the power byte
+  LUA_FIELD_VISIBLE(luaVtxPit, isVtxAdminEnabled && config.GetVtxPower() != 0);
+  // Can't toggle a COMMAND type, the lua will not refresh commands
+  //LUA_FIELD_VISIBLE(luaVtxSend, isVtxAdminEnabled);
 }
 
 static void setBleJoystickMode()
@@ -519,7 +516,7 @@ void TXModuleEndpoint::handleWifiBle(propertiesCommon *item, uint8_t arg)
       sendCommandResponse(cmd, lcsIdle, STR_EMPTYSPACE);
       if (connectionState == targetState)
       {
-        rebootTime = millis() + 400;
+        scheduleRebootTime(400);
       }
       break;
 
@@ -543,7 +540,11 @@ void TXModuleEndpoint::handleSimpleSendCmd(propertiesCommon *item, uint8_t arg)
     }
     else if ((void *)item == (void *)&luaVtxSend)
     {
-      VtxTriggerSend();
+      // If VtxAdmin enabled then send, otherwise show brief "Not enabled" message
+      if (config.GetVtxBand() != 0)
+        VtxTriggerSend();
+      else
+        msg = "Not enabled";
     }
     else if ((void *)item == (void *)&luaRxWebUpdate)
     {
@@ -648,7 +649,7 @@ void TXModuleEndpoint::SetPacketRateIdx(uint8_t idx, bool forceChange)
   const auto newModParams = get_elrs_airRateConfig(actualRate);
   uint8_t newSwitchMode = adjustSwitchModeForAirRate((OtaSwitchMode_e)config.GetSwitchMode(), newModParams->PayloadLength);
   // Force Gemini when using dual band modes.
-  uint8_t newAntennaMode = (newModParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL) ? TX_RADIO_MODE_GEMINI : config.GetAntennaMode();
+  uint8_t newAntennaMode = RadioBandMod::isBDUAL(newModParams->radio_type) ? TX_RADIO_MODE_GEMINI : config.GetAntennaMode();
   // If the switch mode is going to change, block the change while connected
   bool isDisconnected = connectionState == disconnected;
   // Don't allow the switch mode to change if the TX is in mavlink mode
@@ -704,7 +705,7 @@ void TXModuleEndpoint::SetSwitchMode(uint8_t idx)
 void TXModuleEndpoint::SetAntennaMode(uint8_t idx)
 {
   // Force Gemini when using dual band modes.
-  uint8_t newAntennaMode = get_elrs_airRateConfig(config.GetRate())->radio_type == RADIO_TYPE_LR1121_LORA_DUAL ? TX_RADIO_MODE_GEMINI : idx;
+  uint8_t newAntennaMode = RadioBandMod::isBDUAL(get_elrs_airRateConfig(config.GetRate())->radio_type) ? TX_RADIO_MODE_GEMINI : idx;
   config.SetAntennaMode(newAntennaMode);
 }
 
@@ -747,16 +748,16 @@ void TXModuleEndpoint::SetDynamicPower(uint8_t idx)
 }
 
 /***
- * @brief: Update the dynamic strings used for folder names and labels
+ * @brief: Update the dynamic strings used for folder names, as well as labels and item visibility
  ***/
-void TXModuleEndpoint::updateFolderNames()
+void TXModuleEndpoint::updateFolderNamesAndVisibility()
 {
   updateFolderName_TxPower();
   updateFolderName_VtxAdmin();
 
-  // These aren't folder names, just string labels slapped in the units field generally
   updateTlmBandwidth();
   updateBackpackOpts();
+  updateVtxAdminOpts();
 }
 
 static void recalculatePacketRateOptions(int minInterval)
@@ -768,27 +769,14 @@ static void recalculatePacketRateOptions(int minInterval)
     {
         uint8_t rate = i;
         rate = RATE_MAX - 1 - rate;
-        bool rateAllowed = (get_elrs_airRateConfig(rate)->interval * get_elrs_airRateConfig(rate)->numOfSends) >= minInterval;
+        const auto rateModParams = get_elrs_airRateConfig(rate);
+        bool rateAllowed = (rateModParams->interval * rateModParams->numOfSends) >= minInterval;
 
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
         // Skip unsupported modes for hardware with only a single LR1121 or with a single RF path
         rateAllowed &= isSupportedRFRate(rate);
-        if (rateAllowed)
-        {
-            const auto radio_type = get_elrs_airRateConfig(rate)->radio_type;
-            if (rfMode == RF_MODE_900)
-            {
-                rateAllowed = radio_type == RADIO_TYPE_LR1121_GFSK_900 || radio_type == RADIO_TYPE_LR1121_LORA_900;
-            }
-            if (rfMode == RF_MODE_2G4)
-            {
-                rateAllowed = radio_type == RADIO_TYPE_LR1121_GFSK_2G4 || radio_type == RADIO_TYPE_LR1121_LORA_2G4;
-            }
-            if (rfMode == RF_MODE_DUAL)
-            {
-                rateAllowed = radio_type == RADIO_TYPE_LR1121_LORA_DUAL;
-            }
-        }
+        // Skip modes on a diffrent band
+        rateAllowed &= RadioBandMod::isSameBand(rateModParams->radio_type, currentRfBand);
 #endif
         const char *semi = strchrnul(pos, ';');
         if (rateAllowed)
@@ -812,13 +800,11 @@ static void recalculatePacketRateOptions(int minInterval)
 
 void TXModuleEndpoint::registerParameters()
 {
-  setStringValue(&luaInfo, luaBadGoodString);
-
   auto wifiBleCallback = [&](propertiesCommon *item, const uint8_t arg) { handleWifiBle(item, arg); };
   auto sendCallback = [&](propertiesCommon *item, const uint8_t arg) { handleSimpleSendCmd(item, arg); };
 
   if (HAS_RADIO) {
-#if defined(RADIO_LR11XX)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
     // Only allow selection of the band if both bands have power values defined
     if (POWER_OUTPUT_VALUES_COUNT != 0 && POWER_OUTPUT_VALUES_DUAL_COUNT != 0)
     {
@@ -840,30 +826,16 @@ void TXModuleEndpoint::registerParameters()
       }
 
       registerParameter(&luaRFBand, [this](propertiesCommon *item, uint8_t arg) {
-        if (arg != rfMode)
+        if (arg != currentRfBand)
         {
           // Choose the fastest supported packet rate in this RF band.
-          rfMode = static_cast<RFMode>(arg);
+          currentRfBand = RadioBandMod::getBand(arg);
           for (int i=0; i < RATE_MAX ; i++)
           {
-            if (isSupportedRFRate(i))
+            if (isSupportedRFRate(i) && RadioBandMod::isSameBand(currentRfBand, get_elrs_airRateConfig(i)->radio_type))
             {
-              const auto radio_type = get_elrs_airRateConfig(i)->radio_type;
-              if (rfMode == RF_MODE_900 && (radio_type == RADIO_TYPE_LR1121_GFSK_900 || radio_type == RADIO_TYPE_LR1121_LORA_900))
-              {
-                SetPacketRateIdx(i, true);
-                break;
-              }
-              if (rfMode == RF_MODE_2G4 && (radio_type == RADIO_TYPE_LR1121_GFSK_2G4 || radio_type == RADIO_TYPE_LR1121_LORA_2G4))
-              {
-                SetPacketRateIdx(i, true);
-                break;
-              }
-              if (rfMode == RF_MODE_DUAL && radio_type == RADIO_TYPE_LR1121_LORA_DUAL)
-              {
-                SetPacketRateIdx(i, true);
-                break;
-              }
+              SetPacketRateIdx(i, true);
+              break;
             }
           }
           recalculatePacketRateOptions(handset->getMinPacketInterval());
@@ -913,8 +885,8 @@ void TXModuleEndpoint::registerParameters()
           mspPacket_t msp;
           msp.reset();
           msp.makeCommand();
-          msp.function = MSP_SET_RX_CONFIG;
-          msp.addByte(MSP_ELRS_MODEL_ID);
+          msp.function = MSP_ELRS_RXTX_CONFIG;
+          msp.addByte((uint8_t)MSP_ELRS_RXTX_CONFIG_SUBCMD::MODEL_ID);
           msp.addByte(newModelMatch ? modelId : 0xff);
           crsfRouter.AddMspMessage(&msp, CRSF_ADDRESS_CRSF_RECEIVER, CRSF_ADDRESS_CRSF_TRANSMITTER);
         }
@@ -1028,15 +1000,6 @@ void TXModuleEndpoint::registerParameters()
     registerParameter(&luaBind, sendCallback);
   }
 
-  registerParameter(&luaInfo);
-  if (strlen(version) < 21) {
-    strlcpy(version_domain, version, 21);
-    strlcat(version_domain, " ", sizeof(version_domain));
-  } else {
-    strlcpy(version_domain, version, 18);
-    strlcat(version_domain, "... ", sizeof(version_domain));
-  }
-  strlcat(version_domain, FHSSconfig->domain, sizeof(version_domain));
   registerParameter(&luaELRSversion);
 }
 
@@ -1044,22 +1007,10 @@ void TXModuleEndpoint::updateParameters()
 {
   bool isMavlinkMode = config.GetLinkMode() == TX_MAVLINK_MODE;
   uint8_t currentRate = adjustPacketRateForBaud(config.GetRate());
-#if defined(RADIO_LR11XX)
-  // calculate RFMode from current packet-rate
-  switch (get_elrs_airRateConfig(currentRate)->radio_type)
-  {
-    case RADIO_TYPE_LR1121_LORA_900:
-    case RADIO_TYPE_LR1121_GFSK_900:
-      rfMode = RF_MODE_900;
-      break;
-    case RADIO_TYPE_LR1121_LORA_DUAL:
-      rfMode = RF_MODE_DUAL;
-      break;
-    default:
-      rfMode = RF_MODE_2G4;
-      break;
-  }
-  setTextSelectionValue(&luaRFBand, rfMode);
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
+  // calculate currentRfBand from current packet-rate
+  currentRfBand = RadioBandMod::getBand(get_elrs_airRateConfig(currentRate)->radio_type);
+  setTextSelectionValue(&luaRFBand, currentRfBand);
 #endif
   recalculatePacketRateOptions(handset->getMinPacketInterval());
   setTextSelectionValue(&luaAirRate, RATE_MAX - 1 - currentRate);
@@ -1067,7 +1018,7 @@ void TXModuleEndpoint::updateParameters()
   setTextSelectionValue(&luaTlmRate, config.GetTlm());
   luaTlmRate.options = isMavlinkMode ? tlmRatiosMav : tlmRatios;
 
-  luaAntenna.options = get_elrs_airRateConfig(config.GetRate())->radio_type == RADIO_TYPE_LR1121_LORA_DUAL ? antennamodeOptsDualBand : antennamodeOpts;
+  luaAntenna.options = RadioBandMod::isBDUAL(get_elrs_airRateConfig(config.GetRate())->radio_type) ? antennamodeOptsDualBand : antennamodeOpts;
 
   setTextSelectionValue(&luaSwitch, config.GetSwitchMode());
   if (isMavlinkMode)
@@ -1098,8 +1049,6 @@ void TXModuleEndpoint::updateParameters()
   setTextSelectionValue(&luaVtxBand, config.GetVtxBand());
   setUint8Value(&luaVtxChannel, config.GetVtxChannel() + 1);
   setTextSelectionValue(&luaVtxPwr, config.GetVtxPower());
-  // Pit mode can only be sent as part of the power byte
-  LUA_FIELD_VISIBLE(luaVtxPit, config.GetVtxPower() != 0);
   setTextSelectionValue(&luaVtxPit, config.GetVtxPitmode());
   if (OPT_USE_TX_BACKPACK)
   {
@@ -1112,5 +1061,5 @@ void TXModuleEndpoint::updateParameters()
     setTextSelectionValue(&luaBackpackTelemetry, config.GetBackpackDisable() ? 0 : config.GetBackpackTlmMode());
     setStringValue(&luaBackpackVersion, backpackVersion);
   }
-  updateFolderNames();
+  updateFolderNamesAndVisibility();
 }

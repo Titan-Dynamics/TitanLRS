@@ -57,7 +57,7 @@ static bool hasProtocol2() { return RX_HAS_SERIAL1; }
 static float getProtocol2() { return config.GetSerial1Protocol(); }
 static const char *setProtocol2(float value)
 {
-    if (!isWhole(value, PROTOCOL_SERIAL1_GPS))
+    if (!isWhole(value, PROTOCOL_SERIAL1_SCORPION_TLM))
         return "not a protocol";
     config.SetSerial1Protocol((eSerial1Protocol)value);
     if (config.IsModified())
@@ -135,7 +135,7 @@ static const MavParam params[] = {
     // @Param: RX_PROTOCOL
     // @DisplayName: Serial protocol
     // @Description: Protocol on the receiver's serial port. Follows the TX link mode: MAVLink while the TX is in MAVLink mode, CRSF otherwise. Change TX_LINK_MODE to leave MAVLink.
-    // @Values: 0:CRSF,1:Inverted CRSF,2:SBUS,3:Inverted SBUS,4:SUMD,5:DJI RS Pro,6:HoTT Telemetry,7:MAVLink,8:DisplayPort,9:GPS
+    // @Values: 0:CRSF,1:Inverted CRSF,2:SBUS,3:Inverted SBUS,4:SUMD,5:DJI RS Pro,6:HoTT Telemetry,7:MAVLink,8:DisplayPort,9:GPS,10:Scorpion ESC
     // @ReadOnly: True
     // @User: Standard
     {"RX_PROTOCOL", nullptr, getProtocol, nullptr, nullptr},
@@ -143,7 +143,7 @@ static const MavParam params[] = {
     // @Param: RX_PROTOCOL2
     // @DisplayName: Serial 2 protocol
     // @Description: Protocol on the receiver's second serial port.
-    // @Values: 0:Off,1:CRSF,2:Inverted CRSF,3:SBUS,4:Inverted SBUS,5:SUMD,6:DJI RS Pro,7:HoTT Telemetry,8:Tramp,9:SmartAudio,10:DisplayPort,11:GPS
+    // @Values: 0:Off,1:CRSF,2:Inverted CRSF,3:SBUS,4:Inverted SBUS,5:SUMD,6:DJI RS Pro,7:HoTT Telemetry,8:Tramp,9:SmartAudio,10:DisplayPort,11:GPS,12:Scorpion ESC
     // @Hardware: ESP32 receivers with a second serial port only
     // @User: Advanced
     {"RX_PROTOCOL2", hasProtocol2, getProtocol2, setProtocol2, nullptr},

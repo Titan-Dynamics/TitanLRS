@@ -68,7 +68,7 @@ void SX1280Driver::End()
     PayloadLength = 8; // Dummy default value which is overwritten during setup.
 }
 
-bool SX1280Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
+bool SX1280Driver::Begin()
 {
     hal.init();
     hal.IsrCallback_1 = &SX1280Driver::IsrCallback_1;
@@ -127,6 +127,7 @@ transitioning from FS mode and the other from Standby mode. This causes the tx d
     CommitOutputPower();
     if (OPT_USE_HARDWARE_DCDC)
     {
+        DBGLN("Enabling DCDC regulator");
         hal.WriteCommand(SX1280_RADIO_SET_REGULATORMODE, SX1280_USE_DCDC, SX12XX_Radio_All);        // Enable DCDC converter instead of LDO
     }
 
@@ -145,9 +146,9 @@ void SX1280Driver::startCWTest(uint32_t freq, SX12XX_Radio_Number_t radioNumber)
 
 void SX1280Driver::Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t regfreq,
                           uint8_t PreambleLength, bool InvertIQ, uint8_t _PayloadLength,
-                          uint32_t flrcSyncWord, uint16_t flrcCrcSeed, uint8_t flrc)
+                          uint32_t flrcSyncWord, uint16_t flrcCrcSeed, RadioBandMod::Combined modulation)
 {
-    uint8_t const mode = (flrc) ? SX1280_PACKET_TYPE_FLRC : SX1280_PACKET_TYPE_LORA;
+    const uint8_t mode = RadioBandMod::isFLRC(modulation) ? SX1280_PACKET_TYPE_FLRC : SX1280_PACKET_TYPE_LORA;
 
     PayloadLength = _PayloadLength;
     IQinverted = InvertIQ;

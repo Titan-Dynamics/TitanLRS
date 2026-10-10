@@ -1,16 +1,15 @@
 #ifndef UNIT_TEST
 
 #include "LR2021_hal.h"
-#include "LR2021_Regs.h"
 #include "logging.h"
 #include <SPIEx.h>
 
 #if defined(PLATFORM_STM32)
-// Radio SPI SCK speed
-#define LR2021_SPI_HZ 10000000UL // 10MHz
+// TLRS: radio SPI SCK fixed at 10 MHz on STM32 (bench-proven; slower SPI caused BUG #2 link cycling)
+#define LR2021_SPI_HZ 10000000UL
 #endif
 
-LR2021Hal *LR2021Hal::instance = NULL;
+LR2021Hal *LR2021Hal::instance = nullptr;
 
 LR2021Hal::LR2021Hal()
 {
@@ -33,13 +32,17 @@ void LR2021Hal::init()
 {
     DBGLN("Hal Init");
 
-    if (GPIO_PIN_BUSY != UNDEF_PIN)
-    {
-        pinMode(GPIO_PIN_BUSY, INPUT_PULLDOWN);
-    }
+#if defined(PLATFORM_STM32)
+    // TLRS: pull BUSY down so an absent/unfitted radio reads idle and CheckVersion fails cleanly
+    // instead of the first command waiting on a floating-high BUSY.
+    const uint32_t busyMode = INPUT_PULLDOWN;
+#else
+    const uint32_t busyMode = INPUT;
+#endif
+    pinMode(GPIO_PIN_BUSY, busyMode);
     if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
     {
-        pinMode(GPIO_PIN_BUSY_2, INPUT_PULLDOWN);
+        pinMode(GPIO_PIN_BUSY_2, busyMode);
     }
 
     pinMode(GPIO_PIN_DIO1, INPUT);
@@ -86,23 +89,33 @@ void LR2021Hal::init()
     SPIEx.beginTransaction(SPISettings(LR2021_SPI_HZ, MSBFIRST, SPI_MODE0));
 #endif
 
-    attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), this->dioISR_1, RISING);
+    attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1), dioISR_1, RISING);
     if (GPIO_PIN_DIO1_2 != UNDEF_PIN)
     {
-        attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1_2), this->dioISR_2, RISING);
+        attachInterrupt(digitalPinToInterrupt(GPIO_PIN_DIO1_2), dioISR_2, RISING);
     }
 }
 
-void LR2021Hal::reset()
+void LR2021Hal::reset(const bool bootloader)
 {
     DBGLN("LR2021 Reset");
 
     if (GPIO_PIN_RST != UNDEF_PIN)
     {
+        if (bootloader)
+        {
+            pinMode(GPIO_PIN_BUSY, OUTPUT);
+            digitalWrite(GPIO_PIN_BUSY, LOW);
+        }
         pinMode(GPIO_PIN_RST, OUTPUT);
         digitalWrite(GPIO_PIN_RST, LOW);
         if (GPIO_PIN_RST_2 != UNDEF_PIN)
         {
+            if (bootloader)
+            {
+                pinMode(GPIO_PIN_BUSY_2, OUTPUT);
+                digitalWrite(GPIO_PIN_BUSY_2, LOW);
+            }
             pinMode(GPIO_PIN_RST_2, OUTPUT);
             digitalWrite(GPIO_PIN_RST_2, LOW);
         }
@@ -112,21 +125,30 @@ void LR2021Hal::reset()
         {
             digitalWrite(GPIO_PIN_RST_2, HIGH);
         }
-        delay(300); // LR2021 busy is high for 230ms after reset.  The WaitOnBusy timeout is only ~2ms.  So this long delay is required.
-    }
-
-    // Poll until BUSY goes low with a generous timeout to handle chips whose
-    // POR takes slightly longer than the fixed delay above.
-    {
-        uint32_t deadline = millis() + 500;
-        while (!WaitOnBusy(SX12XX_Radio_All))
+        delay(300); // LR2021 busy is high for 230ms after reset.  The WaitOnBusy timeout is only 1ms.  So this long delay is required.
+        if (bootloader)
         {
-            if ((int32_t)(millis() - deadline) >= 0) break;
+            pinMode(GPIO_PIN_BUSY, INPUT);
+            if (GPIO_PIN_RST_2 != UNDEF_PIN)
+            {
+                pinMode(GPIO_PIN_BUSY_2, INPUT);
+            }
+            delay(100);
         }
     }
+
+#if defined(PLATFORM_STM32)
+    // TLRS: bounded poll for chips whose POR outlasts the fixed delay; never hang boot on BUSY
+    const uint32_t deadline = millis() + 500;
+    while (!WaitOnBusy(SX12XX_Radio_All) && (int32_t)(millis() - deadline) < 0)
+    {
+    }
+#else
+    WaitOnBusy(SX12XX_Radio_All);
+#endif
 }
 
-void ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, const uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
+uint16_t ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, const uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber, uint32_t timeout)
 {
     WORD_ALIGNED_ATTR uint8_t OutBuffer[WORD_PADDED(size + 2)] = {
         (uint8_t)((command & 0xFF00) >> 8),
@@ -135,76 +157,126 @@ void ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, const uint8_t *bu
 
     memcpy(OutBuffer + 2, buffer, size);
 
-    if (!WaitOnBusy(radioNumber)) return;
-    SPIEx.write(radioNumber, OutBuffer, size + 2);
+    WaitOnBusy(radioNumber, pTimeout);
+    pCommand = command;
+    pTimeout = timeout;
+    SPIEx.read(radioNumber, OutBuffer, size + 2);
+    return OutBuffer[0] << 8 | OutBuffer[1];
 }
 
-void ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, SX12XX_Radio_Number_t radioNumber)
+uint16_t ICACHE_RAM_ATTR LR2021Hal::WriteCommand(uint16_t command, SX12XX_Radio_Number_t radioNumber, uint32_t timeout)
 {
     WORD_ALIGNED_ATTR uint8_t OutBuffer[WORD_PADDED(2)] = {
         (uint8_t)((command & 0xFF00) >> 8),
-        (uint8_t)(command & 0x00FF)
-    };
+        (uint8_t)(command & 0x00FF)};
 
-    if (!WaitOnBusy(radioNumber)) return;
-    SPIEx.write(radioNumber, OutBuffer, 2);
+    WaitOnBusy(radioNumber, pTimeout);
+    pCommand = command;
+    pTimeout = timeout;
+    SPIEx.read(radioNumber, OutBuffer, 2);
+    return OutBuffer[0] << 8 | OutBuffer[1];
 }
 
-void ICACHE_RAM_ATTR LR2021Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber)
+uint16_t ICACHE_RAM_ATTR LR2021Hal::ReadCommand(uint8_t *buffer, uint8_t size, SX12XX_Radio_Number_t radioNumber, uint32_t timeout)
 {
-    WORD_ALIGNED_ATTR uint8_t InBuffer[WORD_PADDED(size)] = {0};
+    WORD_ALIGNED_ATTR uint8_t InBuffer[WORD_PADDED(size)] = {};
 
     memcpy(InBuffer, buffer, size);
 
-    if (!WaitOnBusy(radioNumber)) return;
+    WaitOnBusy(radioNumber, pTimeout);
+    pCommand = ((int)buffer[0]) << 8 | buffer[1];
+    pTimeout = timeout;
     SPIEx.read(radioNumber, InBuffer, size);
 
     memcpy(buffer, InBuffer, size);
+    return InBuffer[0] << 8 | InBuffer[1];
 }
 
-bool ICACHE_RAM_ATTR LR2021Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber)
+bool ICACHE_RAM_ATTR LR2021Hal::WaitOnBusy(SX12XX_Radio_Number_t radioNumber, uint32_t wtimeoutUS)
 {
-    constexpr uint32_t wtimeoutUS = 2000U; // some commands may have extremely long busy times during startup, exceeding 1ms
     uint32_t startTime = 0;
+#ifdef DEBUG_LOG
+    startTime = micros();
+#endif
 
     while (true)
     {
         if (radioNumber == SX12XX_Radio_1)
         {
-            if (digitalRead(GPIO_PIN_BUSY) == LOW) return true;
+            if (digitalRead(GPIO_PIN_BUSY) == LOW)
+            {
+                return true;
+            }
         }
         else if (radioNumber == SX12XX_Radio_2)
         {
-            if (GPIO_PIN_BUSY_2 == UNDEF_PIN || digitalRead(GPIO_PIN_BUSY_2) == LOW) return true;
+            if (GPIO_PIN_BUSY_2 == UNDEF_PIN || digitalRead(GPIO_PIN_BUSY_2) == LOW)
+            {
+                return true;
+            }
         }
         else if (radioNumber == SX12XX_Radio_All)
         {
             if (GPIO_PIN_BUSY_2 != UNDEF_PIN)
             {
-                if (digitalRead(GPIO_PIN_BUSY) == LOW && digitalRead(GPIO_PIN_BUSY_2) == LOW) return true;
+                if (digitalRead(GPIO_PIN_BUSY) == LOW && digitalRead(GPIO_PIN_BUSY_2) == LOW)
+                {
+#ifdef DEBUG_LOG
+                    const uint32_t now = micros();
+                    if (wtimeoutUS != 0 && (now - startTime) > wtimeoutUS)
+                    {
+                        DBGLN("timedout %x %u > %u!", pCommand, now - startTime, wtimeoutUS);
+                        return false;
+                    }
+#endif
+                    return true;
+                }
             }
             else
             {
-                if (digitalRead(GPIO_PIN_BUSY) == LOW) return true;
+                if (digitalRead(GPIO_PIN_BUSY) == LOW)
+                {
+#ifdef DEBUG_LOG
+                    const uint32_t now = micros();
+                    if (wtimeoutUS != 0 && (now - startTime) > wtimeoutUS)
+                    {
+                        DBGLN("timedout %x %u > %u!", pCommand, now - startTime, wtimeoutUS);
+                        return false;
+                    }
+#endif
+                    return true;
+                }
             }
         }
         // Use this time to call micros().
-        uint32_t now = micros();
-        if (startTime == 0) startTime = now;
-        if ((now - startTime) > wtimeoutUS) return false;
+#ifndef DEBUG_LOG
+        const uint32_t now = micros();
+        if (startTime == 0)
+        {
+            startTime = now;
+        }
+        if (wtimeoutUS != 0 && (now - startTime) > wtimeoutUS)
+        {
+            return false;
+        }
+#endif
     }
 }
 
 void ICACHE_RAM_ATTR LR2021Hal::dioISR_1()
 {
     if (instance->IsrCallback_1)
+    {
         instance->IsrCallback_1();
+    }
 }
 
 void ICACHE_RAM_ATTR LR2021Hal::dioISR_2()
 {
     if (instance->IsrCallback_2)
+    {
         instance->IsrCallback_2();
+    }
 }
 
 #endif // UNIT_TEST

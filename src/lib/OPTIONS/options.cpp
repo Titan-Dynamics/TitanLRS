@@ -1,4 +1,3 @@
-#include "targets.h"
 #include "options.h"
 
 #include "logging.h"
@@ -178,6 +177,8 @@ static void applyCompileTimeDefaults()
     firmwareOptions.domain = 6;
 #elif defined(Regulatory_Domain_US_433_WIDE)
     firmwareOptions.domain = 7;
+#elif defined(Regulatory_Domain_TH_920)
+    firmwareOptions.domain = 8;
 #endif
     // 2.4 GHz domains (ISM_2400 / EU_CE_2400) index the single-entry 2.4 GHz table, so 0 is correct.
 

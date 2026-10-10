@@ -19,8 +19,8 @@ static uint8_t bootLEDcount;
 
 #if defined(PLATFORM_ESP32)
 #include "esp32rgb.h"
-static ESP32S3LedDriverGRB *stripgrb;
-static ESP32S3LedDriverRGB *striprgb;
+static ESP32LedDriverGRB *stripgrb;
+static ESP32LedDriverRGB *striprgb;
 #elif defined(PLATFORM_STM32)
 // STM32 does not support NeoPixel/WS2812 yet; provide a minimal stub
 struct RgbColor {
@@ -53,7 +53,7 @@ void WS281Binit()
     if (OPT_WS2812_IS_GRB)
     {
 #if defined(PLATFORM_ESP32)
-        stripgrb = new ESP32S3LedDriverGRB(pixelCount, GPIO_PIN_LED_WS2812);
+        stripgrb = new ESP32LedDriverGRB(pixelCount, GPIO_PIN_LED_WS2812);
 #else
         stripgrb = new NeoPixelBus<NeoGrbFeature, METHOD>(pixelCount, GPIO_PIN_LED_WS2812);
 #endif
@@ -64,7 +64,7 @@ void WS281Binit()
     else
     {
 #if defined(PLATFORM_ESP32)
-        striprgb = new ESP32S3LedDriverRGB(pixelCount, GPIO_PIN_LED_WS2812);
+        striprgb = new ESP32LedDriverRGB(pixelCount, GPIO_PIN_LED_WS2812);
 #else
         striprgb = new NeoPixelBus<NeoRgbFeature, METHOD> (pixelCount, GPIO_PIN_LED_WS2812);
 #endif

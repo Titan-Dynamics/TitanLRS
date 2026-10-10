@@ -25,9 +25,12 @@
 #define GPIO_PIN_DIO1_2 hardware_pin(HARDWARE_radio_dio1_2)
 #define GPIO_PIN_BUSY_2 hardware_pin(HARDWARE_radio_busy_2)
 
+// LR11xx/LR2021 DIO RF-switch table (layout key radio_rfsw_ctrl); absent -> driver default (IRQ on DIO9)
+#define LR1121_RFSW_CTRL hardware_u16_array(HARDWARE_radio_rfsw_ctrl)
+#define LR1121_RFSW_CTRL_COUNT hardware_int(HARDWARE_radio_rfsw_ctrl_count)
+
 // Antenna switch (diversity / Gemini path select); absent from the layout when the board has none
 #define GPIO_PIN_ANT_CTRL hardware_pin(HARDWARE_ant_ctrl)
-#define GPIO_PIN_ANT_CTRL_COMPL hardware_pin(HARDWARE_ant_ctrl_compl)
 
 // No I2C peripherals (screen, g-sensor, thermal sensor)
 #define GPIO_PIN_SCL UNDEF_PIN

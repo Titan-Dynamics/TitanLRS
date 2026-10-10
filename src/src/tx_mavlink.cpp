@@ -127,7 +127,7 @@ static const char *setAntennaMode(float value)
 {
     if (!isWhole(value, TX_RADIO_MODE_SWITCH))
         return "not an antenna mode";
-    if (get_elrs_airRateConfig(config.GetRate())->radio_type == RADIO_TYPE_LR1121_LORA_DUAL && value != TX_RADIO_MODE_GEMINI)
+    if (RadioBandMod::isBDUAL(get_elrs_airRateConfig(config.GetRate())->radio_type) && value != TX_RADIO_MODE_GEMINI)
         return "dual band rates use Gemini";
     crsfTransmitter.SetAntennaMode((uint8_t)value);
     return nullptr;
@@ -361,7 +361,7 @@ static void buildLinkInformation(mavlink_mlrs_radio_link_information_t *info)
     info->tx_frame_rate = frameRate;
     info->rx_frame_rate = ExpressLRS_currTlmDenom > 1 ? frameRate / ExpressLRS_currTlmDenom : 0;
     strncpy(info->mode_str, rateName(modParams->enum_rate), sizeof(info->mode_str));
-    strncpy(info->band_str, modParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL ? "X-Band" : FHSSgetRegulatoryDomain(), sizeof(info->band_str));
+    strncpy(info->band_str, RadioBandMod::isBDUAL(modParams->radio_type) ? "X-Band" : FHSSgetRegulatoryDomain(), sizeof(info->band_str));
     // Both ends run the same rate, so the rate table's sensitivity applies to both
     const int16_t sensitivity = get_elrs_RFperfParams(modParams->index)->RXsensitivity;
     info->tx_receive_sensitivity = info->rx_receive_sensitivity = sensitivity < 0 && sensitivity > -256 ? -sensitivity : 0;

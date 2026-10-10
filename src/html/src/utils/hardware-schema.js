@@ -47,7 +47,7 @@ const HARDWARE_SCHEMA = [
                 label: 'BUSY pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'GPIO Input connected to SX128x busy pin'
+                desc: 'GPIO Input connected to transceiver busy pin'
             },
             /* /FEATURE: NOT HAS_SX127X */
             /* FEATURE: HAS_SX127X */
@@ -56,7 +56,7 @@ const HARDWARE_SCHEMA = [
                 label: 'DIO0 pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'Interrupt pin for SX127x'
+                desc: 'Interrupt pin from transceiver'
             },
             /* /FEATURE: HAS_SX127X */
             /* FEATURE: NOT HAS_SX127X */
@@ -65,7 +65,7 @@ const HARDWARE_SCHEMA = [
                 label: 'DIO1 pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'Interrupt pin for SX128x/LR1121'
+                desc: 'Interrupt pin from transceiver'
             },
             /* /FEATURE: NOT HAS_SX127X */
             {
@@ -73,43 +73,44 @@ const HARDWARE_SCHEMA = [
                 label: 'MISO pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'MISO connected to (possibly) multiple SX1280/127x'
+                desc: 'MISO connected to (possibly) multiple transceiver'
             },
             {
                 id: 'radio_mosi',
                 label: 'MOSI pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'MOSI connected to (possibly) multiple SX1280/127x'
+                desc: 'MOSI connected to (possibly) multiple transceiver'
             },
             {
                 id: 'radio_nss',
                 label: 'NSS pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Chip select pin for first SX1280/127x'
+                desc: 'Chip select pin for first transceiver'
             },
             {
                 id: 'radio_rst',
                 label: 'RST pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Reset pin connected to (possibly) multiple SX1280/127x'
+                desc: 'Reset pin connected to (possibly) multiple transceiver'
             },
             {
                 id: 'radio_sck',
                 label: 'SCK pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Clock pin connected to (possibly) multiple SX1280/127x'
+                desc: 'Clock pin connected to (possibly) multiple transceiver'
             },
+            /* FEATURE: NOT IS_8285 */
             /* FEATURE: NOT HAS_SX127X */
             {
                 id: 'radio_busy_2',
                 label: 'BUSY_2 pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'Busy pin for second SX1280'
+                desc: 'Busy pin for second transceiver'
             },
             /* /FEATURE: NOT HAS_SX127X */
             /* FEATURE: HAS_SX127X */
@@ -118,7 +119,7 @@ const HARDWARE_SCHEMA = [
                 label: 'DIO0_2 pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'Interrupt pin for second SX127x'
+                desc: 'Interrupt pin for second transceiver'
             },
             /* /FEATURE: HAS_SX127X */
             /* FEATURE: NOT HAS_SX127X */
@@ -127,7 +128,7 @@ const HARDWARE_SCHEMA = [
                 label: 'DIO1_2 pin',
                 type: 'uint',
                 icon: 'input',
-                desc: 'Interrupt pin for second SX1280'
+                desc: 'Interrupt pin for second transceiver'
             },
             /* /FEATURE: NOT HAS_SX127X */
             {
@@ -135,15 +136,16 @@ const HARDWARE_SCHEMA = [
                 label: 'NSS_2 pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Chip select pin for second SX1280'
+                desc: 'Chip select pin for second transceiver'
             },
             {
                 id: 'radio_rst_2',
                 label: 'RST_2 pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Reset pin connected to second SX1280/127x'
+                desc: 'Reset pin connected to second transceiver'
             },
+            /* /FEATURE: NOT IS_8285 */
             /* FEATURE: NOT HAS_SX127X */
             {
                 id: 'radio_dcdc',
@@ -171,7 +173,57 @@ const HARDWARE_SCHEMA = [
                 icon: null,
                 desc: 'Comma-separated list of 8 values used for setting the LR1121 RF switch controls'
             },
+            {
+                id: 'radio_tcxo',
+                label: 'LR1121 TCXO voltage select',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'External'},
+                    {value: 0, label: '1.6V'}, {value: 1, label: '1.7V'}, {value: 2, label: '1.8V'},
+                    {value: 3, label: '2.2V'}, {value: 4, label: '2.4V'}, {value: 5, label: '2.7V'},
+                    {value: 6, label: '3.0V'}, {value: 7, label: '3.3V'}
+                ],
+                desc: 'Specify the voltage on the VTCXO pin. External, means the TCXO is externally powered'
+            },
+            {
+                id: 'radio_tcxo_delay',
+                label: 'LR1121 TCXO start time',
+                type: 'uint',
+                size: 11,
+                icon: null,
+                desc: 'How long (in 30.52us steps) for the TCXO to stabilize'
+            },
             /* /FEATURE: HAS_LR1121 */
+            /* FEATURE: HAS_LR2021 */
+            {
+                id: 'radio_rfsw_ctrl',
+                label: 'LR2021 RF Switch Controls',
+                type: 'array',
+                size: 40,
+                icon: null,
+                desc: 'Comma-separated list of 7 values used for setting the LR2021 RF switch controls'
+            },
+            {
+                id: 'radio_tcxo',
+                label: 'LR2021 TCXO voltage select',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'External'},
+                    {value: 0, label: '1.6V'}, {value: 1, label: '1.7V'}, {value: 2, label: '1.8V'},
+                    {value: 3, label: '2.2V'}, {value: 4, label: '2.4V'}, {value: 5, label: '2.7V'},
+                    {value: 6, label: '3.0V'}, {value: 7, label: '3.3V'}
+                ],
+                desc: 'Specify the voltage on the VTCXO pin. External, means the TCXO is externally powered'
+            },
+            {
+                id: 'radio_tcxo_delay',
+                label: 'LR2021 TCXO start time',
+                type: 'uint',
+                size: 11,
+                icon: null,
+                desc: 'How long (in ticks) for the TCXO to stabilize'
+            },
+            /* /FEATURE: HAS_LR2021 */
         ]
     },
 
@@ -179,18 +231,20 @@ const HARDWARE_SCHEMA = [
         title: 'Radio Antenna', rows: [
             {
                 id: 'ant_ctrl',
-                label: 'CTRL pin',
+                label: 'Antenna select pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Pin connected to Antenna select pin on power amplifier'
+                desc: 'Pin connected to Antenna select pin on power amplifier or switch'
             },
+            /* FEATURE: NOT IS_TX */
             {
-                id: 'ant_ctrl_compl',
-                label: 'CTRL_COMPL pin',
+                id: 'ant_group',
+                label: 'Antenna group pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Inverted CTRL for devices using antenna selectors that need separate pins for A/B selection'
+                desc: 'Secondary pin connected to an antenna switch, used to select from internal/external antenna port(s) via Lua'
             },
+            /* /FEATURE: NOT IS_TX */
         ]
     },
 
@@ -224,6 +278,7 @@ const HARDWARE_SCHEMA = [
                 icon: 'output',
                 desc: 'Enable TX mode PA (active high)'
             },
+            /* FEATURE: NOT IS_8285 */
             {
                 id: 'power_rxen_2',
                 label: 'RXEN_2 pin',
@@ -238,6 +293,7 @@ const HARDWARE_SCHEMA = [
                 icon: 'output',
                 desc: 'Enable TX mode PA on second SX1280 (active high)'
             },
+            /* /FEATURE: NOT IS_8285 */
             {
                 id: 'power_min',
                 label: 'Min Power',
@@ -250,17 +306,6 @@ const HARDWARE_SCHEMA = [
                 desc: 'Minimum selectable power output'
             },
             {
-                id: 'power_high',
-                label: 'High Power',
-                type: 'select',
-                options: [
-                    {value: 0, label: '10mW'}, {value: 1, label: '25mW'}, {value: 2, label: '50mW'},
-                    {value: 3, label: '100mW'}, {value: 4, label: '250mW'}, {value: 5, label: '500mW'},
-                    {value: 6, label: '1000mW'}, {value: 7, label: '2000mW'}
-                ],
-                desc: 'Highest selectable power output (if option for higher power is NOT enabled)'
-            },
-            {
                 id: 'power_max',
                 label: 'Max Power',
                 type: 'select',
@@ -269,7 +314,7 @@ const HARDWARE_SCHEMA = [
                     {value: 3, label: '100mW'}, {value: 4, label: '250mW'}, {value: 5, label: '500mW'},
                     {value: 6, label: '1000mW'}, {value: 7, label: '2000mW'}
                 ],
-                desc: "Absolute maximum selectable power output (only available if 'higher power' option is enabled)"
+                desc: "Maximum selectable power output"
             },
             {
                 id: 'power_default',
@@ -305,7 +350,7 @@ const HARDWARE_SCHEMA = [
                 size: 40,
                 desc: 'Comma-separated list of values that set the power output (if using a DAC then these set the Semtech power output)'
             },
-            /* FEATURE: HAS_LR1121 */
+            /* FEATURE: HAS_DUAL_BAND */
             {
                 id: 'power_values_dual',
                 label: 'Dual Power Value(s)',
@@ -313,7 +358,7 @@ const HARDWARE_SCHEMA = [
                 size: 40,
                 desc: 'Comma-separated list of values that set the higher frequency power output of a dual band Tx/Rx'
             },
-            /* /FEATURE: HAS_LR1121 */
+            /* /FEATURE: HAS_DUAL_BAND */
             {
                 id: 'power_lna_gain',
                 label: 'PA LNA Gain',
@@ -324,6 +369,7 @@ const HARDWARE_SCHEMA = [
         ]
     },
 
+    /* FEATURE: IS_TX */
     {
         title: 'Radio Power Detection', rows: [
             {
@@ -337,20 +383,19 @@ const HARDWARE_SCHEMA = [
                 id: 'power_pdet_intercept',
                 label: 'Intercept',
                 type: 'float',
-                size: 20,
+                size: 10,
                 desc: 'Intercept and Slope are used together to calculate the dBm from the measured mV on the PDET pin'
             },
             {
                 id: 'power_pdet_slope',
                 label: 'Slope',
                 type: 'float',
-                size: 20,
+                size: 10,
                 desc: 'dBm = mV * slope + intercept, this is then used to adjust the actual output power accordingly'
             },
         ]
     },
 
-    /* FEATURE: IS_TX */
     {
         title: 'Analog Joystick', rows: [
             {
@@ -435,13 +480,22 @@ const HARDWARE_SCHEMA = [
                 size: 40,
                 desc: 'Indexes into the "string" of RGB LEDs (if empty status indexes are used)'
             },
+            /* FEATURE: NOT IS_TX */
             {
                 id: 'led',
                 label: 'LED pin',
                 type: 'uint',
                 icon: 'output',
-                desc: 'Only use when only a single LED is used'
+                desc: 'Pin used for single color LED'
             },
+            {
+                id: 'led_red_invert',
+                label: 'LED inverted',
+                type: 'checkbox',
+                desc: 'LEDs are active LOW unless this is checked'
+            },
+            /* /FEATURE: NOT IS_TX */
+            /* FEATURE: IS_TX */
             {
                 id: 'led_red',
                 label: 'Red LED pin',
@@ -481,6 +535,7 @@ const HARDWARE_SCHEMA = [
                 type: 'checkbox',
                 desc: 'Check if the LED is active HIGH'
             },
+            /* /FEATURE: IS_TX */
         ]
     },
 
@@ -493,6 +548,7 @@ const HARDWARE_SCHEMA = [
                 icon: 'output',
                 desc: 'Single/first (active low) button'
             },
+            /* FEATURE: IS_TX */
             {
                 id: 'button_active_high',
                 label: 'Button 1 active high',
@@ -524,6 +580,7 @@ const HARDWARE_SCHEMA = [
                 type: 'uint',
                 desc: 'Index of button LED in RGB string, leave empty for no RGB LED'
             },
+            /* /FEATURE: IS_TX */
         ]
     },
 
@@ -576,16 +633,23 @@ const HARDWARE_SCHEMA = [
                 label: 'Screen type',
                 type: 'select',
                 options: [
-                    {value: 0, label: 'None'}, {value: 1, label: 'I2C OLED (SSD1306 128x64)'},
-                    {value: 2, label: 'SPI OLED (SSD1306 128x64)'}, {value: 3, label: 'SPI OLED (small SSD1306 128x32)'},
+                    {value: 0, label: 'None'},
+                    {value: 1, label: 'I2C OLED (SSD1306 128x64)'},
+                    {value: 2, label: 'SPI OLED (SSD1306 128x64)'},
                     {value: 4, label: 'SPI TFT (ST7735 160x80)'}
-                ], desc: 'Type of OLED connected'
+                ], desc: 'Type of display connected'
             },
             {
                 id: 'screen_reversed',
                 label: '180 rotation',
                 type: 'checkbox',
                 desc: 'Select to rotate the display 180 degrees'
+            },
+            {
+                id: 'screen_mirror',
+                label: 'Screen mirror',
+                type: 'checkbox',
+                desc: 'Mirror the display horizontally. Combine with "180 rotation" for vertical mirror. OLED only; no effect on SPI TFT screens.'
             },
             {
                 id: 'screen_cs',
@@ -764,23 +828,30 @@ const HARDWARE_SCHEMA = [
         title: 'PWM', rows: [
             {
                 id: 'pwm_outputs',
-                label: 'PWM output pins',
+                label: 'PWM pins',
                 type: 'array',
                 size: 40,
                 icon: 'pwm',
-                desc: 'Comma-separated list of pins used for PWM output'
+                desc: 'Comma-separated list of pins used for PWM (and other I/O features)'
+            },
+            {
+                id: 'pwm_out_only',
+                label: 'PWM pins are output-only',
+                type: 'checkbox',
+                icon: null,
+                desc: 'Enable this when the PWM pins are behind output-only buffers such as Schmitt triggers. Input or bidirectional functions like Serial and I2C will be disabled on PWM pins.'
             },
         ]
     },
 
     {
-        title: 'VBat', rows: [
+        title: 'Voltage Sensors', rows: [
             {
                 id: 'vbat',
                 label: 'VBat pin',
                 type: 'uint',
                 icon: 'analog',
-                desc: 'Analog input pin for reading VBAT voltage (1V max on 8285, 3.3V max on ESP32)'
+                desc: 'Primary analog input pin for battery voltage (1V max on 8285, 3.3V max on ESP32)'
             },
             {
                 id: 'vbat_offset',
@@ -796,6 +867,7 @@ const HARDWARE_SCHEMA = [
                 size: 7,
                 desc: 'voltage = (analog - offset) / scale'
             },
+            /* FEATURE: NOT IS_8285 */
             {
                 id: 'vbat_atten',
                 label: 'VBat attenuation',
@@ -808,9 +880,196 @@ const HARDWARE_SCHEMA = [
                 ],
                 desc: 'ADC pin attenuation (ESP32) and optional efuse-based calibration adjustment'
             },
+            /* /FEATURE: NOT IS_8285 */
+            {
+                id: 'vbat_noreading',
+                label: 'VBat no-reading threshold',
+                type: 'uint',
+                size: 7,
+                desc: 'Raw ADC values at or below this are treated as not connected (0mV in cell telemetry)'
+            },
+            {
+                id: 'vbat_cal_min',
+                label: 'VBat calibration min',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined minimum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vbat_cal_max',
+                label: 'VBat calibration max',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined maximum supported source voltage in mV used by the calibration wizard'
+            },
+            /* FEATURE: NOT IS_8285 */
+            {
+                id: 'vsrc1',
+                label: 'VSrc1 pin',
+                type: 'uint',
+                icon: 'analog',
+                desc: 'Voltage source input pin for source 2'
+            },
+            {
+                id: 'vsrc1_offset',
+                label: 'VSrc1 offset',
+                type: 'int',
+                size: 7,
+                desc: 'Offset used with the VSrc1 analog pin to calculate the voltage'
+            },
+            {
+                id: 'vsrc1_scale',
+                label: 'VSrc1 scale',
+                type: 'uint',
+                size: 7,
+                desc: 'voltage = (analog - offset) / scale'
+            },
+            {
+                id: 'vsrc1_atten',
+                label: 'VSrc1 attenuation',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'Default'}, {value: 0, label: '0 dB'}, {value: 1, label: '2.5 dB'},
+                    {value: 2, label: '6 dB'}, {value: 3, label: '11 dB'}, {value: 4, label: '0 dB + calibration'},
+                    {value: 5, label: '2.5 dB + calibration'}, {value: 6, label: '6 dB + calibration'},
+                    {value: 7, label: '11 dB + calibration'}
+                ],
+                desc: 'ADC pin attenuation (ESP32) and optional efuse-based calibration adjustment'
+            },
+            {
+                id: 'vsrc1_noreading',
+                label: 'VSrc1 no-reading threshold',
+                type: 'uint',
+                size: 7,
+                desc: 'Raw ADC values at or below this are treated as not connected (0mV in cell telemetry)'
+            },
+            {
+                id: 'vsrc1_cal_min',
+                label: 'VSrc1 calibration min',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined minimum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vsrc1_cal_max',
+                label: 'VSrc1 calibration max',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined maximum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vsrc2',
+                label: 'VSrc2 pin',
+                type: 'uint',
+                icon: 'analog',
+                desc: 'Voltage source input pin for source 3'
+            },
+            {
+                id: 'vsrc2_offset',
+                label: 'VSrc2 offset',
+                type: 'int',
+                size: 7,
+                desc: 'Offset used with the VSrc2 analog pin to calculate the voltage'
+            },
+            {
+                id: 'vsrc2_scale',
+                label: 'VSrc2 scale',
+                type: 'uint',
+                size: 7,
+                desc: 'voltage = (analog - offset) / scale'
+            },
+            {
+                id: 'vsrc2_atten',
+                label: 'VSrc2 attenuation',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'Default'}, {value: 0, label: '0 dB'}, {value: 1, label: '2.5 dB'},
+                    {value: 2, label: '6 dB'}, {value: 3, label: '11 dB'}, {value: 4, label: '0 dB + calibration'},
+                    {value: 5, label: '2.5 dB + calibration'}, {value: 6, label: '6 dB + calibration'},
+                    {value: 7, label: '11 dB + calibration'}
+                ],
+                desc: 'ADC pin attenuation (ESP32) and optional efuse-based calibration adjustment'
+            },
+            {
+                id: 'vsrc2_noreading',
+                label: 'VSrc2 no-reading threshold',
+                type: 'uint',
+                size: 7,
+                desc: 'Raw ADC values at or below this are treated as not connected (0mV in cell telemetry)'
+            },
+            {
+                id: 'vsrc2_cal_min',
+                label: 'VSrc2 calibration min',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined minimum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vsrc2_cal_max',
+                label: 'VSrc2 calibration max',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined maximum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vsrc3',
+                label: 'VSrc3 pin',
+                type: 'uint',
+                icon: 'analog',
+                desc: 'Voltage source input pin for source 4'
+            },
+            {
+                id: 'vsrc3_offset',
+                label: 'VSrc3 offset',
+                type: 'int',
+                size: 7,
+                desc: 'Offset used with the VSrc3 analog pin to calculate the voltage'
+            },
+            {
+                id: 'vsrc3_scale',
+                label: 'VSrc3 scale',
+                type: 'uint',
+                size: 7,
+                desc: 'voltage = (analog - offset) / scale'
+            },
+            {
+                id: 'vsrc3_atten',
+                label: 'VSrc3 attenuation',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'Default'}, {value: 0, label: '0 dB'}, {value: 1, label: '2.5 dB'},
+                    {value: 2, label: '6 dB'}, {value: 3, label: '11 dB'}, {value: 4, label: '0 dB + calibration'},
+                    {value: 5, label: '2.5 dB + calibration'}, {value: 6, label: '6 dB + calibration'},
+                    {value: 7, label: '11 dB + calibration'}
+                ],
+                desc: 'ADC pin attenuation (ESP32) and optional efuse-based calibration adjustment'
+            },
+            {
+                id: 'vsrc3_noreading',
+                label: 'VSrc3 no-reading threshold',
+                type: 'uint',
+                size: 7,
+                desc: 'Raw ADC values at or below this are treated as not connected (0mV in cell telemetry)'
+            },
+            {
+                id: 'vsrc3_cal_min',
+                label: 'VSrc3 calibration min',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined minimum supported source voltage in mV used by the calibration wizard'
+            },
+            {
+                id: 'vsrc3_cal_max',
+                label: 'VSrc3 calibration max',
+                type: 'uint',
+                size: 7,
+                desc: 'Manufacturer-defined maximum supported source voltage in mV used by the calibration wizard'
+            },
+            /* /FEATURE: NOT IS_8285 */
         ]
     },
 
+    /* FEATURE: NOT IS_8285 */
     {
         title: 'SPI VTX', rows: [
             {
@@ -911,7 +1170,8 @@ const HARDWARE_SCHEMA = [
             },
         ]
     },
+    /* /FEATURE: NOT IS_8285 */
     /* /FEATURE: NOT IS_TX */
-];
+]
 
-export default HARDWARE_SCHEMA;
+export default HARDWARE_SCHEMA

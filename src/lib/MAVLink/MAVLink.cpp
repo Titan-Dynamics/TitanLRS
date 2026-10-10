@@ -1,7 +1,11 @@
 #include "MAVLink.h"
 
 #include "CRSFRouter.h"
-#include "common/mavlink.h"
+// Use the ardupilotmega dialect (superset of common) so ArduPilot-specific
+// messages such as RPM (#226) are known to the frame parser. The per-message
+// CRC_EXTRA table is dialect-specific: a common-only build rejects RPM frames
+// as bad-CRC even though the struct would decode fine.
+#include "ardupilotmega/mavlink.h"
 
 #include "ardupilot_custom_telemetry.h"
 #include "ardupilot_protocol.h"
@@ -24,7 +28,7 @@ static void ap_send_crsf_passthrough_single(crsf_addr_e destination, uint16_t ap
     crsfpassthrough.p.appid = appid;
     crsfpassthrough.p.data = data;
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough.p)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(ap_crsf_passthrough_single_t)));
     crsfRouter.deliverMessageTo(destination, &crsfpassthrough.h);
 }
 
@@ -46,7 +50,7 @@ static void ap_send_crsf_passthrough_text(crsf_addr_e destination, const char *t
     crsftext.p.severity = severity;
     memcpy(crsftext.p.text, text, sizeof(crsftext.p.text));
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsftext, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsftext.p)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsftext, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(ap_crsf_status_text_t)));
     crsfRouter.deliverMessageTo(destination, &crsftext.h);
 }
 
@@ -75,7 +79,7 @@ static void ap_send_crsf_passthrough_multi(crsf_addr_e destination, uint16_t app
     crsfpassthrough.p.items[1].appid = appid2;
     crsfpassthrough.p.items[1].data = data2;
 
-    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(crsfpassthrough.p)));
+    crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfpassthrough, CRSF_FRAMETYPE_ARDUPILOT_RESP, CRSF_FRAME_SIZE(sizeof(ap_crsf_passthrough_multi_t)));
     crsfRouter.deliverMessageTo(destination, &crsfpassthrough.h);
 }
 
@@ -110,7 +114,14 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
             case MAVLINK_MSG_ID_BATTERY_STATUS: {
                 mavlink_battery_status_t battery_status;
                 mavlink_msg_battery_status_decode(&msg, &battery_status);
-                if (battery_status.id != 0) {
+                // Yaapu supports two batteries: BATT_1 (0x5003) and BATT_2 (0x5008).
+                if (battery_status.id > 1) {
+                    break;
+                }
+                if (battery_status.id == 1) {
+                    // Second battery: passthrough only (native CRSF has a single battery
+                    // frame). Same bit-packing as BATT_1, per Ardupilot's calc_batt().
+                    ap_send_crsf_passthrough_single(destination, 0x5008, format_batt1(battery_status.voltages[0], battery_status.current_battery, battery_status.current_consumed));
                     break;
                 }
                 CRSF_MK_FRAME_T(crsf_sensor_battery_t)
@@ -125,7 +136,7 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                 // mAh
                 crsfbatt.p.capacity = 0;
                 if (battery_status.current_consumed > 0){ // int32_t, -1 means invalid
-                    crsfbatt.p.capacity = htobe32(std::min(((uint32_t) battery_status.current_consumed), (uint32_t) 0xFFFFFFU)) >> 8; // 24bit big-endian value
+                    crsfbatt.p.capacity = htobe24(std::min(((uint32_t) battery_status.current_consumed), (uint32_t) 0xFFFFFFU)); // 24bit value
                 }
                 // 0-100%
                 crsfbatt.p.remaining = 0;
@@ -215,8 +226,9 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                 if (len > 0 && (len + 1 < sizeof(crsffm.p.flight_mode)) && !(heartbeat.base_mode & MAV_MODE_FLAG_SAFETY_ARMED)) {
                     crsffm.p.flight_mode[len] = '*';
                     crsffm.p.flight_mode[len + 1] = '\0';
+                    len++;
                 }
-                crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsffm, CRSF_FRAMETYPE_FLIGHT_MODE, CRSF_FRAME_SIZE(sizeof(crsffm.p)));
+                crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsffm, CRSF_FRAMETYPE_FLIGHT_MODE, CRSF_FRAME_SIZE(sizeof(crsffm.p))); // TLRS: upstream sizeof(len+1) == sizeof(size_t) truncated the mode string
                 crsfRouter.deliverMessageTo(destination, &crsffm.h);
 
                 /**
@@ -259,6 +271,39 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                                                );
                 break;
             }
+            case MAVLINK_MSG_ID_SYSTEM_TIME: {
+                mavlink_system_time_t system_time;
+                mavlink_msg_system_time_decode(&msg, &system_time);
+                // SYSTEM_TIME.time_unix_usec is non-zero only when AP::rtc() has a valid time source
+                if (system_time.time_unix_usec == 0) {
+                    break;
+                }
+                time_t time_unix = (time_t)(system_time.time_unix_usec / 1000000);
+                struct tm *time_info = gmtime(&time_unix);
+                CRSF_MK_FRAME_T(crsf_sensor_gps_time_t) crsftime{};
+                crsftime.p.year = htobe16(time_info->tm_year + 1900);
+                crsftime.p.month = time_info->tm_mon + 1;
+                crsftime.p.day = time_info->tm_mday;
+                crsftime.p.hour = time_info->tm_hour;
+                crsftime.p.minute = time_info->tm_min;
+                crsftime.p.second = time_info->tm_sec;
+                crsftime.p.millisecond = 0; // intentionally not populated, avoids 64-bit maths
+                crsfRouter.SetHeaderAndCrc(&crsftime.h, CRSF_FRAMETYPE_GPS_TIME, CRSF_FRAME_SIZE(sizeof(crsf_sensor_gps_time_t)));
+                crsfRouter.deliverMessageTo(destination, &crsftime.h);
+                break;
+            }
+            case MAVLINK_MSG_ID_SCALED_PRESSURE: {
+                mavlink_scaled_pressure_t scaled_pressure;
+                mavlink_msg_scaled_pressure_decode(&msg, &scaled_pressure);
+                // CRSF temp is variable-length: crsf_sensor_temp_t reserves 20 samples but we send only one
+                CRSF_MK_FRAME_T(crsf_sensor_temp_t) crsftemp{};
+                crsftemp.p.source_id = 1; // 1 = Ambient (per CRSF temp source_id convention)
+                crsftemp.p.temperature[0] = htobe16(scaled_pressure.temperature / 10); // cdegC -> ddegC
+                constexpr size_t payloadLen = sizeof(crsftemp.p.source_id) + sizeof(crsftemp.p.temperature[0]);
+                crsfRouter.SetHeaderAndCrc(&crsftemp.h, CRSF_FRAMETYPE_TEMP, CRSF_FRAME_SIZE(payloadLen));
+                crsfRouter.deliverMessageTo(destination, &crsftemp.h);
+                break;
+            }
             case MAVLINK_MSG_ID_HOME_POSITION: {
                 mavlink_home_position_t home_pos;
                 mavlink_msg_home_position_decode(&msg, &home_pos);
@@ -280,6 +325,13 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
                 ap_send_crsf_passthrough_single(destination, 0x500D, format_waypoint(high_latency_data.target_heading, high_latency_data.target_distance, high_latency_data.wp_num));
                 break;
             }
+            case MAVLINK_MSG_ID_RPM: {
+                mavlink_rpm_t rpm;
+                mavlink_msg_rpm_decode(&msg, &rpm);
+                // send the rpm message to Yaapu Telemetry Script
+                ap_send_crsf_passthrough_single(destination, 0x500A, format_rpm(rpm.rpm1, rpm.rpm2));
+                break;
+            }
             }
         }
     }
@@ -287,7 +339,7 @@ void convert_mavlink_to_crsf_telem(crsf_addr_e destination, uint8_t *CRSFinBuffe
 
 bool isThisAMavPacket(uint8_t *buffer, uint16_t bufferSize)
 {
-    for (uint8_t i = 0; i < bufferSize; ++i)
+    for (uint16_t i = 0; i < bufferSize; ++i)
     {
         uint8_t c = buffer[i];
 

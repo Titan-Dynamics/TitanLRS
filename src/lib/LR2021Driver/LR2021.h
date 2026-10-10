@@ -1,8 +1,8 @@
 #pragma once
 
-#include "targets.h"
-#include "SX12xxDriverCommon.h"
 #include "LR2021_Regs.h"
+#include "SX12xxDriverCommon.h"
+#include "targets.h"
 
 #ifdef PLATFORM_ESP8266
 #include <cstdint>
@@ -29,8 +29,10 @@ public:
     void End();
     void SetTxIdleMode() { SetMode(LR2021_MODE_FS, SX12XX_Radio_All); }; // set Idle mode used when switching from RX to TX
     void Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t freq,
-                uint8_t PreambleLength, bool InvertIQ, uint8_t PayloadLength, bool setFSKModulation,
-                uint8_t fskSyncWord1, uint8_t fskSyncWord2, SX12XX_Radio_Number_t radioNumber = SX12XX_Radio_All);
+                uint8_t PreambleLength, bool InvertIQ, uint8_t PayloadLength, RadioBandMod::Combined modulation,
+                uint8_t fskSyncWord1, uint8_t fskSyncWord2,
+                uint32_t flrcSyncWord, uint16_t flrcCrcSeed,
+                SX12XX_Radio_Number_t radioNumber = SX12XX_Radio_All);
     void SetFrequencyReg(uint32_t freq, SX12XX_Radio_Number_t radioNumber, bool doRx = false, uint32_t rxTime = 0);
     void SetOutputPower(int8_t power, bool isSubGHz = true);
     void startCWTest(uint32_t freq, SX12XX_Radio_Number_t radioNumber);
@@ -40,9 +42,6 @@ public:
 
     void TXnb(uint8_t *data, bool sendGeminiBuffer, uint8_t *dataGemini, SX12XX_Radio_Number_t radioNumber);
     void RXnb();
-
-    uint32_t GetIrqStatus(SX12XX_Radio_Number_t radioNumber);
-    void ClearIrqStatus(SX12XX_Radio_Number_t radioNumber);
 
     void StartRssiInst(SX12XX_Radio_Number_t radioNumber);
     int8_t GetRssiInst(SX12XX_Radio_Number_t radioNumber);
@@ -54,7 +53,8 @@ private:
     // must not be a valid power register value
     static constexpr uint8_t PWRPENDING_NONE = 0x7f;
 
-    bool useFSK;
+    // LR2021_RadioOperatingModes_t currOpmode;
+    RadioBandMod::Combined modulation;
     bool modeSupportsFei;
     uint8_t pwrCurrentLF;
     uint8_t pwrPendingLF;
@@ -81,9 +81,16 @@ private:
     void SetPacketParamsFSK(uint8_t PreambleLength, SX12XX_Radio_Number_t radioNumber);
     void SetFSKSyncWord(uint8_t fskSyncWord1, uint8_t fskSyncWord2, SX12XX_Radio_Number_t radioNumber);
 
+    // FLRC functions
+    void ConfigModParamsFLRC(uint8_t bw, uint8_t cr, uint32_t bt, SX12XX_Radio_Number_t radioNumber);
+    void SetPacketParamsFLRC(uint8_t PreambleLength, uint32_t syncWord, uint16_t crcSeed, SX12XX_Radio_Number_t radioNumber);
+
     void SetDioIrqParams(uint8_t dio);
     void SetDioAsRfSwitch();
     void CorrectRegisterForSF6(uint8_t sf, SX12XX_Radio_Number_t radioNumber);
+
+    uint32_t GetIrqStatus(SX12XX_Radio_Number_t radioNumber);
+    void ClearIrqStatus(SX12XX_Radio_Number_t radioNumber);
 
     static void IsrCallback_1();
     static void IsrCallback_2();
@@ -96,4 +103,8 @@ private:
     void CommitOutputPower();
     void WriteOutputPower(uint8_t power, SX12XX_Radio_Number_t radioNumber);
     void SetPaConfig(bool isSubGHz, SX12XX_Radio_Number_t radioNumber);
+
+    uint16_t WriteRegMem32(uint32_t address, const uint32_t *buffer, uint8_t length, SX12XX_Radio_Number_t radioNumber);
+    uint16_t LoadPatchRAM(SX12XX_Radio_Number_t radioNumber);
+    uint16_t EnablePatchRAM();
 };

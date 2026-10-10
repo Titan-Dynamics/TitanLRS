@@ -17,23 +17,7 @@ static uint32_t validRSSIdelayUs = 0;
 
 static uint32_t SpreadingFactorToRSSIvalidDelayUs(uint8_t SF, uint8_t radio_type)
 {
-#if defined(RADIO_LR1121)
-  if (radio_type == RADIO_TYPE_LR1121_LORA_2G4 || radio_type == RADIO_TYPE_LR1121_LORA_DUAL)
-  {
-    switch((lr11xx_radio_lora_sf_t)SF)
-    {
-      case LR11XX_RADIO_LORA_SF5: return 22;
-      case LR11XX_RADIO_LORA_SF6: return 22;
-      case LR11XX_RADIO_LORA_SF7: return 22;
-      case LR11XX_RADIO_LORA_SF8: return 240;
-      default: return 240;
-    }
-  }
-  if (radio_type == RADIO_TYPE_LR1121_GFSK_2G4)
-  {
-    return 40; // 40us settling time; documentation says Twait for 467 kHz bandwidth is 30.68us
-  }
-#elif defined(RADIO_SX128X)
+#if defined(RADIO_SX128X)
   // The necessary wait time from RX start to valid instant RSSI reading
   // changes with the spreading factor setting.
   // The worst case necessary wait time is TX->RX switch time + Lora symbol time
@@ -51,7 +35,7 @@ static uint32_t SpreadingFactorToRSSIvalidDelayUs(uint8_t SF, uint8_t radio_type
   // SF7 ~218us (60us + SF7 symbol time)
   // SF8 ~376us (60us + SF8 symbol time) Empirical testing shows 480us to be the sweet-spot
 
-  if (radio_type == RADIO_TYPE_SX128x_LORA)
+  if (radio_type == RadioBandMod::Combined::LORA_2G4)
   {
     switch((SX1280_RadioLoRaSpreadingFactors_t)SF)
     {
@@ -62,10 +46,42 @@ static uint32_t SpreadingFactorToRSSIvalidDelayUs(uint8_t SF, uint8_t radio_type
       default: return 480;
     }
   }
-  if (radio_type == RADIO_TYPE_SX128x_FLRC)
+  if (radio_type == RadioBandMod::Combined::FLRC_2G4)
   {
     return 60 + 20; // switching time (60us) + 20us settling time (seems fine when testing)
   }
+#elif defined(RADIO_LR1121)
+    if (radio_type == RadioBandMod::Combined::LORA_2G4 || radio_type == RadioBandMod::Combined::LORA_DUAL)
+    {
+        switch((lr11xx_radio_lora_sf_t)SF)
+        {
+        case LR11XX_RADIO_LORA_SF5: return 22;
+        case LR11XX_RADIO_LORA_SF6: return 22;
+        case LR11XX_RADIO_LORA_SF7: return 22;
+        case LR11XX_RADIO_LORA_SF8: return 240;
+        default: return 240;
+        }
+    }
+    if (radio_type == RadioBandMod::Combined::GFSK_2G4)
+    {
+        return 40; // 40us settling time; documentation says Twait for 467 kHz bandwidth is 30.68us
+    }
+#elif defined(RADIO_LR2021) // PKTEST
+    if (radio_type == RadioBandMod::Combined::LORA_2G4 || radio_type == RadioBandMod::Combined::LORA_DUAL)
+    {
+        switch((lr20xx_radio_lora_sf_t)SF)
+        {
+        case LR2021_RADIO_LORA_SF5: return 22;
+        case LR2021_RADIO_LORA_SF6: return 22;
+        case LR2021_RADIO_LORA_SF7: return 22;
+        case LR2021_RADIO_LORA_SF8: return 240;
+        default: return 240;
+        }
+    }
+    if (radio_type == RadioBandMod::Combined::GFSK_2G4 || radio_type == RadioBandMod::Combined::FLRC_2G4)
+    {
+        return 40; // 40us settling time; documentation says Twait for 467 kHz bandwidth is 30.68us
+    }
 #endif
   return 0;
 }
@@ -73,13 +89,13 @@ static uint32_t SpreadingFactorToRSSIvalidDelayUs(uint8_t SF, uint8_t radio_type
 void LbtEnableIfRequired()
 {
     LbtIsEnabled = config.GetPower() > PWR_10mW;
-#if defined(RADIO_LR1121)
-    LbtIsEnabled = LbtIsEnabled && (ExpressLRS_currAirRate_Modparams->radio_type == RADIO_TYPE_LR1121_LORA_2G4 || ExpressLRS_currAirRate_Modparams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4 || ExpressLRS_currAirRate_Modparams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL);
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
+    LbtIsEnabled &= (RadioBandMod::isB2G4(ExpressLRS_currAirRate_Modparams->radio_type) || RadioBandMod::isBDUAL(ExpressLRS_currAirRate_Modparams->radio_type));
 #endif
     validRSSIdelayUs = SpreadingFactorToRSSIvalidDelayUs(ExpressLRS_currAirRate_Modparams->sf, ExpressLRS_currAirRate_Modparams->radio_type);
 }
 
-static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, uint8_t radio_type)
+static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, RadioBandMod::Combined radio_type)
 {
   // Calculated from EN 300 328, adjusted for 800kHz BW for sx1280
   // TL = -70 dBm/MHz + 10*log10(0.8MHz) + 10 × log10 (100 mW / Pout) (Pout in mW e.i.r.p.)
@@ -87,8 +103,8 @@ static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, uint8_t
   // different RF frontends.
   // TODO: Maybe individual adjustment offset for differences in
   // rssi reading between bandwidth setting is also necessary when other BW than 0.8MHz are used.
-#if defined(RADIO_LR1121)
-  if (radio_type == RADIO_TYPE_LR1121_LORA_2G4 || radio_type == RADIO_TYPE_LR1121_LORA_DUAL)
+#if defined(RADIO_SX128X)
+  if (radio_type == RadioBandMod::Combined::LORA_2G4)
   {
     switch(txPower)
     {
@@ -100,7 +116,7 @@ static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, uint8_t
       default: return -71 + LBT_RSSI_THRESHOLD_OFFSET_DB;
     }
   }
-  if (radio_type == RADIO_TYPE_LR1121_GFSK_2G4)
+  if (radio_type == RadioBandMod::Combined::FLRC_2G4)
   {
     switch(txPower)
     {
@@ -112,8 +128,8 @@ static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, uint8_t
       default: return -73 + LBT_RSSI_THRESHOLD_OFFSET_DB;
     }
   }
-#elif defined(RADIO_SX128X)
-  if (radio_type == RADIO_TYPE_SX128x_LORA)
+#elif defined(RADIO_LR1121) || defined(RADIO_LR2021)
+  if (radio_type == RadioBandMod::Combined::LORA_2G4 || radio_type == RadioBandMod::Combined::LORA_DUAL)
   {
     switch(txPower)
     {
@@ -125,7 +141,7 @@ static int8_t ICACHE_RAM_ATTR PowerEnumToLBTLimit(PowerLevels_e txPower, uint8_t
       default: return -71 + LBT_RSSI_THRESHOLD_OFFSET_DB;
     }
   }
-  if (radio_type == RADIO_TYPE_SX128x_FLRC)
+  if (radio_type == RadioBandMod::Combined::GFSK_2G4 || radio_type == RadioBandMod::Combined::FLRC_2G4)
   {
     switch(txPower)
     {
@@ -186,14 +202,14 @@ SX12XX_Radio_Number_t ICACHE_RAM_ATTR LbtChannelIsClear(SX12XX_Radio_Number_t ra
   SX12XX_Radio_Number_t clearChannelsMask = SX12XX_Radio_NONE;
   const int8_t rssiCutOff = PowerEnumToLBTLimit(POWERMGNT::currPower(), ExpressLRS_currAirRate_Modparams->radio_type);
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
   Radio.StartRssiInst(radioNumber);
 #endif
   if (radioNumber & SX12XX_Radio_1)
   {
     // If using dualband, radio1 is always SubGHz and no CCA is required.
     // Leave rssiInst1=-128 so it always passes.
-    if (ExpressLRS_currAirRate_Modparams->radio_type != RADIO_TYPE_LR1121_LORA_DUAL)
+    if (!RadioBandMod::isBDUAL(ExpressLRS_currAirRate_Modparams->radio_type))
     {
         rssiInst1 = Radio.GetRssiInst(SX12XX_Radio_1);
     }
