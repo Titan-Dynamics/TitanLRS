@@ -82,6 +82,29 @@ public:
      */
     virtual bool sendImmediateRC() { return false; }
 
+    /**
+     * @brief This method is called on events, for example settings changed.
+     */
+    virtual void event() {}
+
+    /**
+     * @brief Forward a message received over the air (uplink DATA) to the serial port.
+     * Only drivers that carry raw messages (e.g. MAVLink) implement this.
+     *
+     * @param data the message: [address, length, payload...]
+     */
+    virtual void forwardMessage(const uint8_t *data) {}
+
+    /**
+     * @brief Get the next payload received on the serial port to send over the air (downlink DATA).
+     * Only drivers that carry raw messages (e.g. MAVLink) implement this.
+     *
+     * @param nextPayloadSize set to the size of the payload written to payloadData
+     * @param payloadData buffer for the payload
+     * @return true if a payload was written
+     */
+    virtual bool GetNextPayload(uint8_t *nextPayloadSize, uint8_t *payloadData) { return false; }
+
 protected:
     /// @brief the output stream for the serial port
     Stream *_outputPort;

@@ -506,7 +506,8 @@ bool ICACHE_RAM_ATTR HandleSendDataDl()
     bool tlmQueued = false;
     if (firmwareOptions.is_airport)
     {
-        tlmQueued = ((SerialAirPort *)serialIO)->isTlmQueued();
+        // serialIO is nullptr while reconfigureSerial() swaps drivers
+        tlmQueued = serialIO != nullptr && ((SerialAirPort *)serialIO)->isTlmQueued();
     }
     else
     {
@@ -969,7 +970,9 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_DataUl(OTA_Packet_s const * const ot
 {
     if (firmwareOptions.is_airport)
     {
-        OtaUnpackAirportData(otaPktPtr, &((SerialAirPort *)serialIO)->apOutputBuffer);
+        // serialIO is nullptr while reconfigureSerial() swaps drivers
+        if (serialIO != nullptr)
+            OtaUnpackAirportData(otaPktPtr, &((SerialAirPort *)serialIO)->apOutputBuffer);
         return;
     }
 
@@ -1269,10 +1272,7 @@ void DataUlReceiveComplete()
         break;
     case MSP_ELRS_MAVLINK_TLM: // 0xFD
         // raw mavlink data
-        if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
-        {
-            ((SerialMavlink *)serialIO)->forwardMessage(DataUlBuffer);
-        }
+        serialIO->forwardMessage(DataUlBuffer);
         break;
     default:
         //handle received CRSF package
@@ -1446,9 +1446,12 @@ static void serial1Shutdown()
 {
     if(serial1IO != nullptr)
     {
-        Serial1.end();
-        delete serial1IO;
+        // clear the pointer before ending/deleting so the RC timer ISR (sendImmediateRC) never sees a
+        // deleted driver; the ISR runs on this core, so it sees either the live driver or nullptr
+        SerialIO *oldIO = serial1IO;
         serial1IO = nullptr;
+        Serial1.end();
+        delete oldIO;
     }
 }
 
@@ -1542,13 +1545,16 @@ static void serialShutdown()
     BackpackOrLogStrm = new NullStream();
     if(serialIO != nullptr)
     {
+        // clear the pointer before ending/deleting so the RC timer ISR (sendImmediateRC) never sees a
+        // deleted driver; the ISR runs on this core, so it sees either the live driver or nullptr
+        SerialIO *oldIO = serialIO;
+        serialIO = nullptr;
 #if defined(PLATFORM_STM32)
         SERIAL_PROTOCOL_TX.end();
 #else
         Serial.end();
 #endif
-        delete serialIO;
-        serialIO = nullptr;
+        delete oldIO;
     }
 }
 
@@ -2220,7 +2226,7 @@ void loop()
         DataDlSender.SetDataToTransmit(DataDlBuffer, nextPlayloadSize);
     }
 
-    if (config.GetSerialProtocol() == PROTOCOL_MAVLINK && !DataDlSender.IsActive() && ((SerialMavlink *)serialIO)->GetNextPayload(&nextPlayloadSize, DataDlBuffer))
+    if (!DataDlSender.IsActive() && serialIO->GetNextPayload(&nextPlayloadSize, DataDlBuffer))
     {
         DataDlSender.SetDataToTransmit(DataDlBuffer, nextPlayloadSize);
     }
