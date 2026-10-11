@@ -11,7 +11,7 @@ from enum import Enum
 import shutil
 
 import firmware
-from firmware import DeviceType, FirmwareOptions, RadioType, MCUType, TXType
+from firmware import DeviceType, FirmwareOptions, MCUType, TXType
 import UnifiedConfiguration
 import binary_flash
 from binary_flash import UploadMethod
@@ -26,6 +26,7 @@ class RegulatoryDomain(Enum):
     eu_868 = 'eu_868'
     au_915 = 'au_915'
     fcc_915 = 'fcc_915'
+    th_920 = 'th_920'
 
     def __str__(self):
         return self.value
@@ -66,6 +67,8 @@ def domain_number(domain):
         return 6
     elif domain == RegulatoryDomain.us_433_wide:
         return 7
+    elif domain == RegulatoryDomain.th_920:
+        return 8
 
 def patch_unified(args, options):
     json_flags = {}
@@ -104,9 +107,7 @@ def patch_unified(args, options):
         args.file,
         JSONEncoder().encode(json_flags),
         args.target,
-        'tx' if options.deviceType is DeviceType.TX else 'rx',
-        '2400' if options.radioChip is RadioType.SX1280 else '900' if options.radioChip is RadioType.SX127X else 'dual',
-        '32' if options.mcuType is MCUType.ESP32 and options.deviceType is DeviceType.RX else '',
+        None,
         options.luaName,
         args.rx_as_tx
     )
@@ -138,7 +139,12 @@ def ask_for_firmware(args):
                 products.append(k)
                 print(f"{i}) {k['product_name']}")
             print('Choose a configuration to flash')
-            choice = input()
+            try:
+                choice = input()
+            except EOFError:
+                print('No interactive terminal available. Specify the target on the '
+                      'command line, e.g. --target radiomaster.tx_dual.nomad')
+                exit(1)
             if choice != "":
                 config = products[int(choice)-1]
                 for v in targets:
@@ -256,7 +262,6 @@ def main():
         options = FirmwareOptions(
             MCUType.ESP32 if config['platform'].startswith('esp32') else MCUType.ESP8266,
             DeviceType.RX if '.rx_' in args.target else DeviceType.TX,
-            RadioType.SX127X if '_900.' in args.target else RadioType.SX1280 if '_2400.' in args.target else RadioType.LR1121,
             config['lua_name'] if 'lua_name' in config else '',
             config['stlink']['bootloader'] if 'stlink' in config else '',
             config['stlink']['offset'] if 'stlink' in config else 0,

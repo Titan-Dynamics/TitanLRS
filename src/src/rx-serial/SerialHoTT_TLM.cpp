@@ -84,17 +84,29 @@ void SerialHoTT_TLM::setRXMode()
 
 void SerialHoTT_TLM::processBytes(uint8_t *bytes, u_int16_t size)
 {
+    uint32_t now = millis();
+
+    if (connectionState != connected)
+    {
+        // suspend device discovery timer until receiver is connected
+        discoveryTimerStart = now;
+    }
+
+    // device discovery timer
+    if (discoveryMode && (now - discoveryTimerStart >= DISCOVERY_TIMEOUT))
+    {
+        discoveryMode = false;
+    }
+
     hottInputBuffer.pushBytes(bytes, size);
 
-    uint8_t bufferSize = hottInputBuffer.size();
-
-    if (bufferSize == sizeof(hottBusFrame))
+    if (hottInputBuffer.size() == sizeof(hottBusFrame))
     {
         // frame complete, prepare to poll next device after lead out time elapsed
-        lastPoll = millis() - HOTT_POLL_RATE + HOTT_LEAD_OUT;
+        lastPoll = now - HOTT_POLL_RATE + HOTT_LEAD_OUT;
 
         // fetch received serial data
-        hottInputBuffer.popBytes((uint8_t *)&hottBusFrame, bufferSize);
+        hottInputBuffer.popBytes((uint8_t *)&hottBusFrame, sizeof(hottBusFrame));
 
         // process received frame if CRC is ok
         if (hottBusFrame.payload[STARTBYTE_INDEX] == START_FRAME_B &&
@@ -104,26 +116,6 @@ void SerialHoTT_TLM::processBytes(uint8_t *bytes, u_int16_t size)
             processFrame();
         }
     }
-}
-
-void SerialHoTT_TLM::sendQueuedData(uint32_t maxBytesToSend)
-{
-    uint32_t now = millis();
-
-    if(connectionState != connected)
-    {
-        // suspend device discovery timer until receiver is connected
-        discoveryTimerStart = now;      
-    }
-
-    // device discovery timer
-    if (discoveryMode && (now - discoveryTimerStart >= DISCOVERY_TIMEOUT))
-    {
-        discoveryMode = false;
-    }
-
-    // device polling scheduler
-    scheduleDevicePolling(now);
 
     // CRSF packet scheduler
     scheduleCRSFtelemetry(now);
@@ -252,7 +244,7 @@ void SerialHoTT_TLM::scheduleCRSFtelemetry(uint32_t now)
         sendCRSFgps(now);
     }
 
-    // HoTT GAM, EAM, ESC -> send battery, Rpm, Temp, Cells, Volt, Airspee packet
+    // HoTT GAM, EAM, ESC -> send battery, Rpm, Temp, Cells, Volt
     if (device[GAM].present || device[EAM].present || device[ESC].present)
     {
         sendCRSFbattery(now);
@@ -274,8 +266,10 @@ void SerialHoTT_TLM::scheduleCRSFtelemetry(uint32_t now)
         sendCRSFtemp(now, deviceToUse);
         sendCRSFcells(now, deviceToUse);
         sendCRSFvolt(now, deviceToUse);
-        sendCRSFairspeed(now, deviceToUse);
     }
+
+    // send Airspeed
+    sendCRSFairspeed(now);
 }
 
 void SerialHoTT_TLM::sendCRSFvario(uint32_t now)
@@ -465,7 +459,7 @@ void SerialHoTT_TLM::sendCRSFcells(uint32_t now, HoTTDevices device)
         crsfCells.p.cell[2] = htobe16(eam.cellL[2] * HOTT_CELL_SCALE);
         crsfCells.p.cell[3] = htobe16(eam.cellL[3] * HOTT_CELL_SCALE);
         crsfCells.p.cell[4] = htobe16(eam.cellL[4] * HOTT_CELL_SCALE);
-        crsfCells.p.cell[4] = htobe16(eam.cellL[5] * HOTT_CELL_SCALE);
+        crsfCells.p.cell[5] = htobe16(eam.cellL[5] * HOTT_CELL_SCALE);
         crsfCells.p.cell[6] = htobe16(eam.cellL[6] * HOTT_CELL_SCALE);
 
         crsfCells.p.cell[7] = htobe16(eam.cellH[0] * HOTT_CELL_SCALE);
@@ -547,23 +541,39 @@ void SerialHoTT_TLM::sendCRSFvolt(uint32_t now, HoTTDevices device)
     lastVoltCRC = crc;
 }
 
-void SerialHoTT_TLM::sendCRSFairspeed(uint32_t now, HoTTDevices device)
+void SerialHoTT_TLM::sendCRSFairspeed(uint32_t now)
 {
+    uint16_t airSpeed;
+
+    if (device[VARIO].present)
+    {
+        airSpeed = htobe16(vario.compassDir * HOTT_SPEED_SCALE_1_2);
+    }
+    else if (device[GPS].present)
+    {
+        airSpeed = htobe16(*((uint16_t *)(&gps.pitch)) * HOTT_SPEED_SCALE_1_1);
+    }
+    else if (device[EAM].present)
+    {
+        airSpeed = htobe16(eam.speed * HOTT_SPEED_SCALE_1_1);
+    }
+    else if (device[GAM].present)
+    {
+        airSpeed = htobe16(gam.speed * HOTT_SPEED_SCALE_1_1);
+    }
+    else if (device[ESC].present)
+    {
+        airSpeed = htobe16(esc.speed * HOTT_SPEED_SCALE_1_1);
+    }
+    else
+    {
+        return;
+    }
+
     // prepare CRSF telemetry packet
     CRSF_MK_FRAME_T(crsf_sensor_airspeed_t) crsfAirspeed = {0};
 
-    if (device == EAM)
-    {
-        crsfAirspeed.p.speed = htobe16(eam.speed * HOTT_SPEED_SCALE_EAM);
-    }
-    else if (device == GAM)
-    {
-        crsfAirspeed.p.speed = htobe16(gam.speed * HOTT_SPEED_SCALE_GAM);
-    }
-    else if (device == ESC)
-    {
-        crsfAirspeed.p.speed = htobe16(esc.speed * HOTT_SPEED_SCALE_EAM);
-    }
+    crsfAirspeed.p.speed = airSpeed;
 
     crsfRouter.SetHeaderAndCrc((crsf_header_t *)&crsfAirspeed, CRSF_FRAMETYPE_AIRSPEED, CRSF_FRAME_SIZE(sizeof(crsf_sensor_airspeed_t)));
 
@@ -772,21 +782,6 @@ uint16_t SerialHoTT_TLM::getHoTTMSLaltitude()
     }
 
     return 0;
-}
-
-uint32_t SerialHoTT_TLM::htobe24(uint32_t val)
-{
-#if (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-    return val;
-#else
-    uint8_t *ptrByte = (uint8_t *)&val;
-
-    uint8_t swp = ptrByte[0];
-    ptrByte[0] = ptrByte[2];
-    ptrByte[2] = swp;
-
-    return val;
-#endif
 }
 
 #endif

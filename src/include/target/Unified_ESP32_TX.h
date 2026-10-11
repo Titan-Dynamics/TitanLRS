@@ -23,7 +23,6 @@
 
 // Radio Antenna
 #define GPIO_PIN_ANT_CTRL hardware_pin(HARDWARE_ant_ctrl)
-#define GPIO_PIN_ANT_CTRL_COMPL hardware_pin(HARDWARE_ant_ctrl_compl)
 
 // Radio power
 #define GPIO_PIN_PA_ENABLE hardware_pin(HARDWARE_power_enable)
@@ -59,9 +58,11 @@
 #define GPIO_PIN_FIVE_WAY_INPUT3 hardware_pin(HARDWARE_five_way3)
 
 #define GPIO_PIN_BUTTON hardware_pin(HARDWARE_button)
+#define GPIO_BUTTON_ACTIVE_HIGH hardware_flag(HARDWARE_button_active_high)
 #define USER_BUTTON_LED hardware_pin(HARDWARE_button_led_index)
 #define GPIO_PIN_BUTTON2 hardware_pin(HARDWARE_button2)
 #define USER_BUTTON2_LED hardware_pin(HARDWARE_button2_led_index)
+#define GPIO_BUTTON2_ACTIVE_HIGH hardware_flag(HARDWARE_button2_active_high)
 
 // Lighting
 #define GPIO_PIN_LED_BLUE hardware_pin(HARDWARE_led_blue)
@@ -87,13 +88,13 @@
 #define OPT_HAS_SCREEN false
 #define OPT_HAS_GSENSOR false
 #define OPT_HAS_THERMAL false
-// No backpack
+// No backpack, but allow debugging
 #define OPT_USE_TX_BACKPACK false
-#define GPIO_PIN_DEBUG_RX UNDEF_PIN
-#define GPIO_PIN_DEBUG_TX UNDEF_PIN
+#define BACKPACK_LOGGING_BAUD hardware_int(HARDWARE_debug_backpack_baud)
+#define GPIO_PIN_DEBUG_RX hardware_pin(HARDWARE_debug_backpack_rx)
+#define GPIO_PIN_DEBUG_TX hardware_pin(HARDWARE_debug_backpack_tx)
 #define GPIO_PIN_BACKPACK_EN UNDEF_PIN
 #define GPIO_PIN_BACKPACK_BOOT UNDEF_PIN
-#define BACKPACK_LOGGING_BAUD 0
 #define PASSTHROUGH_BAUD 0
 // No fan
 #define GPIO_PIN_FAN_EN UNDEF_PIN
@@ -103,7 +104,6 @@
 #define OPT_HAS_SCREEN (hardware_int(HARDWARE_screen_type) > 0)
 #define OPT_HAS_OLED_I2C (hardware_int(HARDWARE_screen_type)==1)
 #define OPT_HAS_OLED_SPI (hardware_int(HARDWARE_screen_type)==2)
-#define OPT_HAS_OLED_SPI_SMALL (hardware_int(HARDWARE_screen_type)==3)
 #define OPT_HAS_TFT_SCREEN (hardware_int(HARDWARE_screen_type)==4)
 
 #define GPIO_PIN_SCREEN_CS hardware_pin(HARDWARE_screen_cs)         // SPI
@@ -114,6 +114,7 @@
 #define GPIO_PIN_SCREEN_SDA hardware_pin(HARDWARE_screen_sda)       // I2C data
 #define GPIO_PIN_SCREEN_BL hardware_pin(HARDWARE_screen_bl)         // Backlight
 #define OPT_SCREEN_REVERSED hardware_flag(HARDWARE_screen_reversed)
+#define OPT_SCREEN_MIRROR hardware_flag(HARDWARE_screen_mirror)
 
 // Backpack
 #define OPT_USE_TX_BACKPACK hardware_flag(HARDWARE_use_backpack)

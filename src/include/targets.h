@@ -17,12 +17,20 @@
 #define WORD_ALIGNED_ATTR __attribute__((aligned(4)))
 #define WORD_PADDED(size) (((size)+3) & ~3)
 
+#ifdef PLATFORM_STM32
+#define ICACHE_RAM_ATTR //nothing//
+#else
 #undef ICACHE_RAM_ATTR //fix to allow both esp32 and esp8266 to use ICACHE_RAM_ATTR for mapping to IRAM
 #define ICACHE_RAM_ATTR IRAM_ATTR
+#endif
 
 #if defined(TARGET_NATIVE)
 #define IRAM_ATTR
 #include "native.h"
+#endif
+
+#ifndef DMA_ATTR
+#define DMA_ATTR
 #endif
 
 /*
@@ -56,27 +64,31 @@ extern bool pwmSerialDefined;
 #undef Regulatory_Domain_EU_433
 #undef Regulatory_Domain_US_433
 #undef Regulatory_Domain_US_433_WIDE
+#undef Regulatory_Domain_TH_920
 
-#elif defined(RADIO_SX127X) || defined(RADIO_LR1121)
+#elif defined(RADIO_SX127X) || defined(RADIO_LR1121) || defined(RADIO_LR2021)
 #if !(defined(Regulatory_Domain_AU_915) || defined(Regulatory_Domain_FCC_915) || \
         defined(Regulatory_Domain_EU_868) || defined(Regulatory_Domain_IN_866) || \
         defined(Regulatory_Domain_AU_433) || defined(Regulatory_Domain_EU_433) || \
         defined(Regulatory_Domain_US_433) || defined(Regulatory_Domain_US_433_WIDE) || \
+        defined(Regulatory_Domain_TH_920) || \
         defined(UNIT_TEST))
 #error "Regulatory_Domain is not defined for 900MHz device. Check user_defines.txt!"
 #endif
 #else
-#error "Either RADIO_SX127X, RADIO_LR1121 or RADIO_SX128X must be defined!"
+#error "Either RADIO_SX127X, RADIO_SX128X, RADIO_LR1121 or RADIO_LR2021 must be defined!"
 #endif
 
 #if defined(PLATFORM_ESP32)
 #include <soc/uart_pins.h>
 #endif
+#if !defined(PLATFORM_STM32)
 #if !defined(U0RXD_GPIO_NUM)
 #define U0RXD_GPIO_NUM (3)
 #endif
 #if !defined(U0TXD_GPIO_NUM)
 #define U0TXD_GPIO_NUM (1)
+#endif
 #endif
 
 #include "hardware.h"

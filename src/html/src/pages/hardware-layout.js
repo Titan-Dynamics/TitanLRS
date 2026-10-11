@@ -1,18 +1,25 @@
 import {html, LitElement, nothing} from 'lit'
 import {customElement, state} from 'lit/decorators.js'
-import {postWithFeedback, saveJSONWithReboot} from '../utils/feedback.js'
+import {loadJSON, postWithFeedback, saveJSONWithReboot} from '../utils/feedback.js'
 import '../components/filedrag.js'
 import HARDWARE_SCHEMA from '../utils/hardware-schema.js'
-import {_arrayInput, _intInput, _uintInput} from "../utils/libs.js";
+import {_arrayInput, _floatInput, _intInput, _uintInput} from "../utils/libs.js";
 
 @customElement('hardware-layout')
 export class HardwareLayout extends LitElement {
 
     @state() accessor customised = false
+    @state() accessor loadedHardwareJson = null
+    @state() accessor currentHardwareJson = '{}'
+    loadPromise = null
 
     static SCHEMA = HARDWARE_SCHEMA
 
+    // Rows set when the device is flashed; shown, never edited or saved.
+    static READONLY = new Set(HARDWARE_SCHEMA.flatMap(section => section.rows).filter(row => row.readonly).map(row => row.id))
+
     createRenderRoot() {
+        this._onFormEdited = this._onFormEdited.bind(this)
         return this
     }
 
@@ -48,10 +55,11 @@ export class HardwareLayout extends LitElement {
                     </div>
                 ` : ''}
 
-                <form id="upload_hardware">
+                <form id="upload_hardware" @input=${this._onFormEdited} @change=${this._onFormEdited}>
                     ${this._renderTable()}
                     <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line);">
-                        <button type="button" class="td-btn td-btn-primary" @click=${this._submitConfig}>
+                        <button type="button" class="td-btn td-btn-primary" @click=${this._submitConfig}
+                                ?disabled=${this._isSaveDisabled()}>
                             Save Target Configuration
                         </button>
                     </div>
@@ -100,11 +108,20 @@ export class HardwareLayout extends LitElement {
                     ${row.options?.map(opt => html`
                         <option value="${opt.value}">${opt.label}</option>`)}
                 </select>`
+            case 'float':
+                return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 10} maxlength=${row.size ?? 10}
+                                   type="text" class="td-input td-input-mono" style="width: 110px;"
+                                   @keypress="${_floatInput}"/>`
             case 'int':
                 return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
                                    type="text" class="td-input td-input-mono" style="width: 60px;"
                                    @keypress="${_intInput}"/>`
             case 'uint':
+                if (row.readonly) {
+                    return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
+                                       type="text" class="td-input td-input-mono" readonly
+                                       style="width: 60px; color: var(--td-fg-mute);"/>`
+                }
                 return html`<input id="${row.id}" name="${row.id}" size=${row.size ?? 3} maxlength=${row.size ?? 3}
                                    type="text" class="td-input td-input-mono" style="width: 60px;"
                                    @keypress="${_uintInput}"/>`
@@ -118,12 +135,33 @@ export class HardwareLayout extends LitElement {
     connectedCallback() {
         super.connectedCallback()
         setTimeout(() => this._initTooltips(), 0)
-        this._loadData()
+        this.pageReady().catch(() => {})
+    }
+
+    // Called by the app after the page is shown, and from connectedCallback; loads the layout once.
+    pageReady() {
+        if (!this.loadPromise) {
+            this.loadPromise = this.updateComplete
+                .then(() => loadJSON('/hardware.json', 'Failed to load hardware configuration.'))
+                .then((data) => {
+                    this.customised = !!data.customised
+                    this._updateHardwareSettings(data)
+                    this.loadedHardwareJson = this.currentHardwareJson
+                }, (error) => {
+                    this.loadPromise = null
+                    throw error
+                })
+        }
+        return this.loadPromise
+    }
+
+    _field(id) {
+        return document.getElementById(id)
     }
 
     _initTooltips() {
         const add = (cls, label) => {
-            document.querySelectorAll('.' + cls).forEach(i => i.setAttribute('title', label))
+            this.querySelectorAll('.' + cls).forEach(i => i.setAttribute('title', label))
         }
         add('icon-input', 'Digital Input')
         add('icon-output', 'Digital Output')
@@ -131,23 +169,9 @@ export class HardwareLayout extends LitElement {
         add('icon-pwm', 'PWM Output')
     }
 
-    _loadData() {
-        const xmlhttp = new XMLHttpRequest()
-        xmlhttp.onreadystatechange = () => {
-            if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
-                const data = JSON.parse(xmlhttp.responseText)
-                this.customised = !!data.customised
-                this._updateHardwareSettings(data)
-            }
-        }
-        xmlhttp.open('GET', '/hardware.json', true)
-        xmlhttp.setRequestHeader('Content-type', 'application/x-www-form-urlencoded')
-        xmlhttp.send()
-    }
-
     _onFileDrop(e) {
         const files = e.detail.files
-        const form = document.getElementById('upload_hardware')
+        const form = this._field('upload_hardware')
         if (form) form.reset()
         for (const file of files) {
             const reader = new FileReader()
@@ -161,7 +185,7 @@ export class HardwareLayout extends LitElement {
 
     _updateHardwareSettings(data) {
         for (const [key, value] of Object.entries(data)) {
-            const el = document.getElementById(key)
+            const el = this._field(key)
             if (el) {
                 if (el.type === 'checkbox') {
                     el.checked = !!value
@@ -170,14 +194,30 @@ export class HardwareLayout extends LitElement {
                 }
             }
         }
+        this.currentHardwareJson = this._serializeCurrentConfig()
     }
 
     _submitConfig() {
-        const form = document.getElementById('upload_hardware')
+        const body = this._serializeCurrentConfig()
+        saveJSONWithReboot('Upload Succeeded', 'Upload Failed', '/hardware.json', {...JSON.parse(body), "customised": true}, () => {
+            this.loadedHardwareJson = body
+        })
+        return false
+    }
+
+    _onFormEdited() {
+        this.currentHardwareJson = this._serializeCurrentConfig()
+    }
+
+    // The form as the JSON that would be saved; also the dirty-tracking key. Read-only rows
+    // (set when the device is flashed) are never saved.
+    _serializeCurrentConfig() {
+        const form = this._field('upload_hardware')
+        if (!form) return '{}'
         const formData = new FormData(form)
-        const body = JSON.stringify(Object.fromEntries(formData), (k, v) => {
-            if (v === '') return undefined
-            const el = document.getElementById(k)
+        return JSON.stringify(Object.fromEntries(formData), (k, v) => {
+            if (v === '' || this.constructor.READONLY.has(k)) return undefined
+            const el = this._field(k)
             if (el && el.type === 'checkbox') return v === 'on'
             if (el && el.classList.contains('array')) {
                 const arr = v.split(',').map((element) => Number(element))
@@ -185,7 +225,14 @@ export class HardwareLayout extends LitElement {
             }
             return isNaN(v) ? v : +v
         })
-        saveJSONWithReboot('Upload Succeeded', 'Upload Failed', '/hardware.json', {...JSON.parse(body), "customised": true})
-        return false
+    }
+
+    _isSaveDisabled() {
+        if (this.loadedHardwareJson === null) return true
+        return this.currentHardwareJson === this.loadedHardwareJson
+    }
+
+    checkChanged() {
+        return !this._isSaveDisabled()
     }
 }

@@ -1,9 +1,16 @@
 #!/usr/bin/python
 
 import argparse
+import os
+import re
 import json
 import struct
 import sys
+
+# Environment variable that selects the hardware configuration non-interactively,
+# e.g. ELRS_UNIFIED_CONFIG=radiomaster.tx_dual.nomad. Used when no board_config
+# project option is set, so an automated build/upload never needs a TTY.
+ENV_UNIFIED_CONFIG = "ELRS_UNIFIED_CONFIG"
 
 from external import jmespath
 from firmware import TXType
@@ -74,7 +81,164 @@ def appendToFirmware(firmware_file, product_name, lua_name, defines, config, lay
         firmware_file.write(config['prior_target_name'].upper().encode())
         firmware_file.write(b'\0')
 
-def doConfiguration(file, defines, config, moduletype, frequency, platform, device_name, rx_as_tx):
+# STM32 unified firmware carries a fixed slot (lib/OPTIONS/options.h titan_slot_t) instead of having
+# the configuration appended: "TLRSOPTS", LE16 version, LE16 reserved, then the same four regions
+# ESP firmware finds after its image.
+TITAN_SLOT_MAGIC = b'TLRSOPTS'
+TITAN_SLOT_VERSION = 1
+
+def writeToTitanSlot(firmware_file, product_name, lua_name, defines, config, layout_file):
+    firmware_file.seek(0, 0)
+    image = firmware_file.read()
+    if image.count(TITAN_SLOT_MAGIC) != 1:
+        sys.stderr.write('The firmware file does not contain exactly one TitanLRS configuration slot!\n')
+        exit(1)
+    slot = image.index(TITAN_SLOT_MAGIC)
+    (version,) = struct.unpack('<H', image[slot + 8:slot + 10])
+    if version != TITAN_SLOT_VERSION:
+        sys.stderr.write(f'Unsupported TitanLRS configuration slot version {version}\n')
+        exit(1)
+
+    hardware = b''
+    if layout_file is not None:
+        try:
+            with open(layout_file) as h:
+                layout = json.load(h)
+                if 'overlay' in config:
+                    layout.update(config['overlay'])
+                hardware = json.JSONEncoder().encode(layout).encode()
+        except EnvironmentError:
+            sys.stderr.write(f'Error opening file "{layout_file}"\n')
+            exit(1)
+        if len(hardware) > 2048:
+            sys.stderr.write(f'Hardware layout "{layout_file}" is larger than 2048 bytes\n')
+            exit(1)
+
+    firmware_file.seek(slot + 12, 0)
+    firmware_file.write((product_name.encode() + (b'\0' * 128))[0:128])
+    firmware_file.write((lua_name.encode() + (b'\0' * 16))[0:16])
+    firmware_file.write((defines.encode() + (b'\0' * 512))[0:512])
+    firmware_file.write((hardware + (b'\0' * 2048))[0:2048])
+
+# Return the product name for the last hardware.json that was appended for the given PIO env target
+# e.g. Unified_ESP32_LR1121_via_WIFI -> "RadioMaster Nomad 2.4/900 TX"
+# Second return value is if the user has enabled autoupload in the json file
+def getDefaultProductForTarget(target_name: str) -> tuple[str, bool]:
+    if target_name is None or target_name == '':
+        return ''
+
+    # remove the "_via_WIFI" etc method
+    target_wo_method = re.sub('_via_.*', '', target_name)
+    try:
+        with open('.pio/default_target_config.json', 'r') as f:
+            data = json.load(f)
+            product_name = data.get(target_wo_method)
+            autoupload = bool(data.get('autoupload'))
+            return product_name, autoupload
+    except:
+        # No file or json.JSONDecodeError
+        return '', False
+
+# Save the product name of a hardware configuration appended to a target, for a future default
+# target_name: e.g. Unified_ESP32_LR1121_via_WIFI
+# product_name: e.g. RadioMaster Nomad 2.4/900 TX
+def setDefaultProductForTarget(target_name: str, product_name: str) -> None:
+    if target_name is None or target_name == '':
+        return
+
+    # remove the "_via_WIFI" etc method
+    target_wo_method = re.sub('_via_.*', '', target_name)
+    data = {}
+    try:
+        with open('.pio/default_target_config.json', 'r') as f:
+            data = json.load(f)
+    except:
+        # No file or json.JSONDecodeError
+        pass
+
+    data[target_wo_method] = product_name
+    with open('.pio/default_target_config.json', 'w') as f:
+        json.dump(data, f, indent=4)
+
+# Remove the default product name for a given target (e.g. Unified_ESP32_LR1121_via_WIFI)
+# so there will not be a default on future runs. Used in "clean" operation
+def clearDefaultProductForTarget(target_name: str) -> None:
+    # remove the "_via_WIFI" etc method
+    target_wo_method = re.sub('_via_.*', '', target_name)
+    data = {}
+    try:
+        with open('.pio/default_target_config.json', 'r') as f:
+            data = json.load(f)
+    except:
+        # No file or json.JSONDecodeError
+        pass
+
+    data.pop(target_wo_method, None)
+    with open('.pio/default_target_config.json', 'w') as f:
+        json.dump(data, f, indent=4)
+
+def is_pio_upload():
+    # SCons.Script is only available when run via 'pio run'?
+    scons_module = sys.modules.get("SCons.Script")
+    if not scons_module:
+        return False
+
+    try:
+        # COMMAND_LINE_TARGETS = ['upload'] when this is an upload build
+        targets = getattr(scons_module, "COMMAND_LINE_TARGETS", [])
+        return "upload" in targets
+    except Exception:
+        return False
+
+def interactiveProductSelect(targets: dict, target_name: str) -> dict:
+    products = []
+    target_wo_method = re.sub('_via_.*', '', target_name)
+    for k in jmespath.search(f'*.*.*[][]|[?firmware==`{target_wo_method}`]', targets):
+        products.append(k)
+
+    if len(products) == 0:
+        return None
+
+    # Sort the list by product name, case insensitive, and print the list
+    products = sorted(products, key=lambda p: p['product_name'].casefold())
+    # Find a default if this target has been build before
+    default_prod, autoupload = getDefaultProductForTarget(target_name)
+    # Make sure default_conf is a valid product name, set to '0' if not or default_prod is blank
+    default_prod = default_prod if any(p['product_name'] == default_prod for p in products) else '0'
+
+    if (default_prod != '0') and is_pio_upload() and autoupload:
+        print(f'Upload using default product "{default_prod}" (use Clean to clear default)')
+        choice = default_prod
+    else:
+        print(f'0) Leave bare (no configuration)')
+        for i, p in enumerate(products):
+            print(f"{i+1}) {p['product_name']}")
+        print(f'default) {default_prod}')
+        print('Choose a configuration to load into the firmware file')
+
+        try:
+            choice = input()
+        except EOFError:
+            # No usable stdin (automated build, redirected pipe, some IDE shells).
+            # Leave the firmware bare rather than aborting the build; it can be
+            # configured later via the web UI or binary_configurator.py.
+            print(f'No interactive terminal available; leaving the firmware "bare".')
+            print(f'Set the {ENV_UNIFIED_CONFIG} environment variable or the '
+                  f'"board_config" option to configure non-interactively.')
+            return None
+        if choice == '':
+            choice = default_prod
+        if choice == '0':
+            return None
+
+    # First see if choice is a valid product name from the list
+    config = next((p for p in products if p['product_name'] == choice), None)
+    # else choice is an integer
+    config = config if config else products[int(choice)-1]
+
+    return config
+
+def doConfiguration(file, defines, config, target_name, device_name, rx_as_tx, is_stm32=False):
     product_name = "Unified"
     lua_name = "Unified"
     layout = None
@@ -84,70 +248,52 @@ def doConfiguration(file, defines, config, moduletype, frequency, platform, devi
         targets = json.load(f)
 
     if config is not None:
+        requested = config
         config ='.'.join(map(lambda s: f'"{s}"', config.split('.')))
         config = jmespath.search(config, targets)
+        if config is None:
+            print(f'Warning: configuration "{requested}" was not found in '
+                  f'targets.json; leaving the firmware "bare".')
     elif not sys.stdin.isatty():
         print('Not running in an interactive shell, leaving the firmware "bare".\n')
         print('The current compile options (user defines) have been included.')
-        print('You will be able to configure the hardware via the web UI on the device.')
+        if is_stm32:
+            print('The device will have no hardware layout until one is flashed with the web flasher.')
+        else:
+            print('You will be able to configure the hardware via the web UI on the device.')
     else:
-        products = []
-        for k in jmespath.search(f'[*."{moduletype}_{frequency}".*][][?platform==`{platform}`][]', targets):
-            products.append(k)
-        if frequency == 'dual':
-            for k in jmespath.search(f'[*."{moduletype}_2400".*][][?platform==`{platform}`][]', targets):
-                if '_LR1121_' in k['firmware']:
-                    products.append(k)
-            for k in jmespath.search(f'[*."{moduletype}_900".*][][?platform==`{platform}`][]', targets):
-                if '_LR1121_' in k['firmware']:
-                    products.append(k)
-        # Sort the list by product name, case insensitive, and print the list
-        products = sorted(products, key=lambda p: p['product_name'].casefold())
-        for i, p in enumerate(products):
-            print(f"{i+1}) {p['product_name']}")
-        print('Choose a configuration to load into the firmware file (press enter to leave bare)')
-        choice = input()
-        if choice != "":
-            config = products[int(choice)-1]
+        config = interactiveProductSelect(targets, target_name)
 
     if config is not None:
         product_name = config['product_name']
+        setDefaultProductForTarget(target_name, product_name)
         lua_name = config['lua_name']
-        dir = 'TX' if moduletype == 'tx' else 'RX'
+        dir = 'TX' if '_TX' in config['firmware'] else 'RX'
         layout = f"hardware/{dir}/{config['layout_file']}"
 
     lua_name = lua_name if device_name is None else device_name
-    appendToFirmware(file, product_name, lua_name, defines, config, layout, rx_as_tx)
+    if is_stm32:
+        writeToTitanSlot(file, product_name, lua_name, defines, config, layout)
+    else:
+        appendToFirmware(file, product_name, lua_name, defines, config, layout, rx_as_tx)
 
 def appendConfiguration(source, target, env):
-    target_name = env.get('PIOENV', '').upper()
+    target_name = env.get('PIOENV', '')
     device_name = env.get('DEVICE_NAME', None)
     config = env.GetProjectOption('board_config', None)
-    if 'UNIFIED_' not in target_name and config is None:
+    # Fall back to the environment variable so a configuration can be selected
+    # without a TTY, e.g. ELRS_UNIFIED_CONFIG=radiomaster.tx_dual.nomad pio run -t upload
+    if config is None:
+        config = os.environ.get(ENV_UNIFIED_CONFIG) or None
+    if 'Unified_' not in target_name and config is None:
         return
 
-    moduletype = ''
-    frequency = ''
-    if config is not None:
-        moduletype = 'tx' if '.tx_' in config else 'rx'
-        frequency = '2400' if '_2400.' in config else '900' if '_900.' in config else 'dual'
-    else:
-        moduletype = 'tx' if '_TX_' in target_name else 'rx'
-        frequency = '2400' if '_2400_' in target_name else '900' if '_900_' in target_name else 'dual'
-
-    if env.get('PIOPLATFORM', '') == 'espressif32':
-        platform = 'esp32'
-        if 'esp32-s3' in env.get('BOARD', ''):
-            platform = 'esp32-s3'
-        elif 'esp32-c3' in env.get('BOARD', ''):
-            platform = 'esp32-c3'
-    else:
-        platform = 'esp8285'
-
+    # TLRS: STM32 unified firmware carries a fixed titanSlot instead of an appended config
+    is_stm32 = env.get('PIOPLATFORM', '') == 'ststm32'
     defines = json.JSONEncoder().encode(env['OPTIONS_JSON'])
 
     with open(str(target[0]), "r+b") as firmware_file:
-        doConfiguration(firmware_file, defines, config, moduletype, frequency, platform, device_name, None)
+        doConfiguration(firmware_file, defines, config, target_name, device_name, None, is_stm32)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Configure Unified Firmware")
@@ -162,15 +308,13 @@ if __name__ == '__main__':
     with open('hardware/targets.json') as f:
         targets = json.load(f)
 
-    moduletype = 'tx' if '.tx_' in args.target else 'rx'
-
     config ='.'.join(map(lambda s: f'"{s}"', args.target.split('.')))
     config = jmespath.search(config, targets)
 
     if config is not None:
         product_name = config['product_name']
         lua_name = config['lua_name']
-        dir = 'TX' if moduletype == 'tx' else 'RX'
+        dir = 'TX' if '_TX' in config['firmware'] else 'RX'
         layout = f"hardware/{dir}/{config['layout_file']}"
 
     appendToFirmware(args.file, product_name, lua_name, args.options, config, layout, None)

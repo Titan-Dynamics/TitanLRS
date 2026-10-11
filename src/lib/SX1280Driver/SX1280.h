@@ -18,12 +18,12 @@ public:
 
     ////////////////Configuration Functions/////////////
     SX1280Driver();
-    bool Begin(uint32_t minimumFrequency, uint32_t maximumFrequency);
+    bool Begin();
     void End();
     void SetTxIdleMode() { SetMode(SX1280_MODE_FS, SX12XX_Radio_All); }; // set Idle mode used when switching from RX to TX
     void Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t freq,
                 uint8_t PreambleLength, bool InvertIQ, uint8_t PayloadLength,
-                uint32_t flrcSyncWord=0, uint16_t flrcCrcSeed=0, uint8_t flrc=0);
+                uint32_t flrcSyncWord, uint16_t flrcCrcSeed, RadioBandMod::Combined modulation);
     void SetFrequencyReg(uint32_t freq, SX12XX_Radio_Number_t radioNumber, bool doRx = false);
     void SetOutputPower(int8_t power);
     void startCWTest(uint32_t freq, SX12XX_Radio_Number_t radioNumber);

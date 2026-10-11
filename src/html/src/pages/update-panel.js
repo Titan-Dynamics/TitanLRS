@@ -1,7 +1,6 @@
 import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
 import '../components/filedrag.js'
-import FEATURES from "../features.js"
 import {cuteAlert} from "../utils/feedback.js"
 import {elrsState} from "../utils/state.js"
 
@@ -13,6 +12,8 @@ class UpdatePanel extends LitElement {
     createRenderRoot() {
         this._completeHandler = this._completeHandler.bind(this)
         this._progressHandler = this._progressHandler.bind(this)
+        this._errorHandler = this._errorHandler.bind(this)
+        this._abortHandler = this._abortHandler.bind(this)
         return this
     }
 
@@ -35,7 +36,7 @@ class UpdatePanel extends LitElement {
                 </div>
                 <div class="td-card-body">
                     <p class="td-body td-mute" style="margin-bottom: var(--td-s-3);">
-                        Select the correct <strong class="td-fg">firmware.bin${FEATURES.IS_8285 ? '.gz' : ''}</strong> for your platform.
+                        Select the correct <strong class="td-fg">firmware.bin<!-- FEATURE:IS_8285 -->.gz<!-- /FEATURE:IS_8285 --></strong> for your platform.
                         You can also <a href="firmware.bin" style="color: var(--td-brand);">download the running firmware</a>.
                     </p>
                     <file-drop id="firmware-upload" label="Select firmware file" @file-drop="${this._fileSelectHandler}">
@@ -55,14 +56,14 @@ class UpdatePanel extends LitElement {
     _fileSelectHandler(e) {
         const files = e.detail.files
         const fileExt = files[0].name.split('.').pop()
-        let expectedFileExt, expectedFileExtDesc
-        if (FEATURES.IS_8285 && !FEATURES.IS_TX) {
-            expectedFileExt = 'gz'
-            expectedFileExtDesc = '.bin.gz file. Do NOT decompress the file.'
-        } else {
-            expectedFileExt = 'bin'
-            expectedFileExtDesc = '.bin file.'
-        }
+        let expectedFileExt = 'bin'
+        let expectedFileExtDesc = '.bin file.'
+        // FEATURE:IS_8285
+        // FEATURE:NOT IS_TX
+        expectedFileExt = 'gz'
+        expectedFileExtDesc = '.bin.gz file. Do NOT decompress the file.'
+        // /FEATURE:NOT IS_TX
+        // /FEATURE:IS_8285
         if (fileExt === expectedFileExt) {
             this._uploadFile(files[0])
         } else {
@@ -103,9 +104,14 @@ class UpdatePanel extends LitElement {
             function showMessage() {
                 cuteAlert({ type: 'success', title: 'Update Succeeded', message: data.msg })
             }
+            // ESP8285 flashes more slowly; pace the progress bar to match
+            let step = 2
+            // FEATURE:IS_8285
+            step = 1
+            // /FEATURE:IS_8285
             let percent = 0
             const interval = setInterval(() => {
-                percent = percent + (FEATURES.IS_8285 ? 1 : 2)
+                percent = percent + step
                 self.progress = percent
                 self.progressText = percent + '% flashed'
                 if (percent === 100) {

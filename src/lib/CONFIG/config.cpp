@@ -7,6 +7,40 @@
 #include "helpers.h"
 #include "logging.h"
 
+#if defined(PLATFORM_ESP32)
+#include <mbedtls/md5.h> // for SetBindPhrase()
+#endif
+
+void BindphraseConfigurable::SetBindPhrase(uint8_t *phrase, size_t phraseLen)
+{
+    constexpr uint8_t BIND_KEY[] = "-DMY_BINDING_PHRASE=\"";
+
+    uint8_t UID_md5[16] {};
+    // A blank binding phrase will just use the UID_md5 set to all zeroes, which is unbound
+    if (phraseLen)
+    {
+#if defined(PLATFORM_ESP8266)
+        md5_context_t md5;
+        MD5Init(&md5);
+        MD5Update(&md5, BIND_KEY, sizeof(BIND_KEY)-1);
+        MD5Update(&md5, phrase, phraseLen);
+        MD5Update(&md5, &BIND_KEY[sizeof(BIND_KEY)-2], 1); // just the " from the end
+        MD5Final(UID_md5, &md5);
+#elif defined(PLATFORM_ESP32)
+        mbedtls_md5_context md5;
+        mbedtls_md5_init(&md5);
+        mbedtls_md5_update_ret(&md5, BIND_KEY, sizeof(BIND_KEY)-1);
+        mbedtls_md5_update_ret(&md5, phrase, phraseLen);
+        mbedtls_md5_update_ret(&md5, &BIND_KEY[sizeof(BIND_KEY)-2], 1);
+        mbedtls_md5_finish_ret(&md5, UID_md5);
+        mbedtls_md5_free(&md5);
+#endif
+    }
+
+    // UID is the first UID_LEN of the md5
+    SetUID(UID_md5);
+}
+
 #if defined(TARGET_TX)
 
 #define ALL_CHANGED         (EVENT_CONFIG_MODEL_CHANGED | EVENT_CONFIG_VTX_CHANGED | EVENT_CONFIG_MAIN_CHANGED | EVENT_CONFIG_FAN_CHANGED | EVENT_CONFIG_MOTION_CHANGED | EVENT_CONFIG_BUTTON_CHANGED | EVENT_CONFIG_VERSION_CHANGED)
@@ -131,7 +165,7 @@ static void ModelV7toV8(v7_model_config_t const * const v7, model_config_t * con
 }
 
 TxConfig::TxConfig() :
-    m_model(m_config.model_config)
+    BindphraseConfigurable(), m_model(m_config.model_config)
 {
 }
 
@@ -253,7 +287,7 @@ void TxConfig::Load()
 
             // validate the currently selected rate is supported by the hardware and choose an appropriate default if not
             if (!isSupportedRFRate(m_config.model_config[i].rate)) {
-                m_config.model_config[i].rate = enumRatetoIndex(POWER_OUTPUT_VALUES_COUNT == 0 ? RATE_LORA_2G4_250HZ : RATE_LORA_900_200HZ);
+                m_config.model_config[i].rate = enumRatetoIndexSafe(POWER_OUTPUT_VALUES_COUNT == 0 ? RATE_LORA_2G4_250HZ : RATE_LORA_900_200HZ);
                 nvs_set_u32(handle, model, Model_to_U32(&m_config.model_config[i]));
             }
         }
@@ -265,11 +299,16 @@ void TxConfig::Load()
         Commit();
     }
 }
-#else  // ESP8266
+#else  // ESP8266, STM32
 void TxConfig::Load()
 {
     m_modified = 0;
-    m_eeprom->Get(0, m_config);
+#if defined(PLATFORM_STM32)
+    // TLRS: upstream dropped tx_main's eeprom.Begin(). On STM32 Begin() brings up the W25Q64 and
+    // reads the committed sector into the (shared, file-static) RAM mirror; idempotent.
+    m_eeprom.Begin();
+#endif
+    m_eeprom.Get(0, m_config);
 
     uint32_t version = 0;
     if ((m_config.version & CONFIG_MAGIC_MASK) == TX_CONFIG_MAGIC)
@@ -320,15 +359,15 @@ void TxConfig::UpgradeEepromV5ToV6()
     v6_tx_config_t v6Config = { 0 }; // default the new fields to 0
 
     // Populate the prev version struct from eeprom
-    m_eeprom->Get(0, v5Config);
+    m_eeprom.Get(0, v5Config);
 
     // Copy prev values to current config struct
     // This only workse because v5 and v6 are the same up to the new fields
     // which have already been set to 0
     memcpy(&v6Config, &v5Config, sizeof(v5Config));
     v6Config.version = 6U | TX_CONFIG_MAGIC;
-    m_eeprom->Put(0, v6Config);
-    m_eeprom->Commit();
+    m_eeprom.Put(0, v6Config);
+    m_eeprom.Commit();
 }
 
 void TxConfig::UpgradeEepromV6ToV7()
@@ -337,7 +376,7 @@ void TxConfig::UpgradeEepromV6ToV7()
     v7_tx_config_t v7Config = { 0 }; // default the new fields to 0
 
     // Populate the prev version struct from eeprom
-    m_eeprom->Get(0, v6Config);
+    m_eeprom.Get(0, v6Config);
 
     // Manual field copying as some fields have moved
     #define LAZY(member) v7Config.member = v6Config.member
@@ -362,14 +401,14 @@ void TxConfig::UpgradeEepromV6ToV7()
 
     // Full Commit now
     m_config.version = 7U | TX_CONFIG_MAGIC;
-    m_eeprom->Put(0, v7Config);
-    m_eeprom->Commit();
+    m_eeprom.Put(0, v7Config);
+    m_eeprom.Commit();
 }
 
 void TxConfig::UpgradeEepromV7ToV8()
 {
     v7_tx_config_t v7Config;
-    m_eeprom->Get(0, v7Config);
+    m_eeprom.Get(0, v7Config);
 
     // Manual field copying as some fields were removed
     #define LAZY(member) m_config.member = v7Config.member
@@ -400,7 +439,7 @@ void TxConfig::UpgradeEepromV7ToV8()
 void TxConfig::UpgradeEepromV8ToV9()
 {
     tx_config_t v8Config;
-    m_eeprom->Get(0, v8Config);
+    m_eeprom.Get(0, v8Config);
 
     // Copy all fields except backpackTlmMode (which stays at WIFI default from SetDefaults)
     #define LAZY(member) m_config.member = v8Config.member
@@ -492,8 +531,8 @@ TxConfig::Commit()
     nvs_commit(handle);
 #else
     // Write the struct to eeprom
-    m_eeprom->Put(0, m_config);
-    m_eeprom->Commit();
+    m_eeprom.Put(0, m_config);
+    m_eeprom.Commit();
 #endif
     uint32_t changes = m_modified;
     m_modified = 0;
@@ -648,15 +687,6 @@ TxConfig::SetPowerFanThreshold(uint8_t powerFanThreshold)
 }
 
 void
-TxConfig::SetStorageProvider(ELRS_EEPROM *eeprom)
-{
-    if (eeprom)
-    {
-        m_eeprom = eeprom;
-    }
-}
-
-void
 TxConfig::SetFanMode(uint8_t fanMode)
 {
     if (m_config.fanMode != fanMode)
@@ -792,11 +822,11 @@ TxConfig::SetDefaults(bool commit)
     {
         SetModelId(i);
         #if defined(RADIO_SX127X)
-            SetRate(enumRatetoIndex(RATE_LORA_900_200HZ));
-        #elif defined(RADIO_LR1121)
-            SetRate(enumRatetoIndex(POWER_OUTPUT_VALUES_COUNT == 0 ? RATE_LORA_2G4_250HZ : RATE_LORA_900_200HZ));
+            SetRate(enumRatetoIndexSafe(RATE_LORA_900_200HZ));
+        #elif defined(RADIO_LR1121) || defined(RADIO_LR2021)
+            SetRate(enumRatetoIndexSafe(POWER_OUTPUT_VALUES_COUNT == 0 ? RATE_LORA_2G4_250HZ : RATE_LORA_900_200HZ));
         #elif defined(RADIO_SX128X)
-            SetRate(enumRatetoIndex(RATE_LORA_2G4_250HZ));
+            SetRate(enumRatetoIndexSafe(RATE_LORA_2G4_250HZ));
         #endif
         SetPower(POWERMGNT::getDefaultPower());
 #if defined(PLATFORM_ESP32)
@@ -838,6 +868,16 @@ TxConfig::SetModelId(uint8_t modelId)
 
     return false;
 }
+
+void TxConfig::SetUID(uint8_t uid[UID_LEN])
+{
+    // The UID is only stored in the options.json, not in nvs/eeprom like on the RX
+    // Emulate the setting as a config setting to have the same access method as the RX
+    firmwareOptions.hasUID = OtaUidIsBound(uid);
+    memcpy(firmwareOptions.uid, uid, UID_LEN);
+    saveOptions();
+}
+
 #endif
 
 /////////////////////////////////////////////////////
@@ -851,6 +891,7 @@ TxConfig::SetModelId(uint8_t modelId)
 #define CONFCOPY(member) m_config.member = old.member
 
 RxConfig::RxConfig()
+    : BindphraseConfigurable()
 {
 }
 
@@ -923,7 +964,7 @@ void RxConfig::CheckUpdateFlashedUid(bool skipDescrimCheck)
 static unsigned toFailsafeV10(unsigned oldFailsafe)
 {
     // the old failsafe was 988+value, new is 476+value
-    return oldFailsafe + (988 - CHANNEL_VALUE_FS_US_MIN);
+    return oldFailsafe + (US_CHANNEL_VALUE_STD_MIN - US_CHANNEL_VALUE_MIN);
 }
 
 /**
@@ -1130,7 +1171,7 @@ bool RxConfig::GetIsBound() const
 {
     if (m_config.bindStorage == BINDSTORAGE_VOLATILE)
         return false;
-    return UID_IS_BOUND(m_config.uid);
+    return OtaUidIsBound(m_config.uid);
 }
 
 bool RxConfig::IsOnLoan() const
@@ -1191,7 +1232,7 @@ RxConfig::Commit()
 
 // Setters
 void
-RxConfig::SetUID(uint8_t* uid)
+RxConfig::SetUID(uint8_t uid[UID_LEN])
 {
     for (uint8_t i = 0; i < UID_LEN; ++i)
     {
@@ -1248,11 +1289,21 @@ RxConfig::SetPower(uint8_t power)
 void
 RxConfig::SetAntennaMode(uint8_t antennaMode)
 {
-    //0 and 1 is use for gpio_antenna_select
+    // 0=Antenna 1, 1=Antenna 2 are used for gpio_antenna_select
     // 2 is diversity
     if (m_config.antennaMode != antennaMode)
     {
         m_config.antennaMode = antennaMode;
+        m_modified = EVENT_CONFIG_MODEL_CHANGED;
+    }
+}
+
+void
+RxConfig::SetAntennaGroup(uint8_t antennaGroup)
+{
+    if (m_config.antennaGroup != antennaGroup)
+    {
+        m_config.antennaGroup = antennaGroup;
         m_modified = EVENT_CONFIG_MODEL_CHANGED;
     }
 }
@@ -1275,7 +1326,7 @@ RxConfig::SetDefaults(bool commit)
     {
         uint8_t mode = som50Hz;
         // setup defaults for hardware-defined I2C & Serial pins that are also IO pins
-        if (ch < GPIO_PIN_PWM_OUTPUTS_COUNT)
+        if (!OPT_PWM_OUT_ONLY && ch < GPIO_PIN_PWM_OUTPUTS_COUNT)
         {
             if (GPIO_PIN_PWM_OUTPUTS[ch] == GPIO_PIN_SCL)
             {
@@ -1285,11 +1336,13 @@ RxConfig::SetDefaults(bool commit)
             {
                 mode = somSDA;
             }
+#if !defined(PLATFORM_STM32)
             else if ((GPIO_PIN_RCSIGNAL_RX == U0RXD_GPIO_NUM && GPIO_PIN_PWM_OUTPUTS[ch] == U0RXD_GPIO_NUM) ||
                      (GPIO_PIN_RCSIGNAL_TX == U0TXD_GPIO_NUM && GPIO_PIN_PWM_OUTPUTS[ch] == U0TXD_GPIO_NUM))
             {
                 mode = somSerial;
             }
+#endif
 #if defined(PLATFORM_ESP32)
             else if (GPIO_PIN_PWM_OUTPUTS[ch] == GPIO_PIN_SERIAL1_RX)
             {
@@ -1301,8 +1354,8 @@ RxConfig::SetDefaults(bool commit)
             }
 #endif
         }
-        const uint16_t failsafe = ch == 2 ? CHANNEL_VALUE_FS_US_ELIMITS_MIN - CHANNEL_VALUE_FS_US_MIN :
-                                            CHANNEL_VALUE_FS_US_MID - CHANNEL_VALUE_FS_US_MIN; // ch2 is throttle, failsafe it to 880
+        const uint16_t failsafe = ch == 2 ? US_CHANNEL_VALUE_EXT_MIN - US_CHANNEL_VALUE_MIN :
+                                            US_CHANNEL_VALUE_CENTER - US_CHANNEL_VALUE_MIN; // ch2 is throttle, failsafe it to 880
         SetPwmChannel(ch, failsafe, ch, false, mode, false);
     }
 

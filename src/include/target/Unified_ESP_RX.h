@@ -25,7 +25,7 @@
 
 // Radio Antenna
 #define GPIO_PIN_ANT_CTRL hardware_pin(HARDWARE_ant_ctrl)
-#define GPIO_PIN_ANT_CTRL_COMPL hardware_pin(HARDWARE_ant_ctrl_compl)
+#define GPIO_PIN_ANT_GROUP hardware_pin(HARDWARE_ant_group)
 
 // Radio power
 #define GPIO_PIN_PA_ENABLE hardware_pin(HARDWARE_power_enable)
@@ -50,7 +50,9 @@
 
 // Input
 #define GPIO_PIN_BUTTON hardware_pin(HARDWARE_button)
+#define GPIO_BUTTON_ACTIVE_HIGH hardware_flag(HARDWARE_button_active_high)
 #define GPIO_PIN_BUTTON2 UNDEF_PIN
+#define GPIO_BUTTON2_ACTIVE_HIGH hardware_flag(HARDWARE_button2_active_high)
 
 // Lighting
 #define GPIO_PIN_LED_RED hardware_pin(HARDWARE_led)
@@ -77,11 +79,7 @@
 #define GPIO_PIN_PWM_OUTPUTS hardware_i16_array(HARDWARE_pwm_outputs)
 #define GPIO_PIN_PWM_OUTPUTS_COUNT hardware_int(HARDWARE_pwm_outputs_count)
 #define OPT_HAS_SERVO_OUTPUT (GPIO_PIN_PWM_OUTPUTS_COUNT > 0)
-
-// VBat
-#define GPIO_ANALOG_VBAT hardware_pin(HARDWARE_vbat)
-#define ANALOG_VBAT_OFFSET hardware_int(HARDWARE_vbat_offset)
-#define ANALOG_VBAT_SCALE hardware_int(HARDWARE_vbat_scale)
+#define OPT_PWM_OUT_ONLY hardware_flag(HARDWARE_pwm_out_only)
 
 #if defined(PLATFORM_ESP32)
 // VTX

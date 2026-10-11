@@ -21,7 +21,6 @@
 
 // Radio Antenna
 #define GPIO_PIN_ANT_CTRL hardware_pin(HARDWARE_ant_ctrl)
-#define GPIO_PIN_ANT_CTRL_COMPL hardware_pin(HARDWARE_ant_ctrl_compl)
 
 // Radio power
 #define GPIO_PIN_PA_ENABLE hardware_pin(HARDWARE_power_enable)
@@ -45,7 +44,9 @@
 
 // Input
 #define GPIO_PIN_BUTTON hardware_pin(HARDWARE_button)
+#define GPIO_BUTTON_ACTIVE_HIGH hardware_flag(HARDWARE_button_active_high)
 #define GPIO_PIN_BUTTON2 UNDEF_PIN
+#define GPIO_BUTTON2_ACTIVE_HIGH hardware_flag(HARDWARE_button2_active_high)
 
 // Lighting
 #define GPIO_PIN_LED_BLUE hardware_pin(HARDWARE_led_blue)

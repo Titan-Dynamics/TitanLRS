@@ -7,6 +7,7 @@
 #include <LittleFS.h>
 
 #if defined(PLATFORM_ESP32)
+#include <esp_wifi.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <Update.h>
@@ -26,6 +27,7 @@
 #include <ESPAsyncWebServer.h>
 
 #include "common.h"
+#include "rxtx_intf.h"
 #include "POWERMGNT.h"
 #include "FHSS.h"
 #include "hwTimer.h"
@@ -33,6 +35,10 @@
 #include "options.h"
 #include "helpers.h"
 #include "devButton.h"
+#if defined(TARGET_RX)
+#include "devAnalogVbat.h"
+#include "VbatCalibration.h"
+#endif
 #if defined(TARGET_RX) && defined(PLATFORM_ESP32)
 #include "devVTXSPI.h"
 #endif
@@ -50,8 +56,6 @@
 
 extern void setButtonColors(uint8_t b1, uint8_t b2);
 #endif
-
-extern unsigned long rebootTime;
 
 static char station_ssid[33];
 static char station_password[65];
@@ -202,7 +206,7 @@ static void HandleReboot(AsyncWebServerRequest *request)
   AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "Kill -9, no more CPU time!");
   response->addHeader("Connection", "close");
   request->send(response);
-  rebootTime = millis() + 100;
+  scheduleRebootTime(200);
 }
 
 static void HandleReset(AsyncWebServerRequest *request)
@@ -227,7 +231,7 @@ static void HandleReset(AsyncWebServerRequest *request)
   AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "Reset complete, rebooting...");
   response->addHeader("Connection", "close");
   request->send(response);
-  rebootTime = millis() + 100;
+  scheduleRebootTime(100);
 }
 
 static void UpdateSettings(AsyncWebServerRequest *request, JsonVariant &json)
@@ -267,6 +271,147 @@ static const char *GetConfigUidType(const JsonObject json)
   return "Not set (using MAC address)";
 #endif
 }
+
+static int8_t wifi_GetClientRssi()
+{
+  if (wifiMode == WIFI_STA)
+    return WiFi.RSSI();
+
+#if defined(PLATFORM_ESP32)
+  // If AP mode, only return an RSSI if there is just one client connected
+  // This could take the request's IP address, find it in tcpip_adapter_get_sta_list(), match it by MAC to ap_sta_list,
+  // but there should just be one client
+  wifi_sta_list_t staList;
+  if (esp_wifi_ap_get_sta_list(&staList) == ESP_OK)
+  {
+    if (staList.num == 1)
+      return staList.sta[0].rssi;
+  }
+#endif
+  // ESP8266 doesn't seem to store connected station RSSI :/
+
+  return 0;
+}
+
+#if defined(TARGET_RX)
+static uint8_t getDefinedVoltageSourceCount()
+{
+    uint8_t count = 0;
+    if (hardware_pin(HARDWARE_vbat) != UNDEF_PIN)
+        ++count;
+#if defined(PLATFORM_ESP32)
+    if (hardware_pin(HARDWARE_vsrc1) != UNDEF_PIN)
+        ++count;
+    if (hardware_pin(HARDWARE_vsrc2) != UNDEF_PIN)
+        ++count;
+    if (hardware_pin(HARDWARE_vsrc3) != UNDEF_PIN)
+        ++count;
+#endif
+    return count;
+}
+
+static void populateVoltageSampleJson(JsonObject root, const voltage_source_sample_t &sample)
+{
+  root["rawMax"] = sample.rawMax;
+  root["adcMedian"] = sample.adcMedian;
+  root["saturated"] = sample.saturated;
+  root["hasReading"] = sample.hasReading;
+}
+
+static void SampleVoltageSources(AsyncWebServerRequest *request, JsonVariant &json)
+{
+  JsonArray requests = json["requests"].as<JsonArray>();
+  if (requests.isNull())
+  {
+    request->send(400, "text/plain", "Voltage sample batch requests are required");
+    return;
+  }
+
+  auto *response = new AsyncJsonResponse();
+  JsonObject root = response->getRoot().to<JsonObject>();
+  JsonObject samplesRoot = root["samples"].to<JsonObject>();
+
+  bool sampledAny = false;
+  Vbat_setCalibrationActive(true);
+  for (JsonVariant requestItem : requests)
+  {
+    uint8_t sourceIdx = 0;
+    const char *sourceId = requestItem["source"] | "";
+    if (!VbatCalibration_findSource(sourceId, &sourceIdx) || !VbatCalibration_isSourceDefined(sourceIdx))
+      continue;
+
+    voltage_source_config_t source {};
+    VbatCalibration_getSourceConfig(sourceIdx, &source);
+    int atten = requestItem["atten"] | source.atten;
+    uint8_t samples = requestItem["samples"] | 24;
+
+    voltage_source_sample_t sample {};
+    if (!VbatCalibration_sampleSource(sourceIdx, atten, samples, &sample))
+      continue;
+
+    JsonObject sampleRoot = samplesRoot[source.id].to<JsonObject>();
+    populateVoltageSampleJson(sampleRoot, sample);
+    sampledAny = true;
+  }
+  Vbat_setCalibrationActive(false);
+
+  if (!sampledAny)
+  {
+    delete response;
+    request->send(400, "text/plain", "No valid voltage sample batch requests");
+    return;
+  }
+
+  response->setLength();
+  request->send(response);
+}
+#endif
+
+#if defined(TARGET_RX)
+static void GetGpsStatus(AsyncWebServerRequest *request)
+{
+  auto *response = new AsyncJsonResponse();
+  const auto json = response->getRoot();
+
+  gps_telemetry_t gps;
+  if (!getGpsTelemetry(gps))
+  {
+    // No GPS driver is running (the serial protocol was changed without a reboot, say)
+    json["present"] = false;
+  }
+  else
+  {
+    json["present"] = true;
+    json["state"] = gps.state;
+    json["baud"] = gps.baud;
+    json["can_configure"] = gps.canConfigure;
+    json["protocol"] = gps.protocol;
+    json["ubx_configured"] = gps.ubxConfigured;
+    json["used_valset"] = gps.usedValset;
+    json["nav_interval_ms"] = gps.navIntervalMs;
+    json["update_interval_ms"] = gps.updateIntervalMs;
+    json["satellites"] = gps.satellites;
+    json["fix_type"] = gps.fixType;
+    json["fix_valid"] = gps.fixValid;
+    json["lat"] = gps.lat;
+    json["lon"] = gps.lon;
+    json["alt_cm"] = gps.altCm;
+    json["speed_kmh100"] = gps.speedKmh100;
+    json["heading100"] = gps.heading100;
+    json["time_valid"] = gps.timeValid;
+    json["year"] = gps.year;
+    json["month"] = gps.month;
+    json["day"] = gps.day;
+    json["hour"] = gps.hour;
+    json["minute"] = gps.minute;
+    json["second"] = gps.second;
+    json["age_ms"] = gps.ageMs;
+  }
+
+  response->setLength();
+  request->send(response);
+}
+#endif
 
 static void GetConfiguration(AsyncWebServerRequest *request)
 {
@@ -368,17 +513,23 @@ static void GetConfiguration(AsyncWebServerRequest *request)
       channel["pin"] = GPIO_PIN_PWM_OUTPUTS[ch];
       uint8_t features = 0;
       auto pin = GPIO_PIN_PWM_OUTPUTS[ch];
-      if (pin == U0TXD_GPIO_NUM) features |= 1;  // SerialTX supported
-      else if (pin == U0RXD_GPIO_NUM) features |= 2;  // SerialRX supported
-      else if (pin == GPIO_PIN_SCL) features |= 4;  // I2C SCL supported (only on this pin)
-      else if (pin == GPIO_PIN_SDA) features |= 8;  // I2C SCL supported (only on this pin)
-      else if (GPIO_PIN_SCL == UNDEF_PIN || GPIO_PIN_SDA == UNDEF_PIN) features |= 12; // Both I2C SCL/SDA supported (on any pin)
+      if (!OPT_PWM_OUT_ONLY)
+      {
+        if (pin == U0TXD_GPIO_NUM) features |= 1;  // SerialTX supported
+        else if (pin == U0RXD_GPIO_NUM) features |= 2;  // SerialRX supported
+        else if (pin == GPIO_PIN_SCL) features |= 4;  // I2C SCL supported (only on this pin)
+        else if (pin == GPIO_PIN_SDA) features |= 8;  // I2C SDA supported (only on this pin)
+        else if (GPIO_PIN_SCL == UNDEF_PIN || GPIO_PIN_SDA == UNDEF_PIN) features |= 12; // Both I2C SCL/SDA supported (on any pin)
+      }
       #if defined(PLATFORM_ESP32)
       if (pin != 0) features |= 16; // DShot supported on all pins but GPIO0
-      if (pin == GPIO_PIN_SERIAL1_RX) features |= 32;  // SERIAL1 RX supported (only on this pin)
-      else if (pin == GPIO_PIN_SERIAL1_TX) features |= 64;  // SERIAL1 TX supported (only on this pin)
-      else if ((GPIO_PIN_SERIAL1_RX == UNDEF_PIN || GPIO_PIN_SERIAL1_TX == UNDEF_PIN) &&
-               (!(features & 1) && !(features & 2))) features |= 96; // Both Serial1 RX/TX supported (on any pin if not already featured for Serial 1)
+      if (!OPT_PWM_OUT_ONLY)
+      {
+        if (pin == GPIO_PIN_SERIAL1_RX) features |= 32;  // SERIAL1 RX supported (only on this pin)
+        else if (pin == GPIO_PIN_SERIAL1_TX) features |= 64;  // SERIAL1 TX supported (only on this pin)
+        else if ((GPIO_PIN_SERIAL1_RX == UNDEF_PIN || GPIO_PIN_SERIAL1_TX == UNDEF_PIN) &&
+                 (!(features & 1) && !(features & 2))) features |= 96; // Both Serial1 RX/TX supported (on any pin if not already featured for Serial 1)
+      }
       #endif
       channel["features"] = features;
     }
@@ -386,12 +537,18 @@ static void GetConfiguration(AsyncWebServerRequest *request)
     {
         settings["has_serial_pins"] = true;
     }
+    settings["has_gps"] = config.GetSerialProtocol() == PROTOCOL_GPS
+    #if defined(PLATFORM_ESP32)
+        || config.GetSerial1Protocol() == PROTOCOL_SERIAL1_GPS
+    #endif
+        ;
     #endif
     settings["product_name"] = product_name;
     settings["lua_name"] = device_name;
     settings["uidtype"] = GetConfigUidType(json);
     settings["ssid"] = station_ssid;
     settings["mode"] = wifiMode == WIFI_STA ? "STA" : "AP";
+    settings["wifi_dbm"] = wifi_GetClientRssi();
     settings["custom_hardware"] = hardware_flag(HARDWARE_customised);
     settings["target"] = &target_name[4];
     settings["version"] = VERSION;
@@ -401,19 +558,26 @@ static void GetConfiguration(AsyncWebServerRequest *request)
 #endif
 #if defined(TARGET_RX)
     settings["module-type"] = "RX";
+    settings["voltage_source_count"] = getDefinedVoltageSourceCount();
 #endif
-#if defined(RADIO_SX128X)
-    settings["radio-type"] = "SX128X";
-    settings["has_low_band"] = false;
-    settings["has_high_band"] = true;
-    settings["reg_domain_high"] = FHSSconfig->domain;
-#elif defined(RADIO_SX127X)
+#if defined(RADIO_SX127X)
     settings["radio-type"] = "SX127X";
     settings["has_low_band"] = true;
     settings["has_high_band"] = false;
     settings["reg_domain_low"] = FHSSconfig->domain;
+#elif defined(RADIO_SX128X)
+    settings["radio-type"] = "SX128X";
+    settings["has_low_band"] = false;
+    settings["has_high_band"] = true;
+    settings["reg_domain_high"] = FHSSconfig->domain;
 #elif defined(RADIO_LR1121)
     settings["radio-type"] = "LR1121";
+    settings["has_low_band"] = POWER_OUTPUT_VALUES_COUNT != 0;
+    settings["has_high_band"] = POWER_OUTPUT_VALUES_DUAL_COUNT != 0;
+    settings["reg_domain_low"] = FHSSconfig->domain;
+    settings["reg_domain_high"] = FHSSconfigDualBand->domain;
+#elif defined(RADIO_LR2021)
+    settings["radio-type"] = "LR2021";
     settings["has_low_band"] = POWER_OUTPUT_VALUES_COUNT != 0;
     settings["has_high_band"] = POWER_OUTPUT_VALUES_DUAL_COUNT != 0;
     settings["reg_domain_low"] = FHSSconfig->domain;
@@ -563,9 +727,16 @@ static void UpdateConfiguration(AsyncWebServerRequest *request, JsonVariant &jso
   JsonArray pwm = json["pwm"].as<JsonArray>();
   for(uint32_t channel = 0 ; channel < pwm.size() ; channel++)
   {
-    uint32_t val = pwm[channel];
+    rx_config_pwm_t pwmChannel;
+    pwmChannel.raw = pwm[channel];
+    if (OPT_PWM_OUT_ONLY &&
+        (pwmChannel.val.mode == somSerial || pwmChannel.val.mode == somSCL || pwmChannel.val.mode == somSDA ||
+         pwmChannel.val.mode == somSerial1RX || pwmChannel.val.mode == somSerial1TX))
+    {
+      pwmChannel.val.mode = som50Hz;
+    }
     //DBGLN("PWMch(%u)=%u", channel, val);
-    config.SetPwmChannelRaw(channel, val);
+    config.SetPwmChannelRaw(channel, pwmChannel.raw);
   }
 
   config.Commit();
@@ -705,7 +876,7 @@ static void WebUploadResponseHandler(AsyncWebServerRequest *request) {
       #else
         msg += "Please wait for a few seconds while the device reboots.\"}";
       #endif
-      rebootTime = millis() + 200;
+      scheduleRebootTime(200);
     } else {
       StreamString p = StreamString();
       if (Update.hasError()) {
@@ -869,7 +1040,7 @@ static void HandleContinuousWave(AsyncWebServerRequest *request) {
   if (request->hasArg("radio")) {
     SX12XX_Radio_Number_t radio = request->arg("radio").toInt() == 1 ? SX12XX_Radio_1 : SX12XX_Radio_2;
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
     bool setSubGHz = false;
     setSubGHz = request->arg("subGHz").toInt() == 1;
 #endif
@@ -879,12 +1050,20 @@ static void HandleContinuousWave(AsyncWebServerRequest *request) {
     request->send(response);
 
     Radio.TXdoneCallback = [](){};
+#if defined(RADIO_SX127X)
+    Radio.Begin();
+#elif defined(RADIO_SX128X)
+    Radio.Begin();
+#elif defined(RADIO_LR1121)
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
+#elif defined(RADIO_LR2021)
+    Radio.Begin(FHSSconfig->freq_center, FHSSconfigDualBand->freq_center);
+#endif
 
     POWERMGNT::init();
     POWERMGNT::setPower(POWERMGNT::getMinPower());
 
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
     Radio.startCWTest(setSubGHz ? FHSSconfig->freq_center : FHSSconfigDualBand->freq_center, radio);
 #else
     Radio.startCWTest(FHSSconfig->freq_center, radio);
@@ -895,7 +1074,7 @@ static void HandleContinuousWave(AsyncWebServerRequest *request) {
   } else {
     int radios = (GPIO_PIN_NSS_2 == UNDEF_PIN) ? 1 : 2;
     request->send(200, "application/json", String("{\"radios\": ") + radios + ", \"center\": "+ FHSSconfig->freq_center +
-#if defined(RADIO_LR1121)
+#if defined(RADIO_LR1121) || defined(RADIO_LR2021)
             ", \"center2\": "+ FHSSconfigDualBand->freq_center +
 #endif
             "}");
@@ -1101,12 +1280,18 @@ static void startServices()
   server.on("/options.json", HTTP_GET, getFile);
   server.on("/reboot", HandleReboot);
   server.on("/reset", HandleReset);
+  #if defined(TARGET_RX)
+    server.on("/gps", HTTP_GET, GetGpsStatus);
+  #endif
   #if defined(TARGET_TX) && defined(PLATFORM_ESP32)
     server.on("/udpcontrol", HTTP_POST, WebUdpControl);
   #endif
 
   server.addHandler(new AsyncCallbackJsonWebHandler("/config", UpdateConfiguration));
   server.addHandler(new AsyncCallbackJsonWebHandler("/options.json", UpdateSettings));
+  #if defined(TARGET_RX)
+    server.addHandler(new AsyncCallbackJsonWebHandler("/voltage-sample", SampleVoltageSources));
+  #endif
   #if defined(TARGET_TX)
     server.addHandler(new AsyncCallbackJsonWebHandler("/buttons", WebUpdateButtonColors));
     auto *handler = new AsyncCallbackJsonWebHandler("/import", ImportConfiguration);
@@ -1117,6 +1302,11 @@ static void startServices()
   #if defined(RADIO_LR1121)
     server.on("/lr1121", HTTP_OPTIONS, corsPreflightResponse);
     addLR1121Handlers(server);
+  #endif
+
+  #if defined(TARGET_RX)
+    wifi2tcp.begin();
+    server.addHandler(wifi2tcp.getWSserver());
   #endif
 
   addCaptivePortalHandlers();
@@ -1136,9 +1326,6 @@ static void startServices()
 
   servicesStarted = true;
   DBGLN("HTTPUpdateServer ready! Open http://%s.local in your browser", wifi_hostname);
-  #if defined(TARGET_RX)
-  wifi2tcp.begin();
-  #endif
 }
 
 static void HandleWebUpdate()

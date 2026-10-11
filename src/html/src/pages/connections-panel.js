@@ -2,7 +2,8 @@ import {html, LitElement} from "lit";
 import {customElement} from "lit/decorators.js";
 import {elrsState, saveConfig} from "../utils/state.js";
 import {_} from "../utils/libs.js";
-import {postWithFeedback} from "../utils/feedback.js";
+import {actionWithConfirm} from "../utils/feedback.js";
+import {transport} from "../utils/transport.js";
 
 export const PWM_MODE_SERIAL = 10;
 export const PWM_MODE_SERIAL2RX = 14;
@@ -15,6 +16,7 @@ class ConnectionsPanel extends LitElement {
     pinTxIndex = undefined
 
     createRenderRoot() {
+        this._onFormEdited = this._onFormEdited.bind(this)
         return this
     }
 
@@ -47,7 +49,7 @@ class ConnectionsPanel extends LitElement {
                         The connections panel requires landscape orientation on small screens.
                     </div>
                 </div>
-                <div class="td-card connections-panel">
+                <div class="td-card connections-panel" @input=${this._onFormEdited} @change=${this._onFormEdited}>
                     <div class="td-card-header">
                         <span class="td-h4">PWM output configuration</span>
                     </div>
@@ -74,17 +76,24 @@ class ConnectionsPanel extends LitElement {
                         <div style="flex: 1;"></div>
                         ${elrsState.options.customised ? html`
                             <button class="td-btn td-btn-danger"
-                                    @click="${postWithFeedback('Reset PWM Configuration', 'An error occurred resetting the configuration', '/reset?config', null)}">
+                                    @click="${actionWithConfirm('Reset to defaults',
+                                        'This discards the configuration saved on the device, restores the values it was flashed with and reboots it. Continue?',
+                                        'Reset & Reboot', 'An error occurred resetting the configuration',
+                                        () => transport.reset({config: true}))}">
                                 Reset to defaults
                             </button>
                         ` : ''}
-                        <button class="td-btn td-btn-primary" @click="${this._savePwmConfig}">Save</button>
+                        <button class="td-btn td-btn-primary"
+                                ?disabled="${!this.checkChanged()}"
+                                @click="${this._savePwmConfig}">Save &amp; Reboot</button>
                     </div>
                     <div class="td-divider"></div>
                     <div style="padding: var(--td-s-3) var(--td-s-4);">
                         <ul class="td-small td-mute" style="padding-left: 16px; margin: 0; line-height: 2;">
                             <li><strong class="td-fg">Output</strong> — receiver output pin</li>
-                            <li><strong class="td-fg">Mode</strong> — output frequency, duty cycle, digital, DShot, Serial, or I2C</li>
+                            <li><strong class="td-fg">Mode</strong> — output frequency, duty cycle, digital, DShot, Serial, or I2C.
+                                When enabling serial pins, also set the protocol and baud on the
+                                <a href="#serial" style="color: var(--td-brand);">Serial</a> page</li>
                             <li><strong class="td-fg">Input</strong> — handset channel</li>
                             <li><strong class="td-fg">Invert</strong> — invert channel position</li>
                             <li><strong class="td-fg">Stretch</strong> — widen pulse to 500–2500 us</li>
@@ -164,12 +173,14 @@ class ConnectionsPanel extends LitElement {
             modes.push(undefined)
             modes.push(features & 32 ? 'Serial2 RX' : undefined)
             modes.push(features & 64 ? 'Serial2 TX' : undefined)
+            // A stored mode this pin can't do (e.g. after a layout change) falls back to 50Hz
+            const selectedMode = modes[mode] ? mode : 0
 
             htmlFields.push(html`
                 <tr>
                     <td class="td-mono" style="text-align:center;">${index + 1}</td>
                     <td>${this._generateFeatureBadges(features)}</td>
-                    <td>${this._enumSelectGenerate(`pwm_${index}_mode`, mode, modes, (e) => {this._pinModeChange(e.target, index)})}</td>
+                    <td>${this._enumSelectGenerate(`pwm_${index}_mode`, selectedMode, modes, (e) => {this._pinModeChange(e.target, index)})}</td>
                     <td>${this._enumSelectGenerate(`pwm_${index}_ch`, ch,
                             ['ch1','ch2','ch3','ch4','ch5 (AUX1)','ch6 (AUX2)','ch7 (AUX3)','ch8 (AUX4)',
                              'ch9 (AUX5)','ch10 (AUX6)','ch11 (AUX7)','ch12 (AUX8)',
@@ -182,7 +193,7 @@ class ConnectionsPanel extends LitElement {
                     <td><input id="pwm_${index}_fs" type="number" value="${failsafe}" size="6" style="width:70px;"/></td>
                 </tr>
             `);
-            this.pinModes[index] = mode
+            this.pinModes[index] = selectedMode
         });
         return htmlFields
     }
@@ -256,7 +267,11 @@ class ConnectionsPanel extends LitElement {
         }
     }
 
-    _getPwmFormData() {
+    _onFormEdited() {
+        this.requestUpdate()
+    }
+
+    _getPwmFormData(normalizeFields = false) {
         let ch = 0
         let inField
         const outData = []
@@ -270,7 +285,7 @@ class ConnectionsPanel extends LitElement {
             let failsafe = failsafeField.value
             if (failsafe > 2523) failsafe = 2523;
             if (failsafe < 476) failsafe = 476;
-            failsafeField.value = failsafe
+            if (normalizeFields) failsafeField.value = failsafe
             let failsafeMode = failsafeModeField.value
             const raw = (failsafeMode << 22) | (stretch << 20) | (mode << 16) | (invert << 15) | (inChannel << 11) | (failsafe - 476)
             outData.push(raw)
@@ -281,8 +296,8 @@ class ConnectionsPanel extends LitElement {
 
     _savePwmConfig(e) {
         e.preventDefault();
-        const data = this._getPwmFormData()
-        saveConfig({'pwm': data})
+        const data = this._getPwmFormData(true)
+        saveConfig({'pwm': data}, () => this.requestUpdate())
     }
 
     checkChanged() {

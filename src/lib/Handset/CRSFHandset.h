@@ -64,7 +64,7 @@ private:
 
     static Stream *PortSecondary; // A second UART used to mirror telemetry out on the TX, not read from
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
     bool UARTinverted = false;
 #endif
 

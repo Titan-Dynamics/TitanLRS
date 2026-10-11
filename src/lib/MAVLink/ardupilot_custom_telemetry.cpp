@@ -19,6 +19,7 @@
 
 #include "ardupilot_custom_telemetry.h"
 #include "common/mavlink.h"
+#include <math.h>
 
 /*
  * Known Issues:
@@ -372,7 +373,7 @@ uint32_t format_batt1(uint16_t voltage_mv, int16_t current_ca, int32_t current_c
     }
     if (current_consumed > 0){
         // battery current drawn since power on in mAh (limit to 32767 (0x7FFF) since value is stored on 15 bits)
-        batt |= ((current_consumed < BATT_TOTALMAH_LIMIT) ? (current_consumed & BATT_TOTALMAH_LIMIT) : BATT_TOTALMAH_LIMIT)<<BATT_TOTALMAH_OFFSET;
+        batt |= MIN((uint32_t)current_consumed, (uint32_t)BATT_TOTALMAH_LIMIT)<<BATT_TOTALMAH_OFFSET;
     }
     return batt;
 }
@@ -459,6 +460,20 @@ uint32_t format_param(uint8_t param_id, uint32_t param_value)
 }
 
 /*
+ * Adapted from Ardupilot's AP_Frsky_SPort_Passthrough::calc_rpm()
+ * This is the content of the 0x500A RPM value.
+ * Two signed 16-bit RPM values, each scaled by 0.1 (Yaapu multiplies back by 10).
+ * rpm1 occupies bits 0-15, rpm2 bits 16-31.
+ */
+uint32_t format_rpm(float rpm1, float rpm2)
+{
+    uint32_t value = (uint16_t)(int16_t)lroundf(rpm1 * 0.1f);
+    value |= ((uint32_t)(uint16_t)(int16_t)lroundf(rpm2 * 0.1f)) << 16;
+    return value;
+}
+
+
+/*
  * Adapted from Ardupilot's AP_Frsky_SPort_Passthrough::calc_terrain()
  * This is the content of the 0x500B terrain.
  */
@@ -471,7 +486,7 @@ uint32_t format_terrain(uint32_t altitude_terrain)
 
 /*
  * Adapted from Ardupilot's AP_Frsky_SPort_Passthrough::calc_waypoint()
- * This is the content of the 0x500B terrain.
+ * This is the content of the 0x500D waypoint.
  */
 uint32_t format_waypoint(uint8_t heading, uint16_t distance, uint16_t number)
 {

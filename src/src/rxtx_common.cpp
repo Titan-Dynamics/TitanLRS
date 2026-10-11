@@ -21,6 +21,7 @@ static deferred_t deferred[maxDeferredFunctions] = {
 };
 
 boolean i2c_enabled = false;
+static unsigned long rebootTime_Ms = 0;
 
 static void setupWire()
 {
@@ -53,9 +54,15 @@ static void setupWire()
     if(gpio_sda != UNDEF_PIN && gpio_scl != UNDEF_PIN)
     {
         DBGLN("Starting wire on SCL %d, SDA %d", gpio_scl, gpio_sda);
+#if defined(PLATFORM_STM32)
+        Wire.setSDA(gpio_sda);
+        Wire.setSCL(gpio_scl);
+        Wire.begin();
+#else
         // ESP hopes to get Wire::begin(int, int)
         // ESP32 hopes to get Wire::begin(int = -1, int = -1, uint32 = 0)
         Wire.begin(gpio_sda, gpio_scl);
+#endif
         Wire.setClock(400000);
         i2c_enabled = true;
     }
@@ -93,5 +100,29 @@ void executeDeferredFunction(unsigned long now)
             deferred[i].function();
             deferred[i].function = nullptr;
         }
+    }
+}
+
+/***
+ * @brief Set a time in milliseconds to reboot the MCU from the main loop thread
+ * */
+void scheduleRebootTime(unsigned long inMs)
+{
+    rebootTime_Ms = millis() + inMs;
+}
+
+/**
+ * @brief Call from the main thread to check if it is time to reboot. May not return.
+ */
+void checkRebootTime(unsigned long now)
+{
+    // If the reboot time is set and the current time is past the reboot time then reboot.
+    // Wait for any pending config change to be committed first
+    if (rebootTime_Ms != 0 && !config.IsModified() && now > rebootTime_Ms ) {
+#if defined(PLATFORM_STM32)
+        HAL_NVIC_SystemReset();
+#else
+        ESP.restart();
+#endif
     }
 }

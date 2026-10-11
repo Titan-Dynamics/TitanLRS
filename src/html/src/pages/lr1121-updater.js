@@ -1,16 +1,16 @@
 import {html, LitElement} from 'lit'
-import {customElement, query, state} from 'lit/decorators.js'
+import {customElement, state} from 'lit/decorators.js'
 import '../components/filedrag.js'
-import {cuteAlert, postWithFeedback} from "../utils/feedback.js"
+import {cuteAlert, loadJSON, postWithFeedback} from "../utils/feedback.js"
 
 @customElement('lr1121-updater')
 export class LR1121Updater extends LitElement {
-    @query('#radio2') accessor radio2
-
     @state() accessor data = undefined
     @state() accessor status = ''
     @state() accessor progress = 0
     @state() accessor manual = false
+    @state() accessor radio = 1
+    loadPromise = null
 
     createRenderRoot() {
         return this
@@ -66,8 +66,8 @@ export class LR1121Updater extends LitElement {
             <div class="td-card-row" style="border-bottom: none; padding-bottom: 0; margin-bottom: var(--td-s-3);">
                 <span class="td-label">Target radio</span>
                 <div class="td-segment" style="width: fit-content;">
-                    <button id="radio1" type="button" class="is-active">Radio 1</button>
-                    <button id="radio2" type="button">Radio 2</button>
+                    <button type="button" class="${this.radio === 1 ? 'is-active' : ''}" @click="${() => { this.radio = 1 }}">Radio 1</button>
+                    <button type="button" class="${this.radio === 2 ? 'is-active' : ''}" @click="${() => { this.radio = 2 }}">Radio 2</button>
                 </div>
             </div>
         `
@@ -109,7 +109,22 @@ export class LR1121Updater extends LitElement {
 
     connectedCallback() {
         super.connectedCallback()
-        this._loadData()
+        this.pageReady().catch(() => {})
+    }
+
+    // Called by the app after the page is shown, and from connectedCallback; loads once.
+    pageReady() {
+        if (!this.loadPromise) {
+            this.loadPromise = loadJSON('/lr1121.json', 'Failed to load LR1121 firmware status.')
+                .then((data) => {
+                    this.data = data
+                    this.manual = !!data.manual
+                }, (error) => {
+                    this.loadPromise = null
+                    throw error
+                })
+        }
+        return this.loadPromise
     }
 
     _dec2hex(i, len) {
@@ -121,20 +136,6 @@ export class LR1121Updater extends LitElement {
         e.preventDefault()
         e.stopPropagation()
         return postWithFeedback('LR1121 Reset', 'Reset failed', '/reset?lr1121', null)(e)
-    }
-
-    _loadData() {
-        const xmlhttp = new XMLHttpRequest()
-        xmlhttp.onreadystatechange = () => {
-            if (xmlhttp.readyState === 4 && xmlhttp.status === 200) {
-                const data = JSON.parse(xmlhttp.responseText)
-                this.data = data
-                this.manual = !!data.manual
-            }
-        }
-        xmlhttp.open('GET', '/lr1121.json', true)
-        xmlhttp.setRequestHeader('Content-type', 'application/x-www-form-urlencoded')
-        xmlhttp.send()
     }
 
     _fileSelected(e) {
@@ -150,8 +151,7 @@ export class LR1121Updater extends LitElement {
         ajax.addEventListener('abort', (event) => this._abortHandler(event), false)
         ajax.open('POST', '/lr1121')
         ajax.setRequestHeader('X-FileSize', file.size)
-        const radio = document.querySelector('input[name=optionsRadio]:checked')?.value || '1'
-        ajax.setRequestHeader('X-Radio', radio)
+        ajax.setRequestHeader('X-Radio', this.data?.radio2 ? this.radio : 1)
         const formdata = new FormData()
         formdata.append('upload', file, file.name)
         ajax.send(formdata)

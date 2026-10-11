@@ -9,6 +9,7 @@
 #include "device.h"
 
 #define NO_SERIALIO_INTERVAL 1000
+#define IMMEDIATE_RC_POLL_INTERVAL 100
 
 extern SerialIO *serialIO;
 #if defined(PLATFORM_ESP32)
@@ -72,6 +73,7 @@ static int event(devserial_ctx_t *ctx)
         {
             (*(ctx->io))->setFailsafe(connectionState == disconnected);
         }
+        (*(ctx->io))->event();
     }
 
     ctx->lastConnectionState = connectionState;
@@ -199,10 +201,18 @@ static int timeout(devserial_ctx_t *ctx)
         return NO_SERIALIO_INTERVAL;
     }
 
-    // stop callbacks when serial driver wants immediate sends or when doing serial update
-    if ((*(ctx->io))->sendImmediateRC() || connectionState == serialUpdate)
+    // stop callbacks when doing serial update
+    if (connectionState == serialUpdate)
     {
         return DURATION_NEVER;
+    }
+
+    // serial drivers that want immediate sends get their RC frames from sendImmediateRC(), but keep
+    // polling slowly: returning DURATION_NEVER here is never re-armed, so a runtime protocol change
+    // to a timer-driven driver (SBUS, SUMD, MAVLink...) would get no RC output until a reboot
+    if ((*(ctx->io))->sendImmediateRC())
+    {
+        return IMMEDIATE_RC_POLL_INTERVAL;
     }
 
     /***
@@ -299,7 +309,7 @@ device_t Serial0_device = {
     .start = start,
     .event = event0,
     .timeout = timeout0,
-    .subscribe = EVENT_CONNECTION_CHANGED
+    .subscribe = EVENT_CONNECTION_CHANGED | EVENT_CONFIG_MODEL_CHANGED
 };
 
 #if defined(PLATFORM_ESP32)
@@ -308,7 +318,7 @@ device_t Serial1_device = {
     .start = start,
     .event = event1,
     .timeout = timeout1,
-    .subscribe = EVENT_CONNECTION_CHANGED
+    .subscribe = EVENT_CONNECTION_CHANGED | EVENT_CONFIG_MODEL_CHANGED
 };
 #endif
 
