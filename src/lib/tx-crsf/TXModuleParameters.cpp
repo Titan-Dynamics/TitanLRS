@@ -648,7 +648,7 @@ void TXModuleEndpoint::SetPacketRateIdx(uint8_t idx, bool forceChange)
 
   uint8_t actualRate = adjustPacketRateForBaud(idx);
   // No change, don't do anything
-  if (actualRate == ExpressLRS_currAirRate_Modparams->index)
+  if (actualRate == config.GetRate())
     return;
 
   const auto newModParams = get_elrs_airRateConfig(actualRate);
