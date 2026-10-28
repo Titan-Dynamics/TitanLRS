@@ -1684,6 +1684,22 @@ void loop()
 
   HandleUARTin();
 
+  if (connectionState == noCrossfire && config.IsModified())
+  {
+    // The RF timer is stopped in noCrossfire, so the sync spam counter would never drain.
+    // Commit changes made over the backpack / USB config API straight away.
+    syncSpamCounter = 0;
+    CheckConfigChangePending();
+    // SetRFLinkRate() leaves us in disconnected, but there's still no handset (as in setup())
+    setConnectionState(noCrossfire);
+  }
+  else if (connectionState == wifiUpdate && config.IsModified())
+  {
+    // The radio is shut down in wifiUpdate so only save the changes; leaving WiFi reboots,
+    // which applies them.
+    devicesTriggerEvent(config.Commit());
+  }
+
   if (connectionState > MODE_STATES)
   {
     return;
