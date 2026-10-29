@@ -328,6 +328,11 @@ extern bool TxBackpackWiFiReadyToSend;
 extern bool VRxBackpackWiFiReadyToSend;
 extern void setWifiUpdateMode();
 
+static bool isRxLinkDown()
+{
+  return connectionState == disconnected || connectionState == noCrossfire || connectionState == wifiUpdate;
+}
+
 void TXModuleEndpoint::supressCriticalErrors()
 {
     // clear the critical error bits of the warning flags
@@ -643,7 +648,7 @@ void TXModuleEndpoint::SetPacketRateIdx(uint8_t idx, bool forceChange)
 
   uint8_t actualRate = adjustPacketRateForBaud(idx);
   // No change, don't do anything
-  if (actualRate == ExpressLRS_currAirRate_Modparams->index)
+  if (actualRate == config.GetRate())
     return;
 
   const auto newModParams = get_elrs_airRateConfig(actualRate);
@@ -651,7 +656,7 @@ void TXModuleEndpoint::SetPacketRateIdx(uint8_t idx, bool forceChange)
   // Force Gemini when using dual band modes.
   uint8_t newAntennaMode = RadioBandMod::isBDUAL(newModParams->radio_type) ? TX_RADIO_MODE_GEMINI : config.GetAntennaMode();
   // If the switch mode is going to change, block the change while connected
-  bool isDisconnected = connectionState == disconnected;
+  bool isDisconnected = isRxLinkDown();
   // Don't allow the switch mode to change if the TX is in mavlink mode
   // Wide switch mode is not compatible with mavlink, and the switch mode is
   // autoconfigured when entering mavlink mode
@@ -684,7 +689,7 @@ const char *TXModuleEndpoint::SwitchModeLockReason() const
     return "locked in MAVLink mode";
   // Only allow changing switch mode when disconnected since we need to guarantee
   // the pack and unpack functions are matched
-  if (connectionState != disconnected)
+  if (!isRxLinkDown())
     return "only while disconnected";
   return nullptr;
 }
@@ -865,7 +870,7 @@ void TXModuleEndpoint::registerParameters()
     registerParameter(&luaLinkMode, [this](propertiesCommon *item, uint8_t arg) {
       // Only allow changing when disconnected since we need to guarantee
       // the switch pack and unpack functions are matched on the tx and rx.
-      bool isDisconnected = connectionState == disconnected;
+      bool isDisconnected = isRxLinkDown();
       if (isDisconnected)
       {
         config.SetLinkMode(arg);
