@@ -15,6 +15,9 @@
   *                A USB network adapter (lib/USBNet runs lwIP over it). The
   *                config API is HTTP on it and MAVLink is offered as UDP. The OS
   *                binds its own NCM driver, so it never shows up as a port.
+  *
+  * With USB_HAS_CDC_ACM 0 (usbnet_port_*.h) the CDC-ACM function is left out and
+  * the NCM function takes interfaces 0 + 1 and endpoints 1 + 2.
   ******************************************************************************
   */
 
@@ -25,6 +28,7 @@
 
 #include <stdint.h>
 #include "usbd_def.h"
+#include "usbnet_port.h"
 
 #if defined(USB) && !defined(USB_OTG_FS) && !defined(USB_OTG_HS)
 #error "USBComposite supports only OTG USB cores (dedicated FIFOs), not the PMA-based USB peripheral."
@@ -35,6 +39,19 @@ typedef struct {
   uint32_t ep_size;   /* FIFO size, in 32-bit words */
 } ep_desc_t;
 
+#if !USB_HAS_CDC_ACM
+/* CDC-NCM function. The CDC-ACM defines stay undefined, so any leftover use fails to build. */
+#define NCM_OUT_EP                    0x01U
+#define NCM_IN_EP                     0x81U
+#define NCM_NOTIF_EP                  0x82U
+
+/* Device endpoints number including EP0. Highest EP number in use is 2. */
+#define DEV_NUM_EP                    0x03U
+
+/* Interface numbering (must match the order in the configuration descriptor) */
+#define NCM_COMM_ITF                  0x00U
+#define NCM_DATA_ITF                  0x01U
+#else
 /* CDC-ACM function — same endpoint addresses as the stock stm32duino device */
 #define CDC_OUT_EP                    0x01U
 #define CDC_IN_EP                     0x81U
@@ -53,6 +70,7 @@ typedef struct {
 #define CDC_DATA_ITF                  0x01U
 #define NCM_COMM_ITF                  0x02U
 #define NCM_DATA_ITF                  0x03U
+#endif
 
 /* String descriptor indices for the per-function names. 0..5 are reserved by the
  * core (langid, mfc, product, serial, config, interface). */
@@ -68,6 +86,12 @@ typedef struct {
   #define NCM_DATA_MAX_PACKET_SIZE    USB_FS_MAX_PACKET_SIZE
 #endif
 #define CDC_CMD_PACKET_SIZE           8U
+#ifndef CDC_HS_BINTERVAL
+#define CDC_HS_BINTERVAL              0x10U
+#endif
+#ifndef CDC_FS_BINTERVAL
+#define CDC_FS_BINTERVAL              0x10U
+#endif
 #define NCM_NOTIF_PACKET_SIZE         64U /* notifications are 8-16 bytes: always a short packet */
 
 extern const ep_desc_t ep_def[];

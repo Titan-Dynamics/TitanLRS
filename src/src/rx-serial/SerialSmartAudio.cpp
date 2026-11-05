@@ -50,12 +50,16 @@ void SerialSmartAudio::setRXMode() const
 #if defined(PLATFORM_ESP32)
     pinMode(halfDuplexPin, INPUT_PULLUP);                           // set half-duplex GPIO to INPUT
     pinMatrixInAttach(halfDuplexPin, URXDinIdx, false);             // attach half-duplex GPIO as input to UART RX
+#elif defined(PLATFORM_STM32)
+    // The port runs half duplex (stm32SerialBegin), and the core turns the receiver back on only
+    // from read(), which SerialIO never calls while nothing has arrived
+    static_cast<HardwareSerial *>(_outputPort)->enableHalfDuplexRx();
 #endif
 }
 
 void SerialSmartAudio::sendQueuedData(uint32_t maxBytesToSend)
 {
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
     uint32_t bytesWritten = 0;
     static unsigned long lastSendTime = 0; // we need to delay between sending frames to allow for responses
     while (millis() - lastSendTime > SMARTAUDIO_RESPONSE_DELAY_MS && _fifo.size() > 0 && bytesWritten < maxBytesToSend) // OVTX only changes protocols on startup every 500ms; if we send our 3 packets in different 500ms windows, we have a better chance of success
@@ -70,7 +74,11 @@ void SerialSmartAudio::sendQueuedData(uint32_t maxBytesToSend)
         bytesWritten += frameSize;
         lastSendTime = millis();
     }
+#if defined(PLATFORM_ESP32)
     if (uart_ll_is_tx_idle(UART_LL_GET_HW(1)))
+#else
+    if (_outputPort->availableForWrite() == SERIAL_TX_BUFFER_SIZE - 1)
+#endif
     {
         setRXMode();
     }

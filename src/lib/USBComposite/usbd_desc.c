@@ -227,8 +227,11 @@ __ALIGN_BEGIN uint8_t USBD_Class_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
    * the descriptors themselves.
    *
    * Bump this again on any future change to usbd_msos20.c, or Windows machines
-   * that have already seen the old version will keep the stale answer. */
-  0x00,
+   * that have already seen the old version will keep the stale answer.
+   *
+   * The NCM-only layout (USB_HAS_CDC_ACM 0, 4.10) shares the VID:PID but puts
+   * NCM on different interfaces, so it gets its own release number. */
+  USB_HAS_CDC_ACM ? 0x00 : 0x10,
   0x04,
   USBD_IDX_MFC_STR,           /* Index of manufacturer string */
   USBD_IDX_PRODUCT_STR,       /* Index of product string */

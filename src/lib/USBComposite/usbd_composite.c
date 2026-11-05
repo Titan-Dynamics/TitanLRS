@@ -2,9 +2,6 @@
   ******************************************************************************
   * @file    usbd_composite.c
   * @brief   CDC-ACM + CDC-NCM composite USB device class. See the header.
-  *
-  * The CDC half is derived from ST's usbd_cdc.c.
-  * Copyright (c) 2015 STMicroelectronics, licensed under the terms in that file.
   ******************************************************************************
   */
 
@@ -15,11 +12,13 @@
 #include "usbd_composite.h"
 #include "usbd_msos20.h"
 #include "usbd_ncm.h"
+#include "usbd_cdc_acm.h"
 #include "usbd_ctlreq.h"
 
 /* Configuration descriptor ------------------------------------------------- */
 
-#define CDC_FUNCTION_DESC_SIZ    66U   /* IAD + 2 interfaces + functional + 3 EPs */
+#define CDC_FUNCTION_DESC_SIZ   (USB_HAS_CDC_ACM ? 66U : 0U)   /* IAD + 2 interfaces + functional + 3 EPs */
+#define USBD_COMPOSITE_NUM_ITF  (USB_HAS_CDC_ACM ? 0x04U : 0x02U)
 #define NCM_FUNCTION_DESC_SIZ    85U   /* IAD + comm (+ functional, notif EP) + data alt 0/1 + 2 EPs */
 #define USBD_COMPOSITE_CFG_DESC_SIZ (9U + CDC_FUNCTION_DESC_SIZ + NCM_FUNCTION_DESC_SIZ)
 
@@ -29,7 +28,7 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   USB_DESC_TYPE_CONFIGURATION,                /* bDescriptorType */
   LOBYTE(USBD_COMPOSITE_CFG_DESC_SIZ),        /* wTotalLength */
   HIBYTE(USBD_COMPOSITE_CFG_DESC_SIZ),
-  0x04,                                       /* bNumInterfaces: 2 CDC-ACM + 2 CDC-NCM */
+  USBD_COMPOSITE_NUM_ITF,                     /* bNumInterfaces: [2 CDC-ACM +] 2 CDC-NCM */
   0x01,                                       /* bConfigurationValue */
   0x00,                                       /* iConfiguration */
 #if (USBD_SELF_POWERED == 1U)
@@ -39,6 +38,7 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
 #endif
   USBD_MAX_POWER,                             /* bMaxPower (2 mA units) */
 
+#if USB_HAS_CDC_ACM
   /* ---------------- CDC-ACM function (interfaces 0 + 1) ------------------- */
 
   /* Interface association: without this Windows treats the whole device as one
@@ -98,9 +98,12 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   0x07, USB_DESC_TYPE_ENDPOINT, CDC_IN_EP, 0x02,
   LOBYTE(CDC_DATA_MAX_PACKET_SIZE), HIBYTE(CDC_DATA_MAX_PACKET_SIZE), 0x00,
 
-  /* ---------------- CDC-NCM function (interfaces 2 + 3) ------------------- */
+#endif
 
-  /* Interface association */
+  /* ---------------- CDC-NCM function (interfaces 2 + 3, or 0 + 1) --------- */
+
+  /* Interface association. Kept on an NCM-only device too, which leaves the
+   * device descriptor's IAD class codes valid. */
   0x08,                                       /* bLength */
   USB_DESC_TYPE_IAD,                          /* bDescriptorType */
   NCM_COMM_ITF,                               /* bFirstInterface */
@@ -140,7 +143,11 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_CfgDesc[USBD_COMPOSITE_CFG_DESC_SIZ]
   0x24,                                       /* bDescriptorType: CS_INTERFACE */
   0x1A,                                       /* bDescriptorSubtype: NCM */
   0x00, 0x01,                                 /* bcdNcmVersion 1.00 */
-  0x00,                                       /* bmNetworkCapabilities: none */
+  /* bmNetworkCapabilities: SetEthernetPacketFilter (D0). With 0x00 macOS switches the data interface
+   * back to alternate setting 0 on about half of all connections and never re-enables it, at least
+   * when NCM is the only function (Apple r.170072016, DTS workaround in developer forums thread
+   * 824727). The request is accepted and ignored in usbd_ncm.c. */
+  0x01,
 
   /* Notification endpoint */
   0x07, USB_DESC_TYPE_ENDPOINT, NCM_NOTIF_EP, 0x03,
@@ -190,8 +197,8 @@ __ALIGN_BEGIN static uint8_t USBD_Composite_DeviceQualifierDesc[USB_LEN_DEV_QUAL
 
 /* State --------------------------------------------------------------------- */
 
-static USBD_CDC_HandleTypeDef  hcdc;
-static USBD_CDC_ItfTypeDef  *cdc_fops = NULL;
+/* Class data for the core's handle, which nothing reads: each function keeps its own state. */
+static uint8_t s_classData;
 
 /* Class callbacks ----------------------------------------------------------- */
 
@@ -199,38 +206,16 @@ static uint8_t USBD_Composite_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
 {
   UNUSED(cfgidx);
 
-  if (cdc_fops == NULL) {
-    return (uint8_t)USBD_FAIL;
+  const uint8_t ret = ACM_ClassInit(pdev);
+  if (ret != (uint8_t)USBD_OK) {
+    return ret;
   }
-
-  /* --- CDC --- */
-  (void)USBD_LL_OpenEP(pdev, CDC_IN_EP, USBD_EP_TYPE_BULK, CDC_DATA_MAX_PACKET_SIZE);
-  pdev->ep_in[CDC_IN_EP & 0x0FU].is_used = 1U;
-
-  (void)USBD_LL_OpenEP(pdev, CDC_OUT_EP, USBD_EP_TYPE_BULK, CDC_DATA_MAX_PACKET_SIZE);
-  pdev->ep_out[CDC_OUT_EP & 0x0FU].is_used = 1U;
-
-  (void)USBD_LL_OpenEP(pdev, CDC_CMD_EP, USBD_EP_TYPE_INTR, CDC_CMD_PACKET_SIZE);
-  pdev->ep_in[CDC_CMD_EP & 0x0FU].is_used = 1U;
-  pdev->ep_in[CDC_CMD_EP & 0x0FU].bInterval =
-    (pdev->dev_speed == USBD_SPEED_HIGH) ? CDC_HS_BINTERVAL : CDC_FS_BINTERVAL;
-
-  hcdc.RxBuffer = NULL;
-  hcdc.CmdOpCode = 0xFFU;
-  (void)cdc_fops->Init();          /* hands us the receive buffer */
-  hcdc.TxState = 0U;
-  hcdc.RxState = 0U;
-
-  if (hcdc.RxBuffer == NULL) {
-    return (uint8_t)USBD_EMEM;
-  }
-  (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc.RxBuffer, CDC_DATA_MAX_PACKET_SIZE);
 
   /* --- NCM: notification endpoint now, data endpoints on SET_INTERFACE(alt 1) --- */
   NCM_ClassInit(pdev);
 
-  pdev->pClassDataCmsit[0] = (void *)&hcdc;
-  pdev->pClassData = (void *)&hcdc;
+  pdev->pClassDataCmsit[0] = (void *)&s_classData;
+  pdev->pClassData = (void *)&s_classData;
 
   return (uint8_t)USBD_OK;
 }
@@ -239,19 +224,8 @@ static uint8_t USBD_Composite_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
 {
   UNUSED(cfgidx);
 
-  (void)USBD_LL_CloseEP(pdev, CDC_IN_EP);
-  pdev->ep_in[CDC_IN_EP & 0x0FU].is_used = 0U;
-  (void)USBD_LL_CloseEP(pdev, CDC_OUT_EP);
-  pdev->ep_out[CDC_OUT_EP & 0x0FU].is_used = 0U;
-  (void)USBD_LL_CloseEP(pdev, CDC_CMD_EP);
-  pdev->ep_in[CDC_CMD_EP & 0x0FU].is_used = 0U;
-  pdev->ep_in[CDC_CMD_EP & 0x0FU].bInterval = 0U;
-
+  ACM_ClassDeInit(pdev);
   NCM_ClassDeInit(pdev);
-
-  if (cdc_fops != NULL) {
-    (void)cdc_fops->DeInit();
-  }
 
   pdev->pClassDataCmsit[0] = NULL;
   pdev->pClassData = NULL;
@@ -276,14 +250,10 @@ static uint8_t USBD_Composite_VendorReq(USBD_HandleTypeDef *pdev, USBD_SetupReqT
 
 static uint8_t USBD_Composite_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
 {
-  uint16_t len;
   uint8_t ifalt = 0U;
   uint16_t status_info = 0U;
   USBD_StatusTypeDef ret = USBD_OK;
 
-  if (cdc_fops == NULL) {
-    return (uint8_t)USBD_FAIL;
-  }
 
   switch (req->bmRequest & USB_REQ_TYPE_MASK) {
     case USB_REQ_TYPE_VENDOR:
@@ -293,27 +263,7 @@ static uint8_t USBD_Composite_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTyped
       if (LOBYTE(req->wIndex) == NCM_COMM_ITF) {
         return NCM_ClassSetup(pdev, req);
       }
-      if ((LOBYTE(req->wIndex) != CDC_COMM_ITF) && (LOBYTE(req->wIndex) != CDC_DATA_ITF)) {
-        USBD_CtlError(pdev, req);
-        return (uint8_t)USBD_FAIL;
-      }
-
-      if (req->wLength != 0U) {
-        if ((req->bmRequest & 0x80U) != 0U) {
-          (void)cdc_fops->Control(req->bRequest, (uint8_t *)hcdc.data, req->wLength);
-          len = MIN(CDC_REQ_MAX_DATA_SIZE, req->wLength);
-          (void)USBD_CtlSendData(pdev, (uint8_t *)hcdc.data, len);
-        } else {
-          hcdc.CmdOpCode = req->bRequest;
-          hcdc.CmdLength = (uint8_t)MIN(req->wLength, USB_MAX_EP0_SIZE);
-          (void)USBD_CtlPrepareRx(pdev, (uint8_t *)hcdc.data, hcdc.CmdLength);
-        }
-      } else {
-        /* No data stage: the media layer reads the request itself. This is how
-         * SET_CONTROL_LINE_STATE delivers DTR/RTS. */
-        (void)cdc_fops->Control(req->bRequest, (uint8_t *)req, 0U);
-      }
-      break;
+      return ACM_ClassSetup(pdev, req);
 
     case USB_REQ_TYPE_STANDARD:
       switch (req->bRequest) {
@@ -391,13 +341,10 @@ static uint8_t USBD_Composite_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
     return (uint8_t)USBD_OK;
   }
 
-  if (ep == (CDC_IN_EP & 0x0FU)) {
-    hcdc.TxState = 0U;
-    if ((cdc_fops != NULL) && (cdc_fops->TransmitCplt != NULL)) {
-      (void)cdc_fops->TransmitCplt(hcdc.TxBuffer, &hcdc.TxLength, epnum);
-    }
-  } else if ((ep == (NCM_IN_EP & 0x0FU)) || (ep == (NCM_NOTIF_EP & 0x0FU))) {
+  if ((ep == (NCM_IN_EP & 0x0FU)) || (ep == (NCM_NOTIF_EP & 0x0FU))) {
     NCM_DataIn(pdev, epnum);
+  } else {
+    ACM_DataIn(pdev, epnum);
   }
 
   return (uint8_t)USBD_OK;
@@ -407,14 +354,10 @@ static uint8_t USBD_Composite_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
 {
   const uint8_t ep = epnum & 0x0FU;
 
-  if (ep == (CDC_OUT_EP & 0x0FU)) {
-    if (cdc_fops == NULL) {
-      return (uint8_t)USBD_FAIL;
-    }
-    hcdc.RxLength = USBD_LL_GetRxDataSize(pdev, epnum);
-    (void)cdc_fops->Receive(hcdc.RxBuffer, &hcdc.RxLength);
-  } else if (ep == (NCM_OUT_EP & 0x0FU)) {
+  if (ep == (NCM_OUT_EP & 0x0FU)) {
     NCM_DataOut(pdev, epnum);
+  } else {
+    ACM_DataOut(pdev, epnum);
   }
 
   return (uint8_t)USBD_OK;
@@ -426,10 +369,7 @@ static uint8_t USBD_Composite_EP0_RxReady(USBD_HandleTypeDef *pdev)
     return (uint8_t)USBD_OK;
   }
 
-  if ((cdc_fops != NULL) && (hcdc.CmdOpCode != 0xFFU)) {
-    (void)cdc_fops->Control(hcdc.CmdOpCode, (uint8_t *)hcdc.data, (uint16_t)hcdc.CmdLength);
-    hcdc.CmdOpCode = 0xFFU;
-  }
+  ACM_EP0_RxReady(pdev);
 
   return (uint8_t)USBD_OK;
 }
@@ -466,60 +406,5 @@ USBD_ClassTypeDef USBD_Composite = {
   NULL,
 #endif
 };
-
-/* Exported API -------------------------------------------------------------- */
-
-uint8_t USBD_Composite_RegisterCDC(USBD_HandleTypeDef *pdev, USBD_CDC_ItfTypeDef *fops)
-{
-  UNUSED(pdev);
-  if (fops == NULL) {
-    return (uint8_t)USBD_FAIL;
-  }
-  cdc_fops = fops;
-  return (uint8_t)USBD_OK;
-}
-
-USBD_CDC_HandleTypeDef *USBD_CDC_Handle(void)
-{
-  return &hcdc;
-}
-
-uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff, uint32_t length)
-{
-  UNUSED(pdev);
-  hcdc.TxBuffer = pbuff;
-  hcdc.TxLength = length;
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_CDC_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff)
-{
-  UNUSED(pdev);
-  hcdc.RxBuffer = pbuff;
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev)
-{
-  if (hcdc.TxState != 0U) {
-    return (uint8_t)USBD_BUSY;
-  }
-  hcdc.TxState = 1U;
-  pdev->ep_in[CDC_IN_EP & 0x0FU].total_length = hcdc.TxLength;
-  (void)USBD_LL_Transmit(pdev, CDC_IN_EP, hcdc.TxBuffer, hcdc.TxLength);
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev)
-{
-  (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc.RxBuffer, CDC_DATA_MAX_PACKET_SIZE);
-  return (uint8_t)USBD_OK;
-}
-
-uint8_t USBD_CDC_ClearBuffer(USBD_HandleTypeDef *pdev)
-{
-  (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, NULL, 0U);
-  return (uint8_t)USBD_OK;
-}
 
 #endif /* USBCON */

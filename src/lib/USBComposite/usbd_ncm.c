@@ -13,6 +13,7 @@
 #include "usbd_ncm.h"
 #include "usbd_desc.h"
 #include "usbd_composite_if.h"
+#include "usbnet_port.h"
 
 /* NCM class requests (CDC NCM 1.0 table 6-2, plus the CDC ECM packet filter) */
 #define NCM_SET_ETHERNET_PACKET_FILTER  0x43U
@@ -61,8 +62,8 @@ static uint8_t s_alt = 0U;
 static volatile bool s_linkUp = false;
 
 /* Transfer-block buffers. OTG DMA is off (the CPU moves FIFO data), so AXI SRAM is fine. */
-__attribute__((aligned(4), section(".axisram"))) static uint8_t s_rxBuf[2][NCM_NTB_MAX_SIZE];
-__attribute__((aligned(4), section(".axisram"))) static uint8_t s_txBuf[2][NCM_NTB_MAX_SIZE];
+__attribute__((aligned(4))) USBNET_BUF_SECTION static uint8_t s_rxBuf[2][NCM_NTB_MAX_SIZE];
+__attribute__((aligned(4))) USBNET_BUF_SECTION static uint8_t s_txBuf[2][NCM_NTB_MAX_SIZE];
 
 /* Receive: the interrupt fills s_rxBuf[s_rxCur]; a non-zero s_rxLen[i] is a complete block
  * waiting for the main loop. s_rxArmed is false while both buffers are full. */

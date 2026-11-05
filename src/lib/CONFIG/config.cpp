@@ -1442,7 +1442,7 @@ void RxConfig::SetSerialProtocol(eSerialProtocol serialProtocol)
     }
 }
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 void RxConfig::SetSerial1Protocol(eSerial1Protocol serialProtocol)
 {
     if (m_config.serial1Protocol != serialProtocol)

@@ -7,12 +7,13 @@
 #include <string.h>
 #include <strings.h>
 
+#include "usbnet_port.h"
 #include "lwip/mem.h"
 #include "lwip/tcp.h"
 
 #define HTTP_PORT 80
-// Browsers open several connections at once, and a long-poll holds one open, so a handful.
-#define HTTP_MAX_CONNS 4
+// Browsers open several connections at once, and a long-poll holds one open, so a handful
+// (HTTP_MAX_CONNS, usbnet_port_*.h).
 #define HTTP_HEADER_MAX 1024
 #define HTTP_PATH_MAX 64
 #define HTTP_QUERY_MAX 128

@@ -11,14 +11,12 @@
  * - One request per connection (`Connection: close`): simple, and browsers cope fine.
  * - Requests are buffered whole (headers + Content-Length body) before the handler runs, and the
  *   handler's response is buffered whole and streamed out. Buffers come from the lwIP heap, which
- *   lives in AXI SRAM.
+ *   lives in AXI SRAM on the H7.
  * - A handler may defer its response (long-poll); the connection then stays open until
  *   HttpServer_Respond() is called with the handle, or the client goes away.
  * - Every response carries permissive CORS headers and the Private Network Access opt-in: the
  *   caller is a page on another (public, HTTPS) origin reaching a private address.
  */
-
-#define HTTP_MAX_BODY 24576
 
 struct HttpRequest
 {

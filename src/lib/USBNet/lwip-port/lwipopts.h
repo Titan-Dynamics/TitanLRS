@@ -20,23 +20,23 @@
 #define LWIP_SINGLE_NETIF               1
 
 /* ---- memory --------------------------------------------------------------------------- */
+#include "usbnet_port.h"
 #define MEM_ALIGNMENT                   4
-/* Also backs the HTTP server's request bodies and responses (mem_malloc), which reach ~24 KB for
- * a TX models import/export. */
-#define MEM_SIZE                        (96 * 1024)
+/* Also backs the HTTP server's request bodies and responses (mem_malloc), so it is sized for the
+ * family's HTTP_MAX_BODY. */
+#define MEM_SIZE                        USBNET_MEM_SIZE
 #define MEMP_NUM_PBUF                   16
 #define MEMP_NUM_UDP_PCB                4
 #define MEMP_NUM_TCP_PCB                6
 #define MEMP_NUM_TCP_PCB_LISTEN         2
-#define MEMP_NUM_TCP_SEG                24
-#define PBUF_POOL_SIZE                  12
+#define MEMP_NUM_TCP_SEG                USBNET_TCP_SEG_COUNT
+#define PBUF_POOL_SIZE                  USBNET_PBUF_POOL_SIZE
 #define PBUF_POOL_BUFSIZE               1536
 
-/* The heap and pools live in AXI SRAM: DTCM holds .bss, the heap and the stack and is the
- * scarce one. The section is NOLOAD (variants/ldscript_gen.ld), and lwIP initialises every
- * byte of these itself (mem_init / memp_init). */
+/* The heap and pools go where the family says (usbnet_port_*.h). On the H7 that section is NOLOAD,
+ * and lwIP initialises every byte of these itself (mem_init / memp_init). */
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
-    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((aligned(4), section(".axisram")))
+    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((aligned(4))) USBNET_BUF_SECTION
 
 /* ---- protocols ------------------------------------------------------------------------ */
 #define LWIP_IPV4                       1
@@ -60,8 +60,8 @@
 
 /* ---- TCP ------------------------------------------------------------------------------ */
 #define TCP_MSS                         1460
-#define TCP_WND                         (4 * TCP_MSS)
-#define TCP_SND_BUF                     (4 * TCP_MSS)
+#define TCP_WND                         (USBNET_TCP_WND_MSS * TCP_MSS)
+#define TCP_SND_BUF                     (USBNET_TCP_SND_BUF_MSS * TCP_MSS)
 #define TCP_SND_QUEUELEN                ((4 * TCP_SND_BUF) / TCP_MSS)
 #define LWIP_TCP_KEEPALIVE              0
 

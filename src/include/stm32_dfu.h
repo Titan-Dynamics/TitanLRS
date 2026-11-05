@@ -7,15 +7,8 @@
 // sees the flag and jumps to the ROM bootloader, which enumerates as the standard USB DFU device.
 // No custom bootloader and no flash-layout change: the ROM DFU cannot be corrupted, so a bad
 // application image is always recoverable.
-//
-// STM32_DFU_SUPPORTED is defined only for the MCU families stm32_dfu.cpp has constants for.
-// Everything else keys off it, never off a family macro.
 
-#if defined(PLATFORM_STM32) && defined(STM32H7xx)
-#define STM32_DFU_SUPPORTED
-#endif
-
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
 /// Set the DFU flag and reset. Does not return.
 void stm32_RequestDfu();
 

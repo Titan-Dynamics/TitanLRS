@@ -146,7 +146,7 @@ static void handleHello(HttpResponse &res)
     // Options are runtime-writable and persisted (lib/OPTIONS/options_storage_stm32.h), which is
     // what lights up the save buttons on the dashboard's binding and options panels.
     uint32_t features = TLRS_FEATURE_OPTIONS_WRITE;
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
     features |= TLRS_FEATURE_DFU;
 #endif
     if (hardwareWritable())
@@ -353,7 +353,7 @@ static void handleReset(const HttpRequest &req, HttpResponse &res)
 
 static void handleDfu(HttpResponse &res)
 {
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
     if (moduleIsBusy())
     {
         sendError(res, 409, "module is armed");

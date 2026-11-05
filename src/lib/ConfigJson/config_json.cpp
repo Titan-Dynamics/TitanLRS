@@ -11,6 +11,14 @@
 
 #include "options_storage_stm32.h"
 
+#if defined(TARGET_RX)
+#include "deferred.h"
+
+#define RX_HAS_SERIAL1 (GPIO_PIN_SERIAL1_TX != UNDEF_PIN || OPT_HAS_SERVO_OUTPUT)
+
+extern void reconfigureSerial1();
+#endif
+
 #if defined(TARGET_TX)
 extern TxConfig config;
 static_assert(sizeof(tx_config_t) <= FW_OPTIONS_EEPROM_OFFSET,
@@ -269,7 +277,10 @@ void ConfigJson_BuildConfig(JsonObject json, const bool exportMode)
         const auto settings = json["settings"].to<JsonObject>();
 #if defined(TARGET_RX)
         cfg["serial-protocol"] = config.GetSerialProtocol();
-        // NOTE: `serial1-protocol` is ESP32-only in devWIFI and is dropped here.
+        if (RX_HAS_SERIAL1)
+        {
+            cfg["serial1-protocol"] = config.GetSerial1Protocol();
+        }
         cfg["sbus-failsafe"] = config.GetFailsafeMode();
         cfg["modelid"] = config.GetModelId();
         cfg["force-tlm"] = config.GetForceTlmOff();
@@ -460,7 +471,16 @@ const char *ConfigJson_ApplyConfig(JsonVariant json)
     const uint8_t protocol = json["serial-protocol"] | 0;
     config.SetSerialProtocol((eSerialProtocol)protocol);
 
-    // `serial1-protocol` is ESP32-only in devWIFI and is dropped here.
+    if (RX_HAS_SERIAL1)
+    {
+        const eSerial1Protocol oldProtocol1 = config.GetSerial1Protocol();
+        const uint8_t protocol1 = json["serial1-protocol"] | 0;
+        config.SetSerial1Protocol((eSerial1Protocol)protocol1);
+        if (config.GetSerial1Protocol() != oldProtocol1)
+        {
+            deferExecutionMillis(100, []() { reconfigureSerial1(); });
+        }
+    }
 
     const uint8_t failsafe = json["sbus-failsafe"] | 0;
     config.SetFailsafeMode((eFailsafeMode)failsafe);

@@ -61,6 +61,9 @@ void test_parse_pin_name()
     TEST_ASSERT_EQUAL(76, hardware_ParsePinName("PE12"));
     TEST_ASSERT_EQUAL(175, hardware_ParsePinName("PK15"));
     TEST_ASSERT_EQUAL(0x1A, hardware_ParsePinName("PB10"));
+    TEST_ASSERT_EQUAL(15, hardware_ParsePinName("PA15"));
+    TEST_ASSERT_EQUAL(0x2D, hardware_ParsePinName("PC13"));
+    TEST_ASSERT_EQUAL(0x2E, hardware_ParsePinName("PC14"));
 
     TEST_ASSERT_EQUAL(-1, hardware_ParsePinName("PZ1"));
     TEST_ASSERT_EQUAL(-1, hardware_ParsePinName("PE16"));

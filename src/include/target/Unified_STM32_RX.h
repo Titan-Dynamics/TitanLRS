@@ -1,4 +1,4 @@
-// Unified STM32H743 RX — every board-specific value comes from the hardware layout the web
+// Unified STM32 RX (H743, F411) — every board-specific value comes from the hardware layout the web
 // flasher patches into the firmware slot (lib/OPTIONS/options.h titanSlot), as on the ESP unified
 // targets. These are the only STM32 builds, so this header defines every pin and feature macro
 // the code uses (include/targets.h supplies no defaults). The radio type comes from the env, the
@@ -48,6 +48,8 @@
 // Serial
 #define GPIO_PIN_RCSIGNAL_RX hardware_pin(HARDWARE_serial_rx)
 #define GPIO_PIN_RCSIGNAL_TX hardware_pin(HARDWARE_serial_tx)
+#define GPIO_PIN_SERIAL1_RX hardware_pin(HARDWARE_serial1_rx)
+#define GPIO_PIN_SERIAL1_TX hardware_pin(HARDWARE_serial1_tx)
 
 // Debug logging via USB CDC (Serial)
 #ifdef DEBUG_LOG

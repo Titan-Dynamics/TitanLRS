@@ -73,7 +73,8 @@ const uint8_t USBD_MSOS20_DescriptorSet[] = {
   U16(MSOS20_CONFIG_SUBSET_TOTAL),      /* wTotalLength */
 
   /* Function subset — the NCM function only. The CDC-ACM function is left
-   * alone so usbser.sys keeps binding it as a normal COM port. */
+   * alone so usbser.sys keeps binding it as a normal COM port. NCM_COMM_ITF is
+   * 0 on an NCM-only device, and the lengths are the same either way. */
   U16(MSOS20_SUBSET_FUNCTION_LEN),      /* wLength */
   U16(0x0002),                          /* wDescriptorType: SUBSET_HEADER_FUNCTION */
   NCM_COMM_ITF,                         /* bFirstInterface */

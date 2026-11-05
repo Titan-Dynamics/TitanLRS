@@ -1674,7 +1674,7 @@ void loop()
   // Not a device because it must be run on the loop core
   checkBackpackUpdate();
   checkRebootTime(now);
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
   if (dfuRequestTime != 0 && now > dfuRequestTime) {
     stm32_RequestDfu();
   }
