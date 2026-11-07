@@ -9,7 +9,7 @@
 #include "POWERMGNT.h"
 
 #include "MavParamServer.h"
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 
 // No heartbeat for this long after start unless the vehicle is seen, then the Target SysID
 #define HEARTBEAT_WAIT 5000

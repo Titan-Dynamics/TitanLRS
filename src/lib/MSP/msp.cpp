@@ -167,42 +167,41 @@ MSP::sendPacket(mspPacket_t* packet, Stream* port)
         return false;
     }
     
-    // Write out the framing chars
-    port->write('$');
-    port->write('X');
+    if (packet->payloadSize > MSP_PORT_INBUF_SIZE) {
+        return false;
+    }
 
-    // Write out the packet type
-    if (packet->type == MSP_PACKET_COMMAND) {
-        port->write('<');
-    }
-    else if (packet->type == MSP_PACKET_RESPONSE) {
-        port->write('>');
-    }
+    // Build the whole frame and hand it to the port in one write, instead of a write per byte.
+    uint8_t frame[3 + sizeof(mspHeaderV2_t) + MSP_PORT_INBUF_SIZE + 1];
+    uint8_t len = 0;
+
+    // Framing chars and the packet type
+    frame[len++] = '$';
+    frame[len++] = 'X';
+    frame[len++] = (packet->type == MSP_PACKET_COMMAND) ? '<' : '>';
 
     // Subsequent bytes are contained in the crc
     uint8_t crc = 0;
 
     // Pack header struct into buffer
-    uint8_t headerBuffer[sizeof(mspHeaderV2_t)];
-    mspHeaderV2_t* header = (mspHeaderV2_t*)&headerBuffer[0];
+    mspHeaderV2_t* header = (mspHeaderV2_t*)&frame[len];
     header->flags = packet->flags;
     header->function = packet->function;
     header->payloadSize = packet->payloadSize;
-
-    // Write out the header buffer, adding each byte to the crc
     for (uint8_t i = 0; i < sizeof(mspHeaderV2_t); ++i) {
-        port->write(headerBuffer[i]);
-        crc = crc8_dvb_s2(crc, headerBuffer[i]);
+        crc = crc8_dvb_s2(crc, frame[len++]);
     }
 
-    // Write out the payload, adding each byte to the crc
+    // The payload, adding each byte to the crc
     for (uint16_t i = 0; i < packet->payloadSize; ++i) {
-        port->write(packet->payload[i]);
+        frame[len++] = packet->payload[i];
         crc = crc8_dvb_s2(crc, packet->payload[i]);
     }
 
-    // Write out the crc
-    port->write(crc);
+    // The crc
+    frame[len++] = crc;
+
+    port->write(frame, len);
 
     return true;
 }

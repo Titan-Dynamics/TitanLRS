@@ -153,7 +153,7 @@ ELRS_EEPROM::Commit()
         // No config flash: settings live in RAM until the next boot.
         return;
     }
-    uint32_t t0 = micros();
+    [[maybe_unused]] uint32_t t0 = micros(); // only read by DBGLN
 
     s_flash->sectorErase4K(W25Q64_CONFIG_ADDR);
 

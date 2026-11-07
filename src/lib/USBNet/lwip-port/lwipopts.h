@@ -35,6 +35,7 @@
 
 /* The heap and pools go where the family says (usbnet_port_*.h). On the H7 that section is NOLOAD,
  * and lwIP initialises every byte of these itself (mem_init / memp_init). */
+#undef LWIP_DECLARE_MEMORY_ALIGNED /* sys_arch.c pulls in arch.h's default before this file */
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
     u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((aligned(4))) USBNET_BUF_SECTION
 

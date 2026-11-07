@@ -222,8 +222,10 @@ void RXEndpoint::luaparamMappingChannelOut(propertiesCommon *item, uint8_t arg)
 
     const char *no1Option    = ";";
     const char *no2Options   = ";;";
+#if !defined(PLATFORM_STM32)
     const char *serial_RX    = ";Serial RX";
     const char *serial_TX    = ";Serial TX";
+#endif
     const char *i2c_SCL      = ";I2C SCL;";
     const char *i2c_SDA      = ";;I2C SDA";
     const char *i2c_BOTH     = ";I2C SCL;I2C SDA";

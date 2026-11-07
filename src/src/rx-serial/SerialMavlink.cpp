@@ -10,7 +10,7 @@
 #define MAVLINK_RC_PACKET_INTERVAL 10
 
 #define MAVLINK_COMM_NUM_BUFFERS 1
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 #include "MavFrame.h"
 
 #define MAV_FTP_OPCODE_OPENFILERO 4

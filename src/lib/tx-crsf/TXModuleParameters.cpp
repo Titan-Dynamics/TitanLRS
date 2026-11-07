@@ -805,7 +805,9 @@ static void recalculatePacketRateOptions(int minInterval)
 
 void TXModuleEndpoint::registerParameters()
 {
+#if !defined(PLATFORM_STM32) // WiFi / BLE params are not registered on STM32
   auto wifiBleCallback = [&](propertiesCommon *item, const uint8_t arg) { handleWifiBle(item, arg); };
+#endif
   auto sendCallback = [&](propertiesCommon *item, const uint8_t arg) { handleSimpleSendCmd(item, arg); };
 
   if (HAS_RADIO) {

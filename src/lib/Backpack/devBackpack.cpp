@@ -25,11 +25,11 @@ bool VRxBackpackWiFiReadyToSend = false;
 bool BackpackTelemReadyToSend = false;
 bool lastRecordingState = false;
 
+#if defined(PLATFORM_ESP32)
+
 static uint16_t ptrChannelData[CRSF_NUM_CHANNELS];
 static bool headTrackingEnabled = false;
 static uint32_t lastPTRValidTimeMs;
-
-#if defined(PLATFORM_ESP32)
 
 #define GPIO_PIN_BOOT0 0
 
