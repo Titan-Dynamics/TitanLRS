@@ -43,7 +43,7 @@ jobs:
           fi
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
 
     - name: Inject slug/short variables
@@ -55,7 +55,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Cache pip
       uses: actions/cache@v5
@@ -104,7 +104,7 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{fromJSON(needs.targets.outputs.targets)}}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
 
     - name: Inject slug/short variables
@@ -116,7 +116,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Cache pip
       uses: actions/cache@v5
@@ -197,7 +197,7 @@ jobs:
 
   firmware:
     needs: [build, test]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -232,7 +232,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Add MAVLink parameter metadata to firmware folder
         run: |
