@@ -43,7 +43,7 @@ jobs:
           fi
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
 
     - name: Inject slug/short variables
@@ -104,7 +104,7 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{fromJSON(needs.targets.outputs.targets)}}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
 
     - name: Inject slug/short variables
@@ -197,7 +197,7 @@ jobs:
 
   firmware:
     needs: [build, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
