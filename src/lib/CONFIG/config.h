@@ -16,7 +16,7 @@
 #define TX_CONFIG_MAGIC     (0b01U << 30)
 #define RX_CONFIG_MAGIC     (0b10U << 30)
 
-#define TX_CONFIG_VERSION   9U
+#define TX_CONFIG_VERSION   10U
 #define RX_CONFIG_VERSION   11U
 
 class BindphraseConfigurable
@@ -32,6 +32,11 @@ public:
 
 #define CONFIG_TX_BUTTON_ACTION_CNT 2
 #define CONFIG_TX_MODEL_CNT         64
+
+#define GCS_OVERRIDE_CHANNEL_MIN        5
+#define GCS_OVERRIDE_CHANNEL_MAX        16
+#define GCS_OVERRIDE_CHANNEL_DEFAULT    16
+#define GCS_OVERRIDE_MASK_DEFAULT       0x000F  // CH1-4
 
 typedef enum {
     HT_OFF,
@@ -122,6 +127,9 @@ typedef struct {
     tx_button_color_t buttonColors[2];  // FUTURE: TX RGB color / mode (sets color of TX, can be a static color or standard)
                                         // FUTURE: Model RGB color / mode (sets LED color mode on the model, but can be second TX led color too)
                                         // FUTURE: Custom button actions
+    uint8_t         gcsOverrideEnabled:1,   // In MAVLink mode, enables the feature allowing the GCS to override channels
+                    gcsOverrideChannel:5;   // 1-based enable channel for handing control to the GCS
+    uint16_t        gcsOverrideMask;        // bitmask indicating which channels are overridden by the GCS
 } tx_config_t;
 
 class TxConfig : public BindphraseConfigurable
@@ -155,6 +163,9 @@ public:
     uint8_t  GetDvrStopDelay() const { return m_config.dvrStopDelay; }
     bool     GetBackpackDisable() const { return m_config.backpackDisable; }
     uint8_t  GetBackpackTlmMode() const { return m_config.backpackTlmMode; }
+    bool     GetGcsOverrideEnabled() const { return m_config.gcsOverrideEnabled; }
+    uint8_t  GetGcsOverrideChannel() const { return m_config.gcsOverrideChannel; }
+    uint16_t GetGcsOverrideMask() const { return m_config.gcsOverrideMask; }
     tx_button_color_t const *GetButtonActions(uint8_t button) const { return &m_config.buttonColors[button]; }
     model_config_t const &GetModelConfig(uint8_t model) const { return m_config.model_config[model]; }
     uint8_t GetPTRStartChannel() const { return m_model->ptrStartChannel; }
@@ -184,6 +195,9 @@ public:
     void SetButtonActions(uint8_t button, tx_button_color_t actions[2]);
     void SetBackpackDisable(bool backpackDisable);
     void SetBackpackTlmMode(uint8_t mode);
+    void SetGcsOverrideEnabled(bool enabled);
+    void SetGcsOverrideChannel(uint8_t channel);
+    void SetGcsOverrideMask(uint16_t mask);
     void SetPTRStartChannel(uint8_t ptrStartChannel);
     void SetPTREnableChannel(uint8_t ptrEnableChannel);
     void SetUID(uint8_t uid[UID_LEN]) override;
@@ -204,7 +218,8 @@ private:
     void UpgradeEepromV5ToV6();
     void UpgradeEepromV6ToV7();
     void UpgradeEepromV7ToV8();
-    void UpgradeEepromV8ToV9();   // TLRS: v9 = backpackTlmMode default WIFI (upstream ELRS is at 8)
+    void UpgradeEepromV8ToV9();
+    void UpgradeEepromV9ToV10();
 #endif
 };
 

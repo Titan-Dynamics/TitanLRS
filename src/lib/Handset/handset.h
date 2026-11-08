@@ -35,6 +35,12 @@ public:
     void setRcChannelsOverrideCallback(RcChannelsOverrideCallback_fn callback) { RcChannelsOverrideCallback = callback; }
 
     /**
+     * @brief  Register callback used to allow a GCS to override channels. A slot of its own, because the head
+     *         tracking code sets the callback above to nullptr whenever it stops.
+     */
+    void setGcsChannelsOverrideCallback(RcChannelsOverrideCallback_fn callback) { GcsChannelsOverrideCallback = callback; }
+
+    /**
      * @brief register a function to be called when the protocol has read an RC data packet from the handset
      * @param callback
      */
@@ -54,6 +60,7 @@ public:
     void migrateCallbacksTo(Handset *that) const
     {
         that->setRcChannelsOverrideCallback(RcChannelsOverrideCallback);
+        that->setGcsChannelsOverrideCallback(GcsChannelsOverrideCallback);
         that->setRCDataCallback(RCdataCallback);
         that->registerCallbacks(connected, disconnected);
         that->setPacketInterval(RequestedRCpacketInterval);
@@ -95,6 +102,9 @@ public:
      */
     void PerformChannelOverrides(uint32_t channels[], size_t channelCount)
     {
+        // Comes first so it sees the handset's own switch positions
+        if (GcsChannelsOverrideCallback)
+            GcsChannelsOverrideCallback(channels, channelCount);
         if (RcChannelsOverrideCallback)
             RcChannelsOverrideCallback(channels, channelCount);
     }
@@ -128,6 +138,7 @@ public:
 protected:
     bool controllerConnected = false;
     RcChannelsOverrideCallback_fn RcChannelsOverrideCallback = nullptr;
+    RcChannelsOverrideCallback_fn GcsChannelsOverrideCallback = nullptr;
     void (*RCdataCallback)() = nullptr;  // called when there is new RC data
     void (*disconnected)() = nullptr;    // called when RC packet stream is lost
     void (*connected)() = nullptr;       // called when RC packet stream is regained

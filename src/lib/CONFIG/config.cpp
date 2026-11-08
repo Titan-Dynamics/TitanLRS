@@ -254,6 +254,22 @@ void TxConfig::Load()
             m_modified |= EVENT_CONFIG_MAIN_CHANGED;
     }
 
+    if (version >= 10)
+    {
+        uint16_t value16;
+        if (nvs_get_u8(handle, "gcsovr", &value8) == ESP_OK)
+            m_config.gcsOverrideEnabled = value8;
+        if (nvs_get_u8(handle, "gcsovrch", &value8) == ESP_OK)
+            SetGcsOverrideChannel(value8);
+        if (nvs_get_u16(handle, "gcsovrmask", &value16) == ESP_OK)
+            SetGcsOverrideMask(value16);
+    }
+    else
+    {
+        // Need to write the GCS override defaults
+        m_modified |= EVENT_CONFIG_MAIN_CHANGED;
+    }
+
     for(unsigned i=0; i<CONFIG_TX_MODEL_CNT; i++)
     {
         char model[10] = "model";
@@ -351,6 +367,12 @@ void TxConfig::Load()
     if (version == 8)
     {
         UpgradeEepromV8ToV9();
+        version = 9;
+    }
+
+    if (version == 9)
+    {
+        UpgradeEepromV9ToV10();
     }
 }
 
@@ -472,6 +494,22 @@ void TxConfig::UpgradeEepromV8ToV9()
     m_config.version = 9U | TX_CONFIG_MAGIC;
     Commit();
 }
+
+void TxConfig::UpgradeEepromV9ToV10()
+{
+    // v10 appended the GCS override settings, so a v9 config is the start of this one
+    const tx_config_t defaults = m_config;
+    m_eeprom.Get(0, m_config);
+    m_config.gcsOverrideEnabled = defaults.gcsOverrideEnabled;
+    m_config.gcsOverrideChannel = defaults.gcsOverrideChannel;
+    m_config.gcsOverrideMask = defaults.gcsOverrideMask;
+
+    m_modified = ALL_CHANGED;
+
+    // Full Commit now
+    m_config.version = 10U | TX_CONFIG_MAGIC;
+    Commit();
+}
 #endif
 
 uint32_t
@@ -519,6 +557,9 @@ TxConfig::Commit()
         nvs_set_u8(handle, "dvraux", m_config.dvrAux);
         nvs_set_u8(handle, "dvrstartdelay", m_config.dvrStartDelay);
         nvs_set_u8(handle, "dvrstopdelay", m_config.dvrStopDelay);
+        nvs_set_u8(handle, "gcsovr", m_config.gcsOverrideEnabled);
+        nvs_set_u8(handle, "gcsovrch", m_config.gcsOverrideChannel);
+        nvs_set_u16(handle, "gcsovrmask", m_config.gcsOverrideMask);
     }
     if (m_modified & EVENT_CONFIG_BUTTON_CHANGED)
     {
@@ -758,6 +799,42 @@ TxConfig::SetBackpackTlmMode(uint8_t mode)
 }
 
 void
+TxConfig::SetGcsOverrideEnabled(bool enabled)
+{
+    if (m_config.gcsOverrideEnabled != enabled)
+    {
+        m_config.gcsOverrideEnabled = enabled;
+        m_modified |= EVENT_CONFIG_MAIN_CHANGED;
+    }
+}
+
+void
+TxConfig::SetGcsOverrideChannel(uint8_t channel)
+{
+    if (channel < GCS_OVERRIDE_CHANNEL_MIN || channel > GCS_OVERRIDE_CHANNEL_MAX)
+        return;
+    if (m_config.gcsOverrideChannel != channel)
+    {
+        m_config.gcsOverrideChannel = channel;
+        m_modified |= EVENT_CONFIG_MAIN_CHANGED;
+    }
+    // The enable channel can't also come from the GCS
+    SetGcsOverrideMask(m_config.gcsOverrideMask);
+}
+
+void
+TxConfig::SetGcsOverrideMask(uint16_t mask)
+{
+    if (m_config.gcsOverrideChannel >= GCS_OVERRIDE_CHANNEL_MIN && m_config.gcsOverrideChannel <= GCS_OVERRIDE_CHANNEL_MAX)
+        mask &= ~(1U << (m_config.gcsOverrideChannel - 1));
+    if (m_config.gcsOverrideMask != mask)
+    {
+        m_config.gcsOverrideMask = mask;
+        m_modified |= EVENT_CONFIG_MAIN_CHANGED;
+    }
+}
+
+void
 TxConfig::SetButtonActions(uint8_t button, tx_button_color_t *action)
 {
     if (m_config.buttonColors[button].raw != action->raw) {
@@ -793,6 +870,9 @@ TxConfig::SetDefaults(bool commit)
     m_config.version = TX_CONFIG_VERSION | TX_CONFIG_MAGIC;
     m_config.powerFanThreshold = PWR_250mW;
     m_config.backpackTlmMode = BACKPACK_TELEM_MODE_WIFI;
+    m_config.gcsOverrideEnabled = false;
+    m_config.gcsOverrideChannel = GCS_OVERRIDE_CHANNEL_DEFAULT;
+    m_config.gcsOverrideMask = GCS_OVERRIDE_MASK_DEFAULT;
     m_modified = ALL_CHANGED;
 
     // Set defaults for button 1

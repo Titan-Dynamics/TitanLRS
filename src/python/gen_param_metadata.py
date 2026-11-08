@@ -17,8 +17,9 @@ Doc comment format, directly above each table entry:
     // @User: Standard
     {"TX_LINK_MODE", hasRadio, getLinkMode, setLinkMode, nullptr},
 
-Tags: Param, DisplayName, Description, User (Standard/Advanced) are required; Values, Range
-("min max"), Units, Increment, ReadOnly (True), Hardware are optional. Hardware is appended to the
+Tags: Param, DisplayName, Description, User (Standard/Advanced) are required; Values, Bitmask
+("bit:label,..."; the GCS shows checkboxes), Range ("min max"), Units, Increment, ReadOnly (True),
+Hardware are optional. Hardware is appended to the
 description, because the file is the same for every board. ReadOnly must match the entry having no
 setter.
 """
@@ -35,7 +36,7 @@ COMPONENTS = [
 ]
 VEHICLE = 'TitanLRS'
 REQUIRED = ('Param', 'DisplayName', 'Description', 'User')
-OPTIONAL = ('Values', 'Range', 'Units', 'Increment', 'ReadOnly', 'Hardware')
+OPTIONAL = ('Values', 'Bitmask', 'Range', 'Units', 'Increment', 'ReadOnly', 'Hardware')
 
 TABLE_START = re.compile(r'static const MavParam \w+\[\]\s*=\s*\{')
 DOC = re.compile(r'^\s*//\s*@(\w+):\s*(.*?)\s*$')
@@ -115,9 +116,19 @@ def parse_file(path, problems):
                 values = parse_values(doc['Values'])
             except ValueError as e:
                 problems.add(path, doc_line, '%s: @Values %s' % (name, e))
+        bits = []
+        if 'Bitmask' in doc:
+            try:
+                bits = parse_values(doc['Bitmask'])
+                if any(b < 0 or b > 23 for b, _ in bits) or len(set(b for b, _ in bits)) != len(bits):
+                    raise ValueError('bits must be unique and 0-23 (exact in a float)')
+            except ValueError as e:
+                problems.add(path, doc_line, '%s: @Bitmask %s' % (name, e))
+            if values:
+                problems.add(path, doc_line, '%s: @Values and @Bitmask are exclusive' % name)
         if 'Range' in doc and not re.match(r'^-?[\d.]+ -?[\d.]+$', doc['Range']):
             problems.add(path, doc_line, '%s: @Range must be "min max"' % name)
-        params.append(dict(doc, Param=name, values=values, line=n + 1))
+        params.append(dict(doc, Param=name, values=values, bits=bits, line=n + 1))
         doc, doc_line = {}, None
     if doc:
         problems.add(path, doc_line, '@Param %s has no table entry' % doc.get('Param'))
@@ -144,6 +155,8 @@ def write_xml(components, path):
                 out.append('        <values>')
                 out += ['          <value code="%d">%s</value>' % (c, escape(l)) for c, l in p['values']]
                 out.append('        </values>')
+            if p['bits']:
+                out.append('        <field name="Bitmask">%s</field>' % escape(','.join('%d:%s' % b for b in p['bits'])))
             for field in ('Units', 'Range', 'Increment', 'ReadOnly'):
                 if field in p:
                     out.append('        <field name="%s">%s</field>' % (field, escape(p[field])))
@@ -176,6 +189,8 @@ def write_markdown(components, path):
         out += ['## %s' % title, '', '| Parameter | Name | Description | Values |', '|---|---|---|---|']
         for p in params:
             values = ', '.join('%d: %s' % v for v in p['values'])
+            if p['bits']:
+                values = 'bitmask: ' + ', '.join('bit %d %s' % b for b in p['bits'])
             if 'Range' in p:
                 values = (values + '; ' if values else '') + 'range %s' % p['Range'].replace(' ', ' to ')
             if 'Units' in p:

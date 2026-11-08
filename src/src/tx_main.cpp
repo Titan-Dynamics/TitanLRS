@@ -104,6 +104,11 @@ static uint32_t LastTLMpacketRecv_Ms = 0;
 static uint32_t LinkStatsLastReported_Ms = 0;
 static uint32_t RxDisconnected_Ms = 0;
 static bool commitInProgress = false;
+// MAVLink, not a handset, started the TX. With no handset since boot the GCS joystick then flies
+// (gcsOnly), and while it has nothing to send (gcsOnly without gcsOnlyRc) no RC goes out.
+static bool mavlinkStartedTx = false;
+static volatile bool gcsOnly = false;
+static volatile bool gcsOnlyRc = false;
 
 LQCALC<100> LqTQly;
 
@@ -569,6 +574,10 @@ void ICACHE_RAM_ATTR SendRCdataToRF()
     {
       return;
     }
+  }
+  else if (gcsOnly && !gcsOnlyRc)
+  {
+    dontSendChannelData = true;
   }
 
   busyTransmitting = true;
@@ -1132,6 +1141,25 @@ static void HandleUARTout()
   }
 }
 
+// Given whole frames: a partial MAVLink frame is worse than a dropped one.
+void TxMavlink_QueueUplink(const uint8_t *data, uint16_t size)
+{
+  uartInputBuffer.lock();
+  if (uartInputBuffer.free() >= size)
+  {
+    uartInputBuffer.pushBytes(data, size);
+  }
+  uartInputBuffer.unlock();
+}
+
+// Leaves room for a frame held back from an earlier read, so every frame that completes fits.
+// What isn't read waits in the serial port.
+static uint16_t uartInputRoom()
+{
+  const uint16_t free = uartInputBuffer.free();
+  return free > TX_MAVLINK_HELD_FRAME_LEN ? free - TX_MAVLINK_HELD_FRAME_LEN : 0;
+}
+
 static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
 {
   if (size == 0)
@@ -1142,15 +1170,13 @@ static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
     if (isThisAMavPacket(buf, size))
     {
       config.SetLinkMode(TX_MAVLINK_MODE);
+      mavlinkStartedTx = true;
       UARTconnected();
     }
   }
 
   if (config.GetLinkMode() == TX_MAVLINK_MODE)
   {
-    uartInputBuffer.lock();
-    uartInputBuffer.pushBytes(buf, size);
-    uartInputBuffer.unlock();
     TxMavlink_ProcessFromGcs(GCS_LINK_USB_SERIAL, buf, size);
   }
 
@@ -1166,17 +1192,11 @@ static void HandleMavlinkUdp(const uint8_t *buf, uint16_t size)
   if (connectionState == noCrossfire && isThisAMavPacket((uint8_t *)buf, size))
   {
     config.SetLinkMode(TX_MAVLINK_MODE);
+    mavlinkStartedTx = true;
     UARTconnected();
   }
   if (config.GetLinkMode() == TX_MAVLINK_MODE)
   {
-    uartInputBuffer.lock();
-    // Whole datagrams only: a partial MAVLink frame is worse than a dropped one.
-    if (uartInputBuffer.free() >= size)
-    {
-      uartInputBuffer.pushBytes(buf, size);
-    }
-    uartInputBuffer.unlock();
     TxMavlink_ProcessFromGcs(GCS_LINK_UDP, buf, size);
   }
 }
@@ -1213,7 +1233,7 @@ static void HandleUARTin()
 
     if (TxUSB->available())
     {
-      auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+      auto size = std::min(uartInputRoom(), (uint16_t)TxUSB->available());
       if (size > 0)
       {
         uint8_t buf[size];
@@ -1248,7 +1268,7 @@ static void HandleUARTin()
       uartInputBuffer.flush();
 
     // USB serial input: MAVLink auto-detect and CRSF parse
-    auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+    auto size = std::min(uartInputRoom(), (uint16_t)TxUSB->available());
     if (size > 0)
     {
       uint8_t buf[size];
@@ -1266,7 +1286,7 @@ static void HandleUARTin()
   // Backpack serial data is ALSO always processed as backpack MSP
   if (BackpackOrLogStrm != TxUSB && BackpackOrLogStrm->available())
   {
-    auto size = std::min(uartInputBuffer.free(), (uint16_t)BackpackOrLogStrm->available());
+    auto size = std::min(uartInputRoom(), (uint16_t)BackpackOrLogStrm->available());
     if (size > 0)
     {
       uint8_t buf[size];
@@ -1274,9 +1294,6 @@ static void HandleUARTin()
 
       if (config.GetLinkMode() == TX_MAVLINK_MODE)
       {
-        uartInputBuffer.lock();
-        uartInputBuffer.pushBytes(buf, size);
-        uartInputBuffer.unlock();
 #if defined(PLATFORM_ESP32)
         TxMavlink_ProcessFromGcs(GCS_LINK_BACKPACK, buf, size);
 #endif
@@ -1285,6 +1302,7 @@ static void HandleUARTin()
         {
           if (isThisAMavPacket(buf, size))
           {
+            mavlinkStartedTx = true;
             UARTconnected();
           }
         }
@@ -1569,6 +1587,7 @@ void setup()
 
       // When a CRSF handset is detected, it will add itself to the router
       handset->registerCallbacks(UARTconnected, firmwareOptions.is_airport ? nullptr : UARTdisconnected);
+      handset->setGcsChannelsOverrideCallback(TxMavlink_OverrideChannels);
     }
 
     config.Load(); // Load the stored values from eeprom
@@ -1719,6 +1738,8 @@ void loop()
     {
       TxMavlink_Update(now);
     }
+    gcsOnly = mavlinkStartedTx && handset->GetRCdataLastRecv() == 0 && TxMavlink_GcsOnlyAllowed();
+    gcsOnlyRc = gcsOnly && TxMavlink_GcsOnlyChannels(ChannelData, CRSF_NUM_CHANNELS, now);
     if (DataDlReceiver.HasFinishedData())
     {
       if (CRSFinBuffer[0] == CRSF_ADDRESS_USB)

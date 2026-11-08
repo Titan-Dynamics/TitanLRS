@@ -89,6 +89,12 @@ class InfoPanel extends LitElement {
                     ${elrsState.options['tlm-interval'] !== 240 ? html`
                         <div class="td-card-row"><span class="td-label">Telemetry Interval</span><span class="td-mono">${elrsState.options['tlm-interval']} ms</span></div>
                     ` : ''}
+                    ${elrsState.config['gcs-override']?.enabled === false ? html`
+                        <div class="td-card-row"><span class="td-label">GCS Stick Override</span><span class="td-chip td-chip-warn" style="width: fit-content;">Disabled</span></div>
+                    ` : ''}
+                    ${elrsState.config['gcs-override']?.enabled && this._gcsOverrideCustom() ? html`
+                        <div class="td-card-row"><span class="td-label">GCS Stick Override</span><span class="td-mono">${this._gcsOverrideSummary()}</span></div>
+                    ` : ''}
                     <!-- /FEATURE: IS_TX -->
                     ${elrsState.settings?.custom_hardware ? html`
                         <div class="td-card-row"><span class="td-label">Custom Hardware</span><span class="td-chip td-chip-warn" style="width: fit-content;">Modified</span></div>
@@ -106,6 +112,20 @@ class InfoPanel extends LitElement {
         downloadExport('config.json').catch(() => {})
     }
 
+    _gcsOverrideCustom() {
+        const gcs = elrsState.config['gcs-override']
+        return !!gcs && (gcs.channel !== 16 || gcs.mask !== 0x000F)
+    }
+
+    _gcsOverrideSummary() {
+        const {channel: enable, mask} = elrsState.config['gcs-override']
+        const forwarded = []
+        for (let ch = 1; ch <= 16; ch++) {
+            if (ch !== enable && (mask & (1 << (ch - 1)))) forwarded.push(`CH${ch}`)
+        }
+        return `CH${enable} enables ${forwarded.length ? forwarded.join(', ') : 'no channels'}`
+    }
+
     _hasCustomSettings() {
         let custom = false
         custom = elrsState.options['is-airport'] || (elrsState.options['wifi-on-interval'] ?? 60) !== 60
@@ -121,6 +141,8 @@ class InfoPanel extends LitElement {
 
         // FEATURE: IS_TX
         custom |= elrsState.options['tlm-interval'] !== 240
+        custom |= elrsState.config['gcs-override']?.enabled === false
+        custom |= this._gcsOverrideCustom()
         // /FEATURE: IS_TX
         return custom
     }
