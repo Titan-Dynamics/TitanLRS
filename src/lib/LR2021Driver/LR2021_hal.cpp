@@ -5,8 +5,13 @@
 #include <SPIEx.h>
 
 #if defined(PLATFORM_STM32)
-// TLRS: radio SPI SCK fixed at 10 MHz on STM32 (bench-proven; slower SPI caused BUG #2 link cycling)
+#if defined(STM32F4xx)
+// F411 uses 12MHz SPI clock
+#define LR2021_SPI_HZ 12000000UL
+#else
+// H7 uses 10MHz SPI clock
 #define LR2021_SPI_HZ 10000000UL
+#endif
 #endif
 
 LR2021Hal *LR2021Hal::instance = nullptr;
@@ -80,8 +85,9 @@ void LR2021Hal::init()
     SPIEx.setFrequency(16000000);
 #elif defined(PLATFORM_STM32)
     DBGLN("Config LR2021 SPI (STM32)");
-    SPIEx.setBitOrder(MSBFIRST);
-    SPIEx.setDataMode(SPI_MODE0);
+    // Pins first: STM32duino's setBitOrder()/setDataMode() run spi_init() on whatever pins are set,
+    // and the F411 variant's defaults are SPI4 on PA1/PA11, which takes USB D- (PA11) off OTG_FS.
+    // beginTransaction() sets the bit order and mode.
     SPIEx.setMOSI(GPIO_PIN_MOSI);
     SPIEx.setMISO(GPIO_PIN_MISO);
     SPIEx.setSCLK(GPIO_PIN_SCK);

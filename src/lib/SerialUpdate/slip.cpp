@@ -35,7 +35,7 @@ void SLIP_send_frame_status(char status) {
 
 void SLIP_send_frame_data_buf(const void *buf, uint32_t size) {
   const uint8_t *buf_c = (const uint8_t *)buf;
-  for(int i = 0; i < size; i++) {
+  for(uint32_t i = 0; i < size; i++) {
 	SLIP_send_frame_data(buf_c[i]);
   }
 }

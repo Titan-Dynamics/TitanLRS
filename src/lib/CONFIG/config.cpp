@@ -13,12 +13,13 @@
 
 void BindphraseConfigurable::SetBindPhrase(uint8_t *phrase, size_t phraseLen)
 {
-    constexpr uint8_t BIND_KEY[] = "-DMY_BINDING_PHRASE=\"";
-
     uint8_t UID_md5[16] {};
     // A blank binding phrase will just use the UID_md5 set to all zeroes, which is unbound
     if (phraseLen)
     {
+#if defined(PLATFORM_ESP8266) || defined(PLATFORM_ESP32)
+        constexpr uint8_t BIND_KEY[] = "-DMY_BINDING_PHRASE=\"";
+#endif
 #if defined(PLATFORM_ESP8266)
         md5_context_t md5;
         MD5Init(&md5);
@@ -1194,7 +1195,7 @@ RxConfig::GetPowerOnCounter() const
         byte zeros[16];
         ESP.flashRead(EMPTY_SECTOR * SPI_FLASH_SEC_SIZE, zeros, sizeof(zeros));
         realPowerOnCounter = sizeof(zeros);
-        for (int i=0 ; i<sizeof(zeros) ; i++) {
+        for (size_t i=0 ; i<sizeof(zeros) ; i++) {
             if (zeros[i] != 0) {
                 realPowerOnCounter = i;
                 break;
@@ -1442,7 +1443,7 @@ void RxConfig::SetSerialProtocol(eSerialProtocol serialProtocol)
     }
 }
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 void RxConfig::SetSerial1Protocol(eSerial1Protocol serialProtocol)
 {
     if (m_config.serial1Protocol != serialProtocol)

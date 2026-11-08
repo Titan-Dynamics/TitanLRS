@@ -122,7 +122,7 @@ bool SerialGPS::isValidChecksum(char *sentence, uint8_t size)
 
     // Checksum in a NMEA packet starts after the $ and stops before the *XX and is a simple XOR
     uint8_t csumCalculated = 0;
-    for (unsigned b=1; b<size-5; ++b)
+    for (int b=1; b<size-5; ++b)
     {
         csumCalculated ^= sentence[b];
     }

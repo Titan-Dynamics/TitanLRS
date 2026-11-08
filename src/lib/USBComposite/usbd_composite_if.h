@@ -1,12 +1,8 @@
 /**
   ******************************************************************************
   * @file    usbd_composite_if.h
-  * @brief   Media layer for the TitanLRS composite device: the transmit/receive
-  *          queue pair for the CDC port, plus the device bring-up. The NCM
-  *          function keeps its own buffers (usbd_ncm.c).
-  *
-  * The CDC half keeps the stm32duino names and signatures verbatim, so
-  * USBSerial.cpp is unchanged apart from which function starts the device.
+  * @brief   Device bring-up for the TitanLRS composite device. The port API of the
+  *          CDC-ACM function comes with it (usbd_cdc_acm.h).
   ******************************************************************************
   */
 
@@ -20,7 +16,7 @@ extern "C" {
 #endif
 
 #include "usbd_composite.h"
-#include "cdc_queue.h"
+#include "usbd_cdc_acm.h"
 
 extern USBD_HandleTypeDef hUSBD_Device_CDC;
 
@@ -46,18 +42,6 @@ extern USBD_HandleTypeDef hUSBD_Device_CDC;
  * together, so this is device-wide: idempotent, first call wins. */
 void USBComposite_init(void);
 void USBComposite_deInit(void);
-
-/* --- CDC port (Serial) ---------------------------------------------------- */
-
-extern CDC_TransmitQueue_TypeDef TransmitQueue;
-extern CDC_ReceiveQueue_TypeDef ReceiveQueue;
-extern __IO bool dtrState;
-extern __IO bool rtsState;
-
-bool CDC_connected(void);
-void CDC_continue_transmit(void);
-bool CDC_resume_receive(void);
-void CDC_enableDTR(bool enable);
 
 #ifdef __cplusplus
 }

@@ -662,7 +662,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF()
       transmittingRadio = SX12XX_Radio_2;
       break;
     case TX_RADIO_MODE_SWITCH:
-      static boolean toggle = false;
+      static bool toggle = false;
       transmittingRadio = (toggle ^= true) ? SX12XX_Radio_1 : SX12XX_Radio_2;
       break;
     default:
@@ -1674,7 +1674,7 @@ void loop()
   // Not a device because it must be run on the loop core
   checkBackpackUpdate();
   checkRebootTime(now);
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
   if (dfuRequestTime != 0 && now > dfuRequestTime) {
     stm32_RequestDfu();
   }

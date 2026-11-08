@@ -79,6 +79,10 @@ void SerialHoTT_TLM::setRXMode()
 #if defined(PLATFORM_ESP32)
     pinMode(halfDuplexPin, INPUT_PULLUP);                           // set half duplex GPIO to INPUT
     pinMatrixInAttach(halfDuplexPin, URXDinIdx, false);             // attach half duplex GPIO as input to UART RX
+#elif defined(PLATFORM_STM32)
+    // The port runs half duplex (stm32SerialBegin), and the core turns the receiver back on only
+    // from read(), which SerialIO never calls while nothing has arrived
+    static_cast<HardwareSerial *>(_outputPort)->enableHalfDuplexRx();
 #endif
 }
 

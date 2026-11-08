@@ -13,7 +13,7 @@
 #include "TXModuleEndpoint.h"
 
 #include "MavParamServer.h"
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 // storm32 dialect messages; their headers stand alone next to common
 #include "storm32/mavlink_msg_mlrs_radio_link_information.h"
 #include "storm32/mavlink_msg_mlrs_radio_link_stats.h"

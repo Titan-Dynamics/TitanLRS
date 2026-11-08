@@ -443,7 +443,7 @@ static void GetConfiguration(AsyncWebServerRequest *request)
     if (hardware_int(button == 0 ? HARDWARE_button_led_index : HARDWARE_button2_led_index) != -1) {
       btn["color"] = buttonColor->val.color;
     }
-    for (int pos=0 ; pos<button_GetActionCnt() ; pos++)
+    for (size_t pos=0 ; pos<button_GetActionCnt() ; pos++)
     {
       const auto action = btn["action"][pos].to<JsonObject>();
       action["is-long-press"] = buttonColor->val.actions[pos].pressType ? true : false;
@@ -597,7 +597,7 @@ static void UpdateConfiguration(AsyncWebServerRequest *request, JsonVariant &jso
     for (size_t button=0 ; button<array.size() ; button++)
     {
       tx_button_color_t action;
-      for (int pos=0 ; pos<button_GetActionCnt() ; pos++)
+      for (size_t pos=0 ; pos<button_GetActionCnt() ; pos++)
       {
         action.val.actions[pos].pressType = array[button]["action"][pos]["is-long-press"];
         action.val.actions[pos].count = array[button]["action"][pos]["count"];

@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 
 #define DEFAULT_HEARTBEAT_INTERVAL_MS 1000
 #define STATUSTEXT_SEVERITY MAV_SEVERITY_NOTICE

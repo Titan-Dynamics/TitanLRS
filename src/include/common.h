@@ -232,7 +232,6 @@ enum eSerialProtocol : uint8_t
     PROTOCOL_SCORPION_TLM
 };
 
-#if defined(PLATFORM_ESP32)
 enum eSerial1Protocol : uint8_t
 {
     // Values are persisted in rx_config_t; append new protocols only.
@@ -250,7 +249,6 @@ enum eSerial1Protocol : uint8_t
     PROTOCOL_SERIAL1_GPS,
     PROTOCOL_SERIAL1_SCORPION_TLM
 };
-#endif
 
 enum eFailsafeMode : uint8_t
 {

@@ -5,7 +5,7 @@
 // messages such as RPM (#226) are known to the frame parser. The per-message
 // CRC_EXTRA table is dialect-specific: a common-only build rejects RPM frames
 // as bad-CRC even though the struct would decode fine.
-#include "ardupilotmega/mavlink.h"
+#include "mavlink_ardupilotmega.h"
 
 #include "ardupilot_custom_telemetry.h"
 #include "ardupilot_protocol.h"

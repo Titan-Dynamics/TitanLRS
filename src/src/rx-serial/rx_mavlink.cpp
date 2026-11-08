@@ -9,7 +9,7 @@
 #include "POWERMGNT.h"
 
 #include "MavParamServer.h"
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 
 // No heartbeat for this long after start unless the vehicle is seen, then the Target SysID
 #define HEARTBEAT_WAIT 5000
@@ -50,7 +50,7 @@ static void accepted()
 
 static float getProtocol() { return config.GetSerialProtocol(); }
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 #define RX_HAS_SERIAL1 (GPIO_PIN_SERIAL1_TX != UNDEF_PIN || OPT_HAS_SERVO_OUTPUT)
 
 static bool hasProtocol2() { return RX_HAS_SERIAL1; }
@@ -139,12 +139,12 @@ static const MavParam params[] = {
     // @ReadOnly: True
     // @User: Standard
     {"RX_PROTOCOL", nullptr, getProtocol, nullptr, nullptr},
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
     // @Param: RX_PROTOCOL2
     // @DisplayName: Serial 2 protocol
     // @Description: Protocol on the receiver's second serial port.
     // @Values: 0:Off,1:CRSF,2:Inverted CRSF,3:SBUS,4:Inverted SBUS,5:SUMD,6:DJI RS Pro,7:HoTT Telemetry,8:Tramp,9:SmartAudio,10:DisplayPort,11:GPS,12:Scorpion ESC
-    // @Hardware: ESP32 receivers with a second serial port only
+    // @Hardware: Receivers with a second serial port
     // @User: Advanced
     {"RX_PROTOCOL2", hasProtocol2, getProtocol2, setProtocol2, nullptr},
 #endif

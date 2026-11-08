@@ -18,7 +18,7 @@ inline void servoCurrentToFailsafeConfig() {}
 #define RX_HAS_SERIAL1 (GPIO_PIN_SERIAL1_TX != UNDEF_PIN || OPT_HAS_SERVO_OUTPUT)
 
 extern void reconfigureSerial();
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 extern void reconfigureSerial1();
 #endif
 extern bool BindingModeRequest;
@@ -44,7 +44,7 @@ static selectionParameter luaSerialProtocol = {
     STR_EMPTYSPACE
 };
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 static selectionParameter luaSerial1Protocol = {
     {"Protocol2", CRSF_TEXT_SELECTION},
     0, // value
@@ -222,8 +222,10 @@ void RXEndpoint::luaparamMappingChannelOut(propertiesCommon *item, uint8_t arg)
 
     const char *no1Option    = ";";
     const char *no2Options   = ";;";
+#if !defined(PLATFORM_STM32)
     const char *serial_RX    = ";Serial RX";
     const char *serial_TX    = ";Serial TX";
+#endif
     const char *i2c_SCL      = ";I2C SCL;";
     const char *i2c_SDA      = ";;I2C SDA";
     const char *i2c_BOTH     = ";I2C SCL;I2C SDA";
@@ -530,7 +532,7 @@ void RXEndpoint::registerParameters()
     }
   });
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
   if (RX_HAS_SERIAL1)
   {
     registerParameter(&luaSerial1Protocol, [](propertiesCommon* item, uint8_t arg){
@@ -626,7 +628,7 @@ static void updateBindModeLabel()
 void RXEndpoint::updateParameters()
 {
   setTextSelectionValue(&luaSerialProtocol, config.GetSerialProtocol());
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
   if (RX_HAS_SERIAL1)
   {
     setTextSelectionValue(&luaSerial1Protocol, config.GetSerial1Protocol());

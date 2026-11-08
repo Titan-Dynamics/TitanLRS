@@ -12,7 +12,7 @@
   *      vendor request code and the length of a descriptor set.
   *   3. Windows issues that vendor request (bmRequestType 0xC0, bRequest =
   *      USBD_MSOS20_VENDOR_CODE, wIndex = 7) and gets back a descriptor set
-  *      whose function subset says "interfaces 2-3 are WINNCM".
+  *      whose function subset says "the NCM interfaces are WINNCM".
   *
   * macOS and Linux bind NCM by class and ignore all of this.
   ******************************************************************************

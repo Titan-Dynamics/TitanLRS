@@ -1,17 +1,25 @@
 #include "stm32_dfu.h"
 
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
 
 #include <Arduino.h>
 
 // ---- per-family constants -------------------------------------------------------------
-// Adding a family means adding a block here (and the family test in stm32_dfu.h); the flag,
+// Adding a family means adding a block here; the flag,
 // request and jump code below stay as they are.
 #if defined(STM32H7xx)
 // STM32H742/43/50/53 system memory (ROM bootloader) base
 #define STM32_SYSMEM_BOOT_ADDR   0x1FF09800UL
 // Cortex-M7: the caches must be off before handing over to the ROM
 #define STM32_DFU_DISABLE_CACHES 1
+#elif defined(STM32F4xx)
+// STM32F4 system memory (ROM bootloader) base, AN2606
+#define STM32_SYSMEM_BOOT_ADDR   0x1FFF0000UL
+// Map system memory at 0x00000000 before the jump, as the ROM expects
+#define STM32_DFU_REMAP_SYSMEM   1
+// The radios keep their DIO configuration across an MCU reset, and radio 1's IRQ line is on PA9,
+// which the F4 ROM bootloader probes as USART1_TX. Reset them before handing over.
+#define STM32_DFU_RESET_RADIOS   1
 #endif
 
 // Flag value in RTC backup register 0 requesting ROM-DFU on next boot
@@ -45,6 +53,11 @@ static void jumpToSystemBootloader()
     SysTick->VAL  = 0;
 
     HAL_RCC_DeInit();
+
+#if defined(STM32_DFU_REMAP_SYSMEM)
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    __HAL_SYSCFG_REMAPMEMORY_SYSTEMFLASH();
+#endif
 
     for (uint32_t i = 0; i < 8; i++)
     {
@@ -82,12 +95,38 @@ void initVariant()
     stm32_DfuCheckAndJump();
 }
 
+#if defined(STM32_DFU_RESET_RADIOS)
+static void resetRadios()
+{
+    const int rst[] = {GPIO_PIN_RST, GPIO_PIN_RST_2};
+    for (const int pin : rst)
+    {
+        if (pin != UNDEF_PIN)
+        {
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, LOW);
+        }
+    }
+    delay(1);
+    for (const int pin : rst)
+    {
+        if (pin != UNDEF_PIN)
+        {
+            digitalWrite(pin, HIGH);
+        }
+    }
+}
+#endif
+
 void stm32_RequestDfu()
 {
     backupDomainAccess();
     RTC->BKP0R = DFU_BKP_MAGIC;
     delay(50);   // let any in-flight USB TX drain
+#if defined(STM32_DFU_RESET_RADIOS)
+    resetRadios();
+#endif
     NVIC_SystemReset();
 }
 
-#endif // STM32_DFU_SUPPORTED
+#endif // PLATFORM_STM32

@@ -43,6 +43,7 @@
 static inline void servoNewChannelsAvailable() {}
 #include "devUSBConfig.h"
 #include "stm32_dfu.h"
+#include "pinconfig.h"
 #endif
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
@@ -89,8 +90,10 @@ static inline void servoNewChannelsAvailable() {}
 
 device_affinity_t ui_devices[] = {
   {&Serial0_device, 1},
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
   {&Serial1_device, 1},
+#endif
+#if defined(PLATFORM_ESP32)
   {&SerialUpdate_device, 1},
 #endif
   {&LED_device, 0},
@@ -144,13 +147,33 @@ uint32_t serialBaud;
 
 /* SERIAL_PROTOCOL_TX is used by CRSF output */
 #if defined(PLATFORM_STM32)
-HardwareSerial SERIAL_PROTOCOL_TX(USART1);
+// STM32duino can set a port's inversion flags but not clear them, and both ports are re-begun with
+// another protocol at runtime.
+class STM32Serial : public HardwareSerial
+{
+public:
+    using HardwareSerial::HardwareSerial;
+    void clearInvert()
+    {
+        _rx_invert = false;
+        _tx_invert = false;
+    }
+};
+
+// The USART given here is only a placeholder: uart_init() takes the instance from the pins set
+// before begin(). Serial 2 is not called Serial2, which the core defines on some variants.
+STM32Serial SERIAL_PROTOCOL_TX(USART1);
+STM32Serial serial1Port(USART2);
 #else
 #define SERIAL_PROTOCOL_TX Serial
 #endif
 
-#if defined(PLATFORM_ESP32)
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
+    #if defined(PLATFORM_ESP32)
     #define SERIAL1_PROTOCOL_TX Serial1
+    #else
+    #define SERIAL1_PROTOCOL_TX serial1Port
+    #endif
 
     // SBUS driver needs to distinguish stream for SBUS/DJI protocol
     const Stream *serial_protocol_tx = &(SERIAL_PROTOCOL_TX);
@@ -163,10 +186,11 @@ SerialIO *serialIO = nullptr;
 
 #if defined(PLATFORM_STM32)
 #define SERIAL_PROTOCOL_RX SERIAL_PROTOCOL_TX
+#define SERIAL1_PROTOCOL_RX serial1Port
 #else
 #define SERIAL_PROTOCOL_RX Serial
-#endif
 #define SERIAL1_PROTOCOL_RX Serial1
+#endif
 
 StubbornSender DataDlSender;
 uint8_t DataDlBuffer[CRSF_MAX_PACKET_LEN];
@@ -1308,6 +1332,53 @@ void DataUlReceiveComplete()
     DataUlReceiver.Unlock();
 }
 
+#if defined(PLATFORM_STM32)
+#if defined(UART_ADVFEATURE_RXINVERT_INIT)
+static void stm32SerialPull(int8_t pin, uint32_t pull)
+{
+    if (pin != UNDEF_PIN)
+    {
+        const PinName pn = digitalPinToPinName(pin);
+        pin_PullConfig(get_GPIO_Port(STM_PORT(pn)), STM_LL_GPIO_PIN(pn), pull);
+    }
+}
+#endif
+
+/**
+ * The ESP32 Serial1.begin() arguments, plus halfDuplex: single wire on the TX pin, with the core
+ * switching direction in write() and read(). rxPin is ignored when halfDuplex is set, and a port
+ * with no RX pin is half duplex too.
+ */
+static void stm32SerialBegin(STM32Serial &port, uint32_t baud, uint32_t config, int8_t rxPin, int8_t txPin, bool invert, bool halfDuplex)
+{
+    port.end();
+    port.clearInvert();
+    port.setTx(txPin);
+    if (halfDuplex || rxPin == UNDEF_PIN)
+    {
+        port.setHalfDuplex();
+        rxPin = UNDEF_PIN;
+    }
+    else
+    {
+        port.setRx(rxPin);
+    }
+    if (invert)
+    {
+        port.setRxInvert();
+        port.setTxInvert();
+    }
+    port.begin(baud, config);
+#if defined(UART_ADVFEATURE_RXINVERT_INIT)
+    // The UART pin map pulls the pins up, but an inverted line idles low. Without this HAL feature
+    // (F4) the core ignores the invert flags, so the line stays idle high.
+    const uint32_t pull = invert ? GPIO_PULLDOWN : GPIO_PULLUP;
+    stm32SerialPull(txPin, pull);
+    stm32SerialPull(rxPin, pull);
+#endif
+}
+#endif
+
 static void setupSerial()
 {
     bool sbusSerialOutput = false;
@@ -1419,9 +1490,7 @@ static void setupSerial()
         serialConfig = SERIAL_8N2;
     }
 
-    SERIAL_PROTOCOL_TX.setTx(GPIO_PIN_RCSIGNAL_TX);
-    SERIAL_PROTOCOL_TX.setRx(GPIO_PIN_RCSIGNAL_RX);
-    SERIAL_PROTOCOL_TX.begin(serialBaud, serialConfig);
+    stm32SerialBegin(SERIAL_PROTOCOL_TX, serialBaud, serialConfig, GPIO_PIN_RCSIGNAL_RX, GPIO_PIN_RCSIGNAL_TX, invert, false);
 #endif
 
     if (firmwareOptions.is_airport)
@@ -1481,6 +1550,39 @@ static void setupSerial()
 }
 
 #if defined(PLATFORM_ESP32)
+static void serial1Begin(uint32_t baud, uint32_t config, int8_t rxPin, int8_t txPin, bool invert, bool halfDuplex)
+{
+    // The half-duplex drivers re-route the TX pin themselves
+    (void)halfDuplex;
+    Serial1.begin(baud, config, rxPin, txPin, invert);
+}
+#elif defined(PLATFORM_STM32)
+static void serial1Begin(uint32_t baud, uint32_t config, int8_t rxPin, int8_t txPin, bool invert, bool halfDuplex)
+{
+    // TX-only protocols get no RX pin on ESP32, but STM32duino runs a port without one half duplex,
+    // which lets the line go between frames: give them the layout's RX pin and ignore the input.
+    if (!halfDuplex && rxPin == UNDEF_PIN)
+    {
+        rxPin = GPIO_PIN_SERIAL1_RX;
+    }
+    stm32SerialBegin(serial1Port, baud, config, rxPin, txPin, invert, halfDuplex);
+}
+
+static USART_TypeDef *stm32UartOf(int8_t rxPin, int8_t txPin)
+{
+    if (txPin != UNDEF_PIN)
+    {
+        return (USART_TypeDef *)pinmap_peripheral(digitalPinToPinName(txPin), PinMap_UART_TX);
+    }
+    if (rxPin != UNDEF_PIN)
+    {
+        return (USART_TypeDef *)pinmap_peripheral(digitalPinToPinName(rxPin), PinMap_UART_RX);
+    }
+    return nullptr;
+}
+#endif
+
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_STM32)
 static void serial1Shutdown()
 {
     if(serial1IO != nullptr)
@@ -1489,7 +1591,7 @@ static void serial1Shutdown()
         // deleted driver; the ISR runs on this core, so it sees either the live driver or nullptr
         SerialIO *oldIO = serial1IO;
         serial1IO = nullptr;
-        Serial1.end();
+        SERIAL1_PROTOCOL_TX.end();
         delete oldIO;
     }
 }
@@ -1521,45 +1623,60 @@ static void setupSerial1()
         }
     }
 
+#if defined(PLATFORM_STM32)
+    // No Serial 2 pins (or none on a USART) in the layout: nothing to start
+    const USART_TypeDef *serial1Uart = stm32UartOf(serial1RXpin, serial1TXpin);
+    if (serial1Uart == nullptr)
+    {
+        return;
+    }
+    // Only a bad layout or hardware override can put both ports on one USART
+    if (serial1Uart == stm32UartOf(GPIO_PIN_RCSIGNAL_RX, GPIO_PIN_RCSIGNAL_TX))
+    {
+        ERRLN("Serial 2 is on the primary port's USART, not started");
+        return;
+    }
+#endif
+
     switch(config.GetSerial1Protocol())
     {
         case PROTOCOL_SERIAL1_OFF:
             break;
         case PROTOCOL_SERIAL1_CRSF:
-            Serial1.begin(firmwareOptions.uart_baud, SERIAL_8N1, serial1RXpin, serial1TXpin, false);
+            serial1Begin(firmwareOptions.uart_baud, SERIAL_8N1, serial1RXpin, serial1TXpin, false, false);
             serial1IO = new SerialCRSF(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_INVERTED_CRSF:
-            Serial1.begin(firmwareOptions.uart_baud, SERIAL_8N1, serial1RXpin, serial1TXpin, true);
+            serial1Begin(firmwareOptions.uart_baud, SERIAL_8N1, serial1RXpin, serial1TXpin, true, false);
             serial1IO = new SerialCRSF(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_SBUS:
         case PROTOCOL_SERIAL1_DJI_RS_PRO:
-            Serial1.begin(100000, SERIAL_8E2, UNDEF_PIN, serial1TXpin, true);
+            serial1Begin(100000, SERIAL_8E2, UNDEF_PIN, serial1TXpin, true, false);
             serial1IO = new SerialSBUS(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_INVERTED_SBUS:
-            Serial1.begin(100000, SERIAL_8E2, UNDEF_PIN, serial1TXpin, false);
+            serial1Begin(100000, SERIAL_8E2, UNDEF_PIN, serial1TXpin, false, false);
             serial1IO = new SerialSBUS(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_SUMD:
-            Serial1.begin(115200, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false);
+            serial1Begin(115200, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false, false);
             serial1IO = new SerialSUMD(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_HOTT_TLM:
-            Serial1.begin(19200, SERIAL_8N2, serial1RXpin, serial1TXpin, false);
+            serial1Begin(19200, SERIAL_8N2, serial1RXpin, serial1TXpin, false, true);
             serial1IO = new SerialHoTT_TLM(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX, serial1TXpin);
             break;
         case PROTOCOL_SERIAL1_TRAMP:
-            Serial1.begin(9600, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false);
+            serial1Begin(9600, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false, true);
             serial1IO = new SerialTramp(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX, serial1TXpin);
             break;
         case PROTOCOL_SERIAL1_SMARTAUDIO:
-            Serial1.begin(4800, SERIAL_8N2, UNDEF_PIN, serial1TXpin, false);
+            serial1Begin(4800, SERIAL_8N2, UNDEF_PIN, serial1TXpin, false, true);
             serial1IO = new SerialSmartAudio(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX, serial1TXpin);
             break;
         case PROTOCOL_SERIAL1_MSP_DISPLAYPORT:
-            Serial1.begin(115200, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false);
+            serial1Begin(115200, SERIAL_8N1, UNDEF_PIN, serial1TXpin, false, false);
             serial1IO = new SerialDisplayport(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
         case PROTOCOL_SERIAL1_GPS:
@@ -1567,12 +1684,12 @@ static void setupSerial1()
             // shared with RX) the GPS can be read but not configured
             if (serial1RXpin != UNDEF_PIN)
             {
-                Serial1.begin(115200, SERIAL_8N1, serial1RXpin, serial1TXpin, false);
+                serial1Begin(115200, SERIAL_8N1, serial1RXpin, serial1TXpin, false, false);
                 serial1IO = new SerialGPS(SERIAL1_PROTOCOL_TX, serial1TXpin == serial1RXpin ? UNDEF_PIN : serial1TXpin);
             }
             break;
         case PROTOCOL_SERIAL1_SCORPION_TLM:
-            Serial1.begin(38400, SERIAL_8N1, serial1RXpin, serial1TXpin, false);
+            serial1Begin(38400, SERIAL_8N1, serial1RXpin, serial1TXpin, false, false);
             serial1IO = new SerialScorpion_TLM(SERIAL1_PROTOCOL_TX, SERIAL1_PROTOCOL_RX);
             break;
     }
@@ -2089,6 +2206,12 @@ void resetConfigAndReboot()
 
 void setup()
 {
+#if defined(PLATFORM_STM32)
+    // Bench hack (NOXE V2 F411 test rig): keep the FC's OSD (SPI2, CS PB12) deselected so the
+    // radio owns SPI2. Remove after bench testing.
+    pinMode(PB12, OUTPUT);
+    digitalWrite(PB12, HIGH);
+#endif
     if (!options_init())
     {
         // In the failure case we set the logging to the null logger so nothing crashes
@@ -2195,6 +2318,7 @@ void loop()
 {
     unsigned long now = millis();
 
+
     if (DataUlReceiver.HasFinishedData())
     {
         DataUlReceiveComplete();
@@ -2212,7 +2336,7 @@ void loop()
     handleSerialIO();
 
     checkRebootTime(now);
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
     if (dfuRequestTime != 0 && now > dfuRequestTime) {
         stm32_RequestDfu();
     }
@@ -2307,7 +2431,7 @@ void reset_into_bootloader(void)
 {
     SERIAL_PROTOCOL_TX.println((const char *)&target_name[4]);
     SERIAL_PROTOCOL_TX.flush();
-#if defined(STM32_DFU_SUPPORTED)
+#if defined(PLATFORM_STM32)
     delay(100);
     DBGLN("Rebooting into ROM DFU...");
     stm32_RequestDfu();

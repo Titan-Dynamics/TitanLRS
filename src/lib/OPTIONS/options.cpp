@@ -50,11 +50,14 @@ firmware_options_t firmwareOptions;
 
 static bool optionsCustomised = false;
 
-// The web flasher patches this block; volatile keeps GCC from constant-folding the zeroed regions.
-// GCC would place a volatile object in .data (RAM, copied from flash at startup); the section
-// keeps it in flash, where it is readable from reset.
-__attribute__((used, aligned(4), section(".rodata.titanSlot"))) const volatile titan_slot_t titanSlot = {
+// The web flasher patches this block in the image, so reads must not be constant-folded from the
+// zeroed initialiser. The storage itself is plain const: a volatile object would be emitted into a
+// writable section (.data, or a writable .rodata.titanSlot that drags all of .rodata — and the
+// flash LOAD segment — to RWX). Everything reads it through the volatile alias titanSlot instead,
+// which forces a real load from flash; nothing touches titanSlotStorage directly.
+extern "C" __attribute__((used, aligned(4), section(".rodata.titanSlot"))) const titan_slot_t titanSlotStorage = {
     {'T', 'L', 'R', 'S', 'O', 'P', 'T', 'S'}, TITAN_SLOT_VERSION, 0, {0}, {0}, {0}, {0}};
+extern "C" const volatile titan_slot_t titanSlot __attribute__((alias("titanSlotStorage")));
 static_assert(sizeof(titan_slot_t) == 2716, "titan_slot_t layout is shared with the web flasher");
 
 const char *titan_ProductName(void)

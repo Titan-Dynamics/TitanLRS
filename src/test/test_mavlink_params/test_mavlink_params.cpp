@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "MavParamServer.h"
-#include "common/mavlink.h"
+#include "mavlink_common.h"
 #include "MavFrame.h"
 
 
