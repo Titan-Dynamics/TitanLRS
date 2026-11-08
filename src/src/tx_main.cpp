@@ -104,6 +104,11 @@ static uint32_t LastTLMpacketRecv_Ms = 0;
 static uint32_t LinkStatsLastReported_Ms = 0;
 static uint32_t RxDisconnected_Ms = 0;
 static bool commitInProgress = false;
+// MAVLink, not a handset, started the TX. With no handset since boot the GCS joystick then flies
+// (gcsOnly), and while it has nothing to send (gcsOnly without gcsOnlyRc) no RC goes out.
+static bool mavlinkStartedTx = false;
+static volatile bool gcsOnly = false;
+static volatile bool gcsOnlyRc = false;
 
 LQCALC<100> LqTQly;
 
@@ -569,6 +574,10 @@ void ICACHE_RAM_ATTR SendRCdataToRF()
     {
       return;
     }
+  }
+  else if (gcsOnly && !gcsOnlyRc)
+  {
+    dontSendChannelData = true;
   }
 
   busyTransmitting = true;
@@ -1161,6 +1170,7 @@ static void HandleUSBSerialData(uint8_t *buf, uint16_t size)
     if (isThisAMavPacket(buf, size))
     {
       config.SetLinkMode(TX_MAVLINK_MODE);
+      mavlinkStartedTx = true;
       UARTconnected();
     }
   }
@@ -1182,6 +1192,7 @@ static void HandleMavlinkUdp(const uint8_t *buf, uint16_t size)
   if (connectionState == noCrossfire && isThisAMavPacket((uint8_t *)buf, size))
   {
     config.SetLinkMode(TX_MAVLINK_MODE);
+    mavlinkStartedTx = true;
     UARTconnected();
   }
   if (config.GetLinkMode() == TX_MAVLINK_MODE)
@@ -1291,6 +1302,7 @@ static void HandleUARTin()
         {
           if (isThisAMavPacket(buf, size))
           {
+            mavlinkStartedTx = true;
             UARTconnected();
           }
         }
@@ -1726,6 +1738,8 @@ void loop()
     {
       TxMavlink_Update(now);
     }
+    gcsOnly = mavlinkStartedTx && handset->GetRCdataLastRecv() == 0 && TxMavlink_GcsOnlyAllowed();
+    gcsOnlyRc = gcsOnly && TxMavlink_GcsOnlyChannels(ChannelData, CRSF_NUM_CHANNELS, now);
     if (DataDlReceiver.HasFinishedData())
     {
       if (CRSFinBuffer[0] == CRSF_ADDRESS_USB)

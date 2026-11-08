@@ -28,6 +28,9 @@ enum txMavlinkGcsLink_e : uint8_t
 void TxMavlink_ProcessFromGcs(txMavlinkGcsLink_e link, const uint8_t *data, uint16_t size);
 void TxMavlink_QueueUplink(const uint8_t *data, uint16_t size);
 void TxMavlink_OverrideChannels(uint32_t channels[], size_t channelCount);
+// No handset: true while the GCS joystick has channels to send (written to channels), false while it has none
+bool TxMavlink_GcsOnlyAllowed();
+bool TxMavlink_GcsOnlyChannels(uint32_t channels[], size_t channelCount, uint32_t now);
 void TxMavlink_ForwardToGcs(const uint8_t *data, uint16_t size);
 void TxMavlink_Update(uint32_t now);
 

@@ -119,7 +119,7 @@ class TxOptionsPanel extends LitElement {
 
                     ${this.gcsOverride.enabled ? html`
                         <div class="td-card-row">
-                            <span class="td-label">Override enable channel</span>
+                            <span class="td-label">Override enable channel (handset only)</span>
                             <select class="td-select" style="width: auto;"
                                     @change="${(e) => this._setGcsEnableChannel(parseInt(e.target.value))}"
                                     .value="${String(this.gcsOverride.channel)}">

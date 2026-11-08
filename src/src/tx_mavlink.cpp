@@ -34,6 +34,8 @@
 #define DOWNLINK_FRAME_TIMEOUT 500
 // Likewise for a frame from a GCS, held until it completes
 #define GCS_FRAME_TIMEOUT 500
+// No handset: no RC_CHANNELS_OVERRIDE for this long means the joystick is gone, so no RC is sent
+#define GCS_ONLY_TIMEOUT 1000
 // Also sent as soon as it changes
 #define LINK_INFORMATION_INTERVAL 5000
 
@@ -305,19 +307,19 @@ static const MavParam params[] = {
 #endif
     // @Param: TX_GCSOVR_ENABLE
     // @DisplayName: GCS override
-    // @Description: Lets the GCS joystick (RC_CHANNELS_OVERRIDE) take over the channels in TX_GCSOVR_MASK while the handset holds TX_GCSOVR_CH high. Taken-over channels hold the handset's position until the GCS sets them. The TX never passes a GCS's RC_CHANNELS_OVERRIDE on to the vehicle, whether this is on or not. MAVLink link mode only.
+    // @Description: Lets the GCS joystick (RC_CHANNELS_OVERRIDE) take over the channels in TX_GCSOVR_MASK while the handset holds TX_GCSOVR_CH high. Taken-over channels hold the handset's position until the GCS sets them. With no handset since boot and the TX started by MAVLink, the joystick drives the TX_GCSOVR_MASK channels with no enable channel, every other channel is sent low (1000 us), and no RC is sent while the joystick sends nothing for 1 s or has released every channel in the mask. The TX never passes a GCS's RC_CHANNELS_OVERRIDE on to the vehicle, whether this is on or not. MAVLink link mode only.
     // @Values: 0:Disabled,1:Enabled
     // @User: Standard
     {"TX_GCSOVR_ENABLE", nullptr, getGcsOverride, setGcsOverride, nullptr},
     // @Param: TX_GCSOVR_CH
     // @DisplayName: GCS override enable channel
-    // @Description: Handset channel that hands the TX_GCSOVR_MASK channels to the GCS while high. Setting it clears that channel from TX_GCSOVR_MASK. Listed while TX_GCSOVR_ENABLE is 1.
+    // @Description: Handset channel that hands the TX_GCSOVR_MASK channels to the GCS while high. Setting it clears that channel from TX_GCSOVR_MASK. Not used without a handset. Listed while TX_GCSOVR_ENABLE is 1.
     // @Values: 5:CH5,6:CH6,7:CH7,8:CH8,9:CH9,10:CH10,11:CH11,12:CH12,13:CH13,14:CH14,15:CH15,16:CH16
     // @User: Standard
     {"TX_GCSOVR_CH", nullptr, getGcsOverrideChannel, setGcsOverrideChannel, nullptr, isGcsOverrideEnabled},
     // @Param: TX_GCSOVR_MASK
     // @DisplayName: GCS override channels
-    // @Description: Channels taken from the GCS while the override is enabled. The enable channel (TX_GCSOVR_CH) is never taken. CH9-CH16 need MAVLink2 from the GCS. They go over the air at the resolution the switch mode gives them. Listed while TX_GCSOVR_ENABLE is 1.
+    // @Description: Channels taken from the GCS while the override is enabled, with or without a handset. Without a handset every other channel is sent low (1000 us). The enable channel (TX_GCSOVR_CH) is never taken. CH9-CH16 need MAVLink2 from the GCS. They go over the air at the resolution the switch mode gives them. Listed while TX_GCSOVR_ENABLE is 1.
     // @Bitmask: 0:CH1,1:CH2,2:CH3,3:CH4,4:CH5,5:CH6,6:CH7,7:CH8,8:CH9,9:CH10,10:CH11,11:CH12,12:CH13,13:CH14,14:CH15,15:CH16
     // @User: Standard
     {"TX_GCSOVR_MASK", nullptr, getGcsOverrideMask, setGcsOverrideMask, nullptr, isGcsOverrideEnabled},
@@ -510,7 +512,7 @@ static bool handleGcsFrame(const mavlink_message_t *msg, uint32_t now)
     server.handleGcsMessage(msg, now);
     // Dropped even with the handover off: the RX sends the FC its own overrides, usually from
     // the same sysid as the GCS, so the two streams would fight
-    return rcOverride.handleMessage(msg, server.vehicleSysid());
+    return rcOverride.handleMessage(msg, server.vehicleSysid(), now);
 }
 
 void TxMavlink_ProcessFromGcs(txMavlinkGcsLink_e link, const uint8_t *data, uint16_t size)
@@ -527,6 +529,16 @@ void TxMavlink_OverrideChannels(uint32_t channels[], size_t channelCount)
         rcOverride.apply(channels, channelCount, config.GetGcsOverrideChannel() - 1, config.GetGcsOverrideMask());
     else
         rcOverride.reset();
+}
+
+bool TxMavlink_GcsOnlyAllowed()
+{
+    return config.GetLinkMode() == TX_MAVLINK_MODE && config.GetGcsOverrideEnabled();
+}
+
+bool TxMavlink_GcsOnlyChannels(uint32_t channels[], size_t channelCount, uint32_t now)
+{
+    return rcOverride.fillAll(channels, channelCount, config.GetGcsOverrideMask(), now, GCS_ONLY_TIMEOUT);
 }
 
 void TxMavlink_ForwardToGcs(const uint8_t *data, uint16_t size)

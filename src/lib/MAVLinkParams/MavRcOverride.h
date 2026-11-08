@@ -12,6 +12,9 @@
  * while it is high the handset has no effect on them, and they hold where they were until the
  * GCS sets them. The enable channel itself is never taken from the GCS.
  *
+ * With no handset at all, fillAll() gives the channels in the mask from the GCS and every other
+ * channel low, as long as the GCS keeps sending.
+ *
  * Include after the MAVLink dialect header.
  */
 
@@ -24,7 +27,7 @@ public:
     // reach the flight controller, which would act on them with no regard for the handset, and
     // mix them with the overrides the RX sends it.
     // vehicleSysid is 0 until the vehicle has been seen.
-    bool handleMessage(const mavlink_message_t *msg, uint8_t vehicleSysid)
+    bool handleMessage(const mavlink_message_t *msg, uint8_t vehicleSysid, uint32_t now)
     {
         if (msg->msgid != MAVLINK_MSG_ID_RC_CHANNELS_OVERRIDE)
             return false;
@@ -33,6 +36,8 @@ public:
         mavlink_msg_rc_channels_override_decode(msg, &rc);
         if (vehicleSysid != 0 && rc.target_system != 0 && rc.target_system != vehicleSysid)
             return false;
+        lastMs_ = now;
+        seen_ = true;
 
         const uint16_t raw[CHANNELS] = {
             rc.chan1_raw, rc.chan2_raw, rc.chan3_raw, rc.chan4_raw,
@@ -76,6 +81,28 @@ public:
         holdValid_ = true;
     }
 
+    // For flying with no handset: the GCS's value for each channel in forwardMask it has set, low (1000 us)
+    // for every other channel, as that is safe for a switch (arming). False, with channels untouched, when
+    // the GCS has sent nothing for timeoutMs or has no value for any channel in the mask: the joystick is
+    // gone, so no RC should be sent.
+    bool fillAll(uint32_t channels[], size_t channelCount, uint16_t forwardMask, uint32_t now, uint32_t timeoutMs) const
+    {
+        if (!seen_ || now - lastMs_ > timeoutMs)
+            return false;
+        bool any = false;
+        for (uint8_t ch = 0; ch < CHANNELS; ch++)
+            any |= (forwardMask & (1U << ch)) && values_[ch] != UNSET;
+        if (!any)
+            return false;
+        const uint8_t count = channelCount < CHANNELS ? channelCount : CHANNELS;
+        for (uint8_t ch = 0; ch < count; ch++)
+        {
+            const bool fromGcs = (forwardMask & (1U << ch)) && values_[ch] != UNSET;
+            channels[ch] = fromGcs ? values_[ch] : CRSF_CHANNEL_VALUE_1000;
+        }
+        return true;
+    }
+
     // Call while not applying, so turning it on later starts from neither old stick positions nor old GCS values
     void reset() { *this = MavRcOverride(); }
 
@@ -91,4 +118,6 @@ private:
     uint16_t values_[CHANNELS] = {};
     uint16_t held_[CHANNELS] = {};
     bool holdValid_ = false;
+    uint32_t lastMs_ = 0;
+    bool seen_ = false;
 };

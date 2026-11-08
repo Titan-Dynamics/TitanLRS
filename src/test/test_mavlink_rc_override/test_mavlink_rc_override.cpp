@@ -20,6 +20,7 @@
 #define STICKS_MASK 0x000F
 
 static MavRcOverride rcOverride;
+static uint32_t testNow;        // the time overrides arrive at
 static uint32_t channels[16];
 
 static void applyOverride(size_t count = 16, uint8_t enableChannel = ENABLE_CHANNEL, uint16_t mask = STICKS_MASK)
@@ -49,7 +50,7 @@ static bool sendOverride(const mavlink_rc_channels_override_t &rc)
 {
     mavlink_message_t msg;
     mavlink_msg_rc_channels_override_encode(GCS_SYS, GCS_COMP, &msg, &rc);
-    return rcOverride.handleMessage(&msg, VEHICLE_SYS);
+    return rcOverride.handleMessage(&msg, VEHICLE_SYS, testNow);
 }
 
 static std::vector<uint8_t> packed(const mavlink_message_t &msg)
@@ -95,7 +96,7 @@ static void captureUplink(const uint8_t *data, uint16_t len)
 
 static bool onFrame(const mavlink_message_t *msg, uint32_t now)
 {
-    if (rcOverride.handleMessage(msg, VEHICLE_SYS))
+    if (rcOverride.handleMessage(msg, VEHICLE_SYS, testNow))
         return true;
     otherFrames++;
     return false;
@@ -117,6 +118,7 @@ static std::vector<uint8_t> joined(std::vector<std::vector<uint8_t>> parts)
 void setUp()
 {
     rcOverride = MavRcOverride();
+    testNow = 1000;
     filter = MavFrameFilter();
     uplink.clear();
     otherFrames = 0;
@@ -452,6 +454,63 @@ void test_channel_ticked_after_the_handover_holds_the_handset_position()
     TEST_ASSERT_EQUAL(400, channels[1]);
 }
 
+// ---- no handset: the mask's channels from the GCS, every other channel low ---------------------
+
+#define GCS_ONLY_TIMEOUT_MS 1000
+#define LOW_1000US 191
+
+void test_no_handset_sends_nothing_before_the_first_override()
+{
+    TEST_ASSERT_FALSE(rcOverride.fillAll(channels, 16, STICKS_MASK, testNow, GCS_ONLY_TIMEOUT_MS));
+    TEST_ASSERT_EQUAL(HANDSET_VALUE, channels[0]);     // untouched
+}
+
+void test_no_handset_takes_the_ticked_channels_and_sends_the_rest_low()
+{
+    mavlink_rc_channels_override_t rc = blankOverride();
+    rc.chan1_raw = 1000;
+    rc.chan3_raw = 2000;
+    rc.chan5_raw = 2000;                               // sent but not ticked: stays low
+    rc.chan9_raw = 1250;                               // a MAVLink 2 extension field
+    sendOverride(rc);
+    const uint16_t mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 8);
+    TEST_ASSERT_TRUE(rcOverride.fillAll(channels, 16, mask, testNow + 20, GCS_ONLY_TIMEOUT_MS));
+    TEST_ASSERT_EQUAL(CRSF_1000, channels[0]);
+    TEST_ASSERT_EQUAL(LOW_1000US, channels[1]);        // ticked, never set by the GCS
+    TEST_ASSERT_EQUAL(CRSF_2000, channels[2]);
+    TEST_ASSERT_EQUAL(LOW_1000US, channels[4]);
+    TEST_ASSERT_EQUAL(591, channels[8]);               // 1250 us
+    TEST_ASSERT_EQUAL(LOW_1000US, channels[15]);
+}
+
+void test_no_handset_stops_when_the_gcs_goes_quiet()
+{
+    mavlink_rc_channels_override_t rc = blankOverride();
+    rc.chan1_raw = 2000;
+    sendOverride(rc);
+    TEST_ASSERT_TRUE(rcOverride.fillAll(channels, 16, STICKS_MASK, testNow + GCS_ONLY_TIMEOUT_MS, GCS_ONLY_TIMEOUT_MS));
+    setHandset(CRSF_1000);
+    TEST_ASSERT_FALSE(rcOverride.fillAll(channels, 16, STICKS_MASK, testNow + GCS_ONLY_TIMEOUT_MS + 1, GCS_ONLY_TIMEOUT_MS));
+    TEST_ASSERT_EQUAL(HANDSET_VALUE, channels[0]);     // untouched
+
+    // Back as soon as the GCS sends again
+    testNow += 5000;
+    sendOverride(rc);
+    TEST_ASSERT_TRUE(rcOverride.fillAll(channels, 16, STICKS_MASK, testNow, GCS_ONLY_TIMEOUT_MS));
+    TEST_ASSERT_EQUAL(CRSF_2000, channels[0]);
+}
+
+void test_no_handset_stops_when_the_gcs_releases_the_ticked_channels()
+{
+    mavlink_rc_channels_override_t rc = blankOverride();
+    rc.chan1_raw = 2000;
+    rc.chan5_raw = 2000;                               // not ticked: does not keep RC going
+    sendOverride(rc);
+    rc.chan1_raw = 0;                                  // release
+    sendOverride(rc);
+    TEST_ASSERT_FALSE(rcOverride.fillAll(channels, 16, STICKS_MASK, testNow, GCS_ONLY_TIMEOUT_MS));
+}
+
 void test_pulse_widths_are_limited()
 {
     mavlink_rc_channels_override_t rc = blankOverride();
@@ -491,10 +550,10 @@ void test_addressing()
     mavlink_message_t msg;
     rc.target_system = VEHICLE_SYS + 1;
     mavlink_msg_rc_channels_override_encode(GCS_SYS, GCS_COMP, &msg, &rc);
-    TEST_ASSERT_TRUE(rcOverride.handleMessage(&msg, 0));
+    TEST_ASSERT_TRUE(rcOverride.handleMessage(&msg, 0, testNow));
 
     mavlink_msg_heartbeat_pack(GCS_SYS, GCS_COMP, &msg, MAV_TYPE_GCS, MAV_AUTOPILOT_INVALID, 0, 0, MAV_STATE_ACTIVE);
-    TEST_ASSERT_FALSE(rcOverride.handleMessage(&msg, VEHICLE_SYS));
+    TEST_ASSERT_FALSE(rcOverride.handleMessage(&msg, VEHICLE_SYS, testNow));
 }
 
 void test_filter_removes_overrides_and_keeps_the_rest_in_order()
@@ -633,6 +692,10 @@ int main(int argc, char **argv)
     RUN_TEST(test_enable_channel_out_of_range_does_nothing);
     RUN_TEST(test_extension_channel_values_with_special_meanings);
     RUN_TEST(test_channel_ticked_after_the_handover_holds_the_handset_position);
+    RUN_TEST(test_no_handset_sends_nothing_before_the_first_override);
+    RUN_TEST(test_no_handset_takes_the_ticked_channels_and_sends_the_rest_low);
+    RUN_TEST(test_no_handset_stops_when_the_gcs_goes_quiet);
+    RUN_TEST(test_no_handset_stops_when_the_gcs_releases_the_ticked_channels);
     RUN_TEST(test_pulse_widths_are_limited);
     RUN_TEST(test_addressing);
     RUN_TEST(test_filter_removes_overrides_and_keeps_the_rest_in_order);
