@@ -231,6 +231,10 @@ void ConfigJson_BuildConfig(JsonObject json, const bool exportMode)
             action["action"] = buttonColor->val.actions[pos].action;
         }
     }
+    const auto gcsOverride = cfg["gcs-override"].to<JsonObject>();
+    gcsOverride["enabled"] = config.GetGcsOverrideEnabled();
+    gcsOverride["channel"] = config.GetGcsOverrideChannel();
+    gcsOverride["mask"] = config.GetGcsOverrideMask();
     if (exportMode)
     {
         cfg["fan-mode"] = config.GetFanMode();
@@ -429,6 +433,15 @@ const char *ConfigJson_ApplyConfig(JsonVariant json)
         // As in devWIFI: the module is left on the last imported model. TxConfig has no
         // GetModelId() to restore from, and the handset re-selects the model on its next
         // model-ID frame anyway.
+    }
+
+    if (json["gcs-override"].is<JsonObject>())
+    {
+        // Channel first, as it decides which bit the mask can't have
+        const auto gcsOverride = json["gcs-override"].as<JsonObject>();
+        if (gcsOverride["enabled"].is<bool>()) config.SetGcsOverrideEnabled(gcsOverride["enabled"]);
+        if (gcsOverride["channel"].is<uint8_t>()) config.SetGcsOverrideChannel(gcsOverride["channel"]);
+        if (gcsOverride["mask"].is<uint16_t>()) config.SetGcsOverrideMask(gcsOverride["mask"]);
     }
 
     applyButtonActions(json);

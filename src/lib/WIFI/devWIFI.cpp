@@ -451,6 +451,10 @@ static void GetConfiguration(AsyncWebServerRequest *request)
       action["action"] = buttonColor->val.actions[pos].action;
     }
   }
+  const auto gcsOverride = cfg["gcs-override"].to<JsonObject>();
+  gcsOverride["enabled"] = config.GetGcsOverrideEnabled();
+  gcsOverride["channel"] = config.GetGcsOverrideChannel();
+  gcsOverride["mask"] = config.GetGcsOverrideMask();
   if (exportMode)
   {
     cfg["fan-mode"] = config.GetFanMode();
@@ -592,6 +596,14 @@ static void GetConfiguration(AsyncWebServerRequest *request)
 #if defined(TARGET_TX)
 static void UpdateConfiguration(AsyncWebServerRequest *request, JsonVariant &json)
 {
+  if (json["gcs-override"].is<JsonObject>())
+  {
+    // Channel first, as it decides which bit the mask can't have
+    const auto gcsOverride = json["gcs-override"].as<JsonObject>();
+    if (gcsOverride["enabled"].is<bool>()) config.SetGcsOverrideEnabled(gcsOverride["enabled"]);
+    if (gcsOverride["channel"].is<uint8_t>()) config.SetGcsOverrideChannel(gcsOverride["channel"]);
+    if (gcsOverride["mask"].is<uint16_t>()) config.SetGcsOverrideMask(gcsOverride["mask"]);
+  }
   if (json["button-actions"].is<JsonVariant>()) {
     const JsonArray &array = json["button-actions"].as<JsonArray>();
     for (size_t button=0 ; button<array.size() ; button++)

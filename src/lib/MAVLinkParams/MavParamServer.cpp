@@ -49,15 +49,29 @@ uint8_t MavParamServer::begin(const MavParam *table, uint8_t tableLen, const Con
     config_ = config;
     send_ = send;
     startMs_ = now;
-    count_ = 0;
-    for (uint8_t i = 0; i < tableLen && count_ < MAV_PARAM_SERVER_MAX_PARAMS; i++)
+    tableLen_ = tableLen < MAV_PARAM_SERVER_MAX_TABLE ? tableLen : MAV_PARAM_SERVER_MAX_TABLE;
+    available_ = 0;
+    for (uint8_t i = 0; i < tableLen_; i++)
     {
         if (table[i].available == nullptr || table[i].available())
+        {
+            available_ |= 1UL << i;
+        }
+    }
+    relist();
+    return count_;
+}
+
+void MavParamServer::relist()
+{
+    count_ = 0;
+    for (uint8_t i = 0; i < tableLen_ && count_ < MAV_PARAM_SERVER_MAX_PARAMS; i++)
+    {
+        if ((available_ & (1UL << i)) && (table_[i].shown == nullptr || table_[i].shown()))
         {
             listed_[count_++] = i;
         }
     }
-    return count_;
 }
 
 uint8_t MavParamServer::sysid() const
@@ -99,6 +113,16 @@ int MavParamServer::findParam(const char *id) const
     for (uint8_t i = 0; i < count_; i++)
     {
         if (strncmp(id, table_[listed_[i]].id, MAV_PARAM_ID_LEN) == 0)
+            return listed_[i];
+    }
+    return -1;
+}
+
+int MavParamServer::listIndex(uint8_t tableIndex) const
+{
+    for (uint8_t i = 0; i < count_; i++)
+    {
+        if (listed_[i] == tableIndex)
             return i;
     }
     return -1;
@@ -121,7 +145,7 @@ void MavParamServer::rejectSet(uint8_t index, const char *reason)
 {
     // Echo the unchanged value, which is how the parameter protocol reports a refused write
     paramMask_ |= 1UL << index;
-    strncpy(statusText_, table_[listed_[index]].id, sizeof(statusText_) - 1);
+    strncpy(statusText_, table_[index].id, sizeof(statusText_) - 1);
     statusText_[sizeof(statusText_) - 1] = '\0';
     strncat(statusText_, ": ", sizeof(statusText_) - strlen(statusText_) - 1);
     strncat(statusText_, reason, sizeof(statusText_) - strlen(statusText_) - 1);
@@ -130,7 +154,7 @@ void MavParamServer::rejectSet(uint8_t index, const char *reason)
 
 void MavParamServer::handleGcsMessage(const mavlink_message_t *msg, uint32_t now)
 {
-    if (count_ == 0 && msg->msgid != MAVLINK_MSG_ID_COMMAND_LONG && msg->msgid != MAVLINK_MSG_ID_FILE_TRANSFER_PROTOCOL)
+    if (available_ == 0 && msg->msgid != MAVLINK_MSG_ID_COMMAND_LONG && msg->msgid != MAVLINK_MSG_ID_FILE_TRANSFER_PROTOCOL)
         return;
 
     switch (msg->msgid)
@@ -141,7 +165,11 @@ void MavParamServer::handleGcsMessage(const mavlink_message_t *msg, uint32_t now
         if (forUs(req.target_system, req.target_component, true))
         {
             // A repeated request starts the list again
-            paramMask_ = count_ >= 32 ? 0xFFFFFFFFUL : (1UL << count_) - 1;
+            paramMask_ = 0;
+            for (uint8_t i = 0; i < count_; i++)
+            {
+                paramMask_ |= 1UL << listed_[i];
+            }
         }
         break;
     }
@@ -152,7 +180,7 @@ void MavParamServer::handleGcsMessage(const mavlink_message_t *msg, uint32_t now
         {
             char id[MAV_PARAM_ID_LEN + 1] = {};
             memcpy(id, req.param_id, MAV_PARAM_ID_LEN);
-            const int index = req.param_index >= 0 ? (req.param_index < count_ ? req.param_index : -1) : findParam(id);
+            const int index = req.param_index >= 0 ? (req.param_index < count_ ? listed_[req.param_index] : -1) : findParam(id);
             if (index >= 0)
             {
                 paramMask_ |= 1UL << index;
@@ -170,7 +198,7 @@ void MavParamServer::handleGcsMessage(const mavlink_message_t *msg, uint32_t now
         const int index = findParam(id);
         if (index < 0)
             break;
-        const MavParam &param = table_[listed_[index]];
+        const MavParam &param = table_[index];
         const char *reason = nullptr;
         if (param.set == nullptr)
         {
@@ -182,9 +210,10 @@ void MavParamServer::handleGcsMessage(const mavlink_message_t *msg, uint32_t now
         }
         if (reason == nullptr)
         {
-            for (uint8_t i = 0; i < count_; i++)
+            for (uint8_t i = 0; i < tableLen_; i++)
             {
-                snapshot_[i] = table_[listed_[i]].get();
+                if (available_ & (1UL << i))
+                    snapshot_[i] = table_[i].get();
             }
             reason = param.set(set.param_value);
         }
@@ -310,10 +339,10 @@ bool MavParamServer::sendHeartbeat()
 bool MavParamServer::sendParamValue(uint8_t index)
 {
     mavlink_param_value_t value = {};
-    value.param_value = table_[listed_[index]].get();
+    value.param_value = table_[index].get();
     value.param_count = count_;
-    value.param_index = index;
-    strncpy(value.param_id, table_[listed_[index]].id, MAV_PARAM_ID_LEN);
+    value.param_index = listIndex(index);
+    strncpy(value.param_id, table_[index].id, MAV_PARAM_ID_LEN);
     // Whole numbers carried as float: exact for every value used, and read the same by every GCS
     value.param_type = MAV_PARAM_TYPE_REAL32;
     mavlink_message_t msg;
@@ -370,15 +399,26 @@ void MavParamServer::tick(uint32_t now)
     if (send_ == nullptr)
         return;
 
+    if (!setReplyPending_ && paramMask_ == 0)
+    {
+        relist();
+    }
+
     if (setReplyPending_ && timeReached(now, setReplyAt_))
     {
         setReplyPending_ = false;
-        paramMask_ |= 1UL << setIndex_;
-        for (uint8_t i = 0; i < count_; i++)
+        uint32_t changed = 1UL << setIndex_;
+        for (uint8_t i = 0; i < tableLen_; i++)
         {
-            if (table_[listed_[i]].get() != snapshot_[i])
-                paramMask_ |= 1UL << i;
+            if ((available_ & (1UL << i)) && table_[i].get() != snapshot_[i])
+                changed |= 1UL << i;
         }
+        // The reply carries the new count, which tells the GCS its list is out of date
+        if (paramMask_ == 0)
+        {
+            relist();
+        }
+        paramMask_ |= changed;
     }
 
     const uint32_t heartbeatInterval = config_.heartbeatIntervalMs ? config_.heartbeatIntervalMs : DEFAULT_HEARTBEAT_INTERVAL_MS;
@@ -416,10 +456,16 @@ void MavParamServer::tick(uint32_t now)
         heartbeatDue_ = false;
         budget--;
     }
-    for (uint8_t i = 0; i < count_ && budget && paramMask_ != 0; i++)
+    for (uint8_t i = 0; i < tableLen_ && budget && paramMask_ != 0; i++)
     {
         if ((paramMask_ & (1UL << i)) == 0)
             continue;
+        // Hidden by the set it was changed by
+        if (listIndex(i) < 0)
+        {
+            paramMask_ &= ~(1UL << i);
+            continue;
+        }
         if (!sendParamValue(i))
             break;
         paramMask_ &= ~(1UL << i);

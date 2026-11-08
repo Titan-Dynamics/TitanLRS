@@ -14,6 +14,8 @@
 
 #include "MavParamServer.h"
 #include "mavlink_common.h"
+#include "MavFrameFilter.h"
+#include "MavRcOverride.h"
 // storm32 dialect messages; their headers stand alone next to common
 #include "storm32/mavlink_msg_mlrs_radio_link_information.h"
 #include "storm32/mavlink_msg_mlrs_radio_link_stats.h"
@@ -30,6 +32,8 @@
 #define HEARTBEAT_WAIT 5000
 // A frame from the vehicle that has not completed by now was cut short by the link dropping
 #define DOWNLINK_FRAME_TIMEOUT 500
+// Likewise for a frame from a GCS, held until it completes
+#define GCS_FRAME_TIMEOUT 500
 // Also sent as soon as it changes
 #define LINK_INFORMATION_INTERVAL 5000
 
@@ -50,8 +54,10 @@ extern bool BackpackTelemReadyToSend;
 static MavParamServer server;
 static bool started;
 
-static mavlink_message_t gcsRxMsg[GCS_LINK_COUNT];
-static mavlink_status_t gcsRxStatus[GCS_LINK_COUNT];
+static_assert(TX_MAVLINK_HELD_FRAME_LEN == MAVLINK_MAX_PACKET_LEN, "the room the uplink leaves for a held frame");
+
+static MavFrameFilter gcsFilter[GCS_LINK_COUNT];
+static MavRcOverride rcOverride;
 static mavlink_message_t vehicleRxMsg;
 static mavlink_status_t vehicleRxStatus;
 static uint32_t lastVehicleByte;
@@ -196,6 +202,35 @@ static const char *setBackpackTelemetry(float value)
 }
 #endif
 
+static float getGcsOverride() { return config.GetGcsOverrideEnabled(); }
+static const char *setGcsOverride(float value)
+{
+    if (!isWhole(value, 1))
+        return "not 0 or 1";
+    config.SetGcsOverrideEnabled(value != 0);
+    return nullptr;
+}
+
+static bool isGcsOverrideEnabled() { return config.GetGcsOverrideEnabled(); }
+
+static float getGcsOverrideChannel() { return config.GetGcsOverrideChannel(); }
+static const char *setGcsOverrideChannel(float value)
+{
+    if (!isWhole(value, GCS_OVERRIDE_CHANNEL_MAX) || value < GCS_OVERRIDE_CHANNEL_MIN)
+        return "not CH5-CH16";
+    config.SetGcsOverrideChannel((uint8_t)value);
+    return nullptr;
+}
+
+static float getGcsOverrideMask() { return config.GetGcsOverrideMask(); }
+static const char *setGcsOverrideMask(float value)
+{
+    if (!isWhole(value, UINT16_MAX))
+        return "not a 16 channel mask";
+    config.SetGcsOverrideMask((uint16_t)value);
+    return nullptr;
+}
+
 static float getVehicleSysid() { return server.vehicleSysid(); }
 
 static const MavParam params[] = {
@@ -268,6 +303,24 @@ static const MavParam params[] = {
     // @User: Advanced
     {"TX_BP_TLM", hasBackpack, getBackpackTelemetry, setBackpackTelemetry, nullptr},
 #endif
+    // @Param: TX_GCSOVR_ENABLE
+    // @DisplayName: GCS override
+    // @Description: Lets the GCS joystick (RC_CHANNELS_OVERRIDE) take over the channels in TX_GCSOVR_MASK while the handset holds TX_GCSOVR_CH high. Taken-over channels hold the handset's position until the GCS sets them. The TX never passes a GCS's RC_CHANNELS_OVERRIDE on to the vehicle, whether this is on or not. MAVLink link mode only.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    {"TX_GCSOVR_ENABLE", nullptr, getGcsOverride, setGcsOverride, nullptr},
+    // @Param: TX_GCSOVR_CH
+    // @DisplayName: GCS override enable channel
+    // @Description: Handset channel that hands the TX_GCSOVR_MASK channels to the GCS while high. Setting it clears that channel from TX_GCSOVR_MASK. Listed while TX_GCSOVR_ENABLE is 1.
+    // @Values: 5:CH5,6:CH6,7:CH7,8:CH8,9:CH9,10:CH10,11:CH11,12:CH12,13:CH13,14:CH14,15:CH15,16:CH16
+    // @User: Standard
+    {"TX_GCSOVR_CH", nullptr, getGcsOverrideChannel, setGcsOverrideChannel, nullptr, isGcsOverrideEnabled},
+    // @Param: TX_GCSOVR_MASK
+    // @DisplayName: GCS override channels
+    // @Description: Channels taken from the GCS while the override is enabled. The enable channel (TX_GCSOVR_CH) is never taken. CH9-CH16 need MAVLink2 from the GCS. They go over the air at the resolution the switch mode gives them. Listed while TX_GCSOVR_ENABLE is 1.
+    // @Bitmask: 0:CH1,1:CH2,2:CH3,3:CH4,4:CH5,5:CH6,6:CH7,7:CH8,8:CH9,9:CH10,10:CH11,11:CH12,12:CH13,13:CH14,14:CH15,15:CH16
+    // @User: Standard
+    {"TX_GCSOVR_MASK", nullptr, getGcsOverrideMask, setGcsOverrideMask, nullptr, isGcsOverrideEnabled},
     // @Param: TX_VEH_SYSID
     // @DisplayName: Vehicle system ID
     // @Description: System ID of the vehicle the TX has joined, taken from the flight controller's heartbeat. 0 until one has been seen.
@@ -452,19 +505,28 @@ static void start(uint32_t now)
     server.begin(params, sizeof(params) / sizeof(params[0]), cfg, queueFrame, now);
 }
 
+static bool handleGcsFrame(const mavlink_message_t *msg, uint32_t now)
+{
+    server.handleGcsMessage(msg, now);
+    // Dropped even with the handover off: the RX sends the FC its own overrides, usually from
+    // the same sysid as the GCS, so the two streams would fight
+    return rcOverride.handleMessage(msg, server.vehicleSysid());
+}
+
 void TxMavlink_ProcessFromGcs(txMavlinkGcsLink_e link, const uint8_t *data, uint16_t size)
 {
     const uint32_t now = millis();
     start(now);
-    for (uint16_t i = 0; i < size; i++)
-    {
-        mavlink_message_t msg;
-        mavlink_status_t status;
-        if (mavlink_frame_char_buffer(&gcsRxMsg[link], &gcsRxStatus[link], data[i], &msg, &status) == MAVLINK_FRAMING_OK)
-        {
-            server.handleGcsMessage(&msg, now);
-        }
-    }
+    gcsFilter[link].feed(data, size, now, handleGcsFrame, TxMavlink_QueueUplink);
+}
+
+void TxMavlink_OverrideChannels(uint32_t channels[], size_t channelCount)
+{
+    // The enable channel is an ordinary channel unless the handover is on
+    if (config.GetLinkMode() == TX_MAVLINK_MODE && config.GetGcsOverrideEnabled())
+        rcOverride.apply(channels, channelCount, config.GetGcsOverrideChannel() - 1, config.GetGcsOverrideMask());
+    else
+        rcOverride.reset();
 }
 
 void TxMavlink_ForwardToGcs(const uint8_t *data, uint16_t size)
@@ -502,6 +564,10 @@ void TxMavlink_Update(uint32_t now)
     {
         // The rest of the frame is never coming, the GCS will discard what it has as a bad frame
         vehicleRxStatus.parse_state = MAVLINK_PARSE_STATE_IDLE;
+    }
+    for (auto &filter : gcsFilter)
+    {
+        filter.update(now, GCS_FRAME_TIMEOUT, TxMavlink_QueueUplink);
     }
 
     server.tick(now);

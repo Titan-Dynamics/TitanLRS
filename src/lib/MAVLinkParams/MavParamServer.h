@@ -17,6 +17,8 @@ struct __mavlink_message;
 #define TLRS_MAV_HEARTBEAT_MARKER 0x544C5253UL
 
 #define MAV_PARAM_SERVER_MAX_PARAMS 24
+// Table entries beyond this are ignored
+#define MAV_PARAM_SERVER_MAX_TABLE 32
 #define MAV_PARAM_ID_LEN 16
 #define MAV_PARAM_STATUSTEXT_LEN 50
 
@@ -31,6 +33,11 @@ struct MavParam
     const char *(*set)(float value);
     // Returns why the parameter can't be written right now, or nullptr. nullptr: never locked.
     const char *(*locked)();
+    // Whether it is listed now, for parameters that only apply while an _ENABLE parameter is set, as
+    // with ArduPilot's. Rechecked when a set is answered, so that reply carries the new count and the
+    // GCS knows to refresh its list, and between exchanges, but never during a list download. A
+    // hidden parameter can't be read or set. nullptr: always shown.
+    bool (*shown)();
 };
 
 class MavParamServer
@@ -54,7 +61,7 @@ public:
         uint32_t swVersion;
     };
 
-    // Returns the number of parameters this hardware has
+    // Returns the number of parameters listed now
     uint8_t begin(const MavParam *table, uint8_t tableLen, const Config &config, SendFn send, uint32_t now);
 
     void handleGcsMessage(const __mavlink_message *msg, uint32_t now);
@@ -85,8 +92,12 @@ public:
     static uint32_t versionFromString(const char *version);
 
 private:
+    void relist();
     bool forUs(uint8_t targetSystem, uint8_t targetComponent, bool allowBroadcast) const;
+    // Table index of a listed parameter, or -1
     int findParam(const char *id) const;
+    // Index in the list, or -1 while hidden
+    int listIndex(uint8_t tableIndex) const;
     void rejectSet(uint8_t index, const char *reason);
     void handleCommandLong(const __mavlink_message *msg);
     void handleFtp(const __mavlink_message *msg);
@@ -99,6 +110,10 @@ private:
     bool sendFtpReply();
 
     const MavParam *table_ = nullptr;
+    uint8_t tableLen_ = 0;
+    // Table entries this hardware has
+    uint32_t available_ = 0;
+    // Everything below is by table index
     Config config_ = {};
     SendFn send_ = nullptr;
     uint8_t listed_[MAV_PARAM_SERVER_MAX_PARAMS] = {};
@@ -116,7 +131,7 @@ private:
     bool setReplyPending_ = false;
     uint8_t setIndex_ = 0;
     uint32_t setReplyAt_ = 0;
-    float snapshot_[MAV_PARAM_SERVER_MAX_PARAMS] = {};
+    float snapshot_[MAV_PARAM_SERVER_MAX_TABLE] = {};
 
     bool statusTextPending_ = false;
     char statusText_[MAV_PARAM_STATUSTEXT_LEN] = {};

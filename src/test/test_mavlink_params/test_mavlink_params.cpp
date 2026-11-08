@@ -33,6 +33,8 @@ static bool captureFrame(const uint8_t *frame, uint16_t len)
 static float valueA, valueB, valueRo;
 static bool lockedA;
 static bool availableC;
+static bool shownD;
+static float valueD;
 
 static float getA() { return valueA; }
 static float getB() { return valueB; }
@@ -52,6 +54,13 @@ static const char *setB(float v)
 }
 static const char *lockA() { return lockedA ? "locked in test" : nullptr; }
 static bool hasC() { return availableC; }
+static float getD() { return valueD; }
+static const char *setD(float v)
+{
+    valueD = v;
+    return nullptr;
+}
+static bool showD() { return shownD; }
 static uint8_t fallback() { return 1; }
 
 static const MavParam table[] = {
@@ -59,6 +68,7 @@ static const MavParam table[] = {
     {"TST_C", hasC, getB, setB, nullptr},
     {"TST_B", nullptr, getB, setB, nullptr},
     {"TST_RO", nullptr, getRo, nullptr, nullptr},
+    {"TST_D", nullptr, getD, setD, nullptr, showD},
 };
 
 static MavParamServer server;
@@ -142,6 +152,8 @@ void setUp()
     valueRo = 7;
     lockedA = false;
     availableC = false;
+    shownD = false;
+    valueD = 3;
 }
 
 void tearDown() {}
@@ -157,6 +169,68 @@ void test_unavailable_params_are_not_listed()
     availableC = true;
     start();
     TEST_ASSERT_EQUAL(4, server.paramCount());
+}
+
+void test_shown_params_follow_their_enable()
+{
+    start();
+    TEST_ASSERT_EQUAL(3, server.paramCount());
+
+    // Hidden: can't be set or read, and isn't in a list download
+    paramSet(1, COMPID, "TST_D", 9);
+    mavlink_message_t msg;
+    mavlink_msg_param_request_read_pack(GCS_SYS, GCS_COMP, &msg, 1, COMPID, "TST_D", -1);
+    gcs(msg);
+    requestList(1, COMPID);
+    server.tick(0);
+    TEST_ASSERT_EQUAL_FLOAT(3, valueD);
+    auto values = paramValues();
+    TEST_ASSERT_EQUAL(3, values.size());
+    for (auto &v : values)
+        TEST_ASSERT_FALSE(strncmp("TST_D", v.param_id, MAV_PARAM_ID_LEN) == 0);
+
+    shownD = true;
+    server.tick(1);
+    TEST_ASSERT_EQUAL(4, server.paramCount());
+    TEST_ASSERT_EQUAL_STRING("TST_D", server.param(3)->id);
+    paramSet(1, COMPID, "TST_D", 9);
+    TEST_ASSERT_EQUAL_FLOAT(9, valueD);
+}
+
+void test_listing_holds_during_a_list_download()
+{
+    start(0, 0, 1);
+    requestList(1, COMPID);
+    server.tick(0);
+    shownD = true;
+    // A set answered mid-download keeps the old count too
+    paramSet(1, COMPID, "TST_B", 4);
+    for (uint32_t t = 1; t < 6; t++)
+        server.tick(t);
+    auto values = paramValues();
+    TEST_ASSERT_EQUAL(3, values.size()); // B's reply is its place in the list, with the new value
+    for (auto &v : values)
+        TEST_ASSERT_EQUAL(3, v.param_count);
+    TEST_ASSERT_EQUAL_FLOAT(4, values[1].param_value);
+
+    server.tick(6);
+    TEST_ASSERT_EQUAL(4, server.paramCount());
+}
+
+void test_set_reply_carries_the_new_count()
+{
+    start(0, 100);
+    paramSet(1, COMPID, "TST_A", 20, 1000);
+    shownD = true;
+    server.tick(1050);
+    TEST_ASSERT_EQUAL(3, server.paramCount());
+    server.tick(1100);
+    auto values = paramValues();
+    TEST_ASSERT_EQUAL(2, values.size());
+    for (auto &v : values)
+        TEST_ASSERT_EQUAL(4, v.param_count);
+    TEST_ASSERT_EQUAL(0, values[0].param_index);
+    TEST_ASSERT_EQUAL(1, values[1].param_index);
 }
 
 void test_heartbeat_waits_for_vehicle_then_uses_fallback()
@@ -597,6 +671,9 @@ int main(int argc, char **argv)
 {
     UNITY_BEGIN();
     RUN_TEST(test_unavailable_params_are_not_listed);
+    RUN_TEST(test_shown_params_follow_their_enable);
+    RUN_TEST(test_listing_holds_during_a_list_download);
+    RUN_TEST(test_set_reply_carries_the_new_count);
     RUN_TEST(test_heartbeat_waits_for_vehicle_then_uses_fallback);
     RUN_TEST(test_heartbeat_starts_with_vehicle_and_identifies_us);
     RUN_TEST(test_sysid_latched_to_first_autopilot);

@@ -347,3 +347,15 @@ progress.td-progress::-moz-progress-bar { background: var(--td-brand); border-ra
   margin-bottom: var(--td-s-4);
   font-size: var(--td-fs-sm);
 }
+
+/* ── Channel checkbox grid ─────────────────────────────── */
+/* 4 columns where they fit, else 2, so 16 channels always fill whole rows */
+.td-channel-grid-wrap { container-type: inline-size; min-width: 0; }
+.td-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 60px);
+  gap: var(--td-s-2) var(--td-s-3);
+}
+@container (max-width: 275.98px) {
+  .td-channel-grid { grid-template-columns: repeat(2, 60px); }
+}
