@@ -173,6 +173,7 @@ static int event()
         }
         return DURATION_NEVER;
     case wifiUpdate:
+    case rfDiag:
         if (hasRGBLeds)
         {
             digitalWrite(GPIO_PIN_LED_GREEN, LOW);

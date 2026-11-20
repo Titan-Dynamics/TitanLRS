@@ -2026,7 +2026,7 @@ void EnterBindingModeSafely()
     webserverPreventAutoStart = true;
 
     // If the radio and everything is shut down, better to reboot and boot to binding mode
-    if (connectionState == wifiUpdate || connectionState == bleJoystick)
+    if (connectionState == wifiUpdate || connectionState == bleJoystick || connectionState == rfDiag)
     {
         // Force 3-plug binding mode
         config.SetPowerOnCounter(3);

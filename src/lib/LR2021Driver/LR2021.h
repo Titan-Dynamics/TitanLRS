@@ -45,6 +45,12 @@ public:
 
     void StartRssiInst(SX12XX_Radio_Number_t radioNumber);
     int8_t GetRssiInst(SX12XX_Radio_Number_t radioNumber);
+    // GetRssiInst() wraps below -127 dBm, which a narrow receive bandwidth can reach.
+    int16_t GetRssiInstDbm(SX12XX_Radio_Number_t radioNumber);
+
+    // For driving the radio from the main loop with the link stopped (src/rf_diag.cpp): a DIO
+    // interrupt must not then start an SPI transaction of its own.
+    void DisableIsr();
     void GetLastPacketStats();
     void CheckForSecondPacket();
 

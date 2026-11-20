@@ -21,6 +21,22 @@
  *   POST /dfu                      reboot into the ROM DFU bootloader (DFU)
  *   POST /crsf                     body: one or more raw CRSF frames, into the CRSF router
  *   GET  /crsf?wait=<ms>           long-poll: raw CRSF frames for the browser, or 204 on timeout
+ *   GET  /rfdiag                   RF diagnostics: bands, channels, power levels, current state
+ *   POST /rfdiag                   start / change a tool (stops the link; refused while armed)
+ *   GET  /rfdiag/samples?from=<n>  RSSI samples from sequence number n on
+ *   POST /rfdiag/end               leave the tools: reboot, which restores the link
+ *
+ * RF diagnostics (src/rf_diag.cpp, RF_DIAG). POST /rfdiag bodies, every field but `mode` optional
+ * (missing ones keep their current value):
+ *   {"mode": "rssi" | "cw", "band": "low" | "high", "channel": n, "hop": bool (rssi),
+ *    "radio": 1 | 2 | 3 (bitmask; cw takes one), "bandwidth": Hz (rssi),
+ *    "power": PowerLevels_e (cw), "raw-power": dBm in 0.5 steps | null (cw, overrides power)}
+ * and answer the GET /rfdiag document. Samples are whole dBm; one is taken every
+ * `sample-period-us` per selected radio, tagged with the FHSS channel index when hopping:
+ *   {"mode", "from", "next", "since", "lost", "more", "period", "hop", "ch": [...],
+ *    "r1": [...], "r2": [...]}
+ * `since` is the first sequence number taken with the current settings; `more` asks for an
+ * immediate follow-up poll; `lost` counts samples that were overwritten before being read.
  *
  * Errors are an HTTP status with a JSON body {"error": "..."}: 400 bad request / JSON, 404 not
  * available on this build or without a hardware layout, 409 module armed, 413 too large,
@@ -38,7 +54,7 @@
 
 // ---- /hello feature bitmask ------------------------------------------------------------
 #define TLRS_FEATURE_OPTIONS_WRITE  (1u << 0) // POST /options.json supported and persisted
-#define TLRS_FEATURE_CW             (1u << 1) // continuous-wave control (reserved)
+#define TLRS_FEATURE_RF_DIAG        (1u << 1) // /rfdiag RSSI scan and continuous wave
 #define TLRS_FEATURE_LR1121_UPDATE  (1u << 2) // LR1121 firmware upload (reserved)
 #define TLRS_FEATURE_CRSF_PARAMS    (1u << 3) // /crsf tunnel to the CRSF parameter tree
 #define TLRS_FEATURE_DFU            (1u << 4) // POST /dfu reboots into the MCU's ROM DFU bootloader
