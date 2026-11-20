@@ -765,6 +765,7 @@ void ICACHE_RAM_ATTR timerCallback()
 
 static void UARTdisconnected()
 {
+  if (connectionState == rfDiag) return;
   hwTimer::stop();
   setConnectionState(noCrossfire);
   // Since not going from connected -> disconnected, set LQ=0 to make sure the handset knows we stopped TXing when it comes back
@@ -778,6 +779,8 @@ static void UARTconnected()
     handsetSource = HANDSET_SOURCE_UART;
     if (usbProbe) { delete usbProbe; usbProbe = nullptr; }
   }
+  // The RF diagnostics override normal operation.
+  if (connectionState == rfDiag) return;
   webserverPreventAutoStart = true;
   rfModeLastChangedMS = millis(); // force syncspam on first packets
 
@@ -1035,7 +1038,7 @@ void SendUIDOverMSP()
 
 static void EnterBindingMode()
 {
-  if (InBindingMode)
+  if (InBindingMode || connectionState == rfDiag)
       return;
 
   // Disable the TX timer and wait for any TX to complete

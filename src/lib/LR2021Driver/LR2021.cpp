@@ -816,6 +816,19 @@ int8_t ICACHE_RAM_ATTR LR2021Driver::GetRssiInst(const SX12XX_Radio_Number_t rad
     return -static_cast<int8_t>(status[2]); // status[3] contains the bottom bit of if 0.5dB so we ignore it
 }
 
+int16_t LR2021Driver::GetRssiInstDbm(const SX12XX_Radio_Number_t radioNumber)
+{
+    uint8_t status[4] = {0};
+    hal.ReadCommand(status, sizeof(status), radioNumber);
+    return -static_cast<int16_t>(status[2]);
+}
+
+void LR2021Driver::DisableIsr()
+{
+    hal.IsrCallback_1 = nullptr;
+    hal.IsrCallback_2 = nullptr;
+}
+
 void ICACHE_RAM_ATTR LR2021Driver::CheckForSecondPacket()
 {
     hasSecondRadioGotData = false;

@@ -468,6 +468,7 @@ static int timeout()
         return NORMAL_UPDATE_INTERVAL;
 #endif
     case wifiUpdate:
+    case rfDiag:
         hueFadeLED(blinkyColor, 85, 85-30, 128, 2);      // Yellow->Green cross-fade
         return 5;
     case serialUpdate:

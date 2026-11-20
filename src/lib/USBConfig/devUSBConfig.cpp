@@ -16,6 +16,7 @@
 #include "usbnet.h"
 #include "http_server.h"
 #include "stm32_dfu.h"
+#include "rf_diag.h"
 
 #include "elrs_eeprom.h"
 #include "hardware_layout.h"
@@ -158,6 +159,14 @@ static void handleHello(HttpResponse &res)
     if (configLoaded())
     {
         features |= TLRS_FEATURE_CRSF_PARAMS;
+    }
+    if (configLoaded() && connectionState != radioFailed && RfDiag_Supported())
+    {
+        features |= TLRS_FEATURE_RF_DIAG;
+    }
+    if (RfDiag_Active())
+    {
+        doc["rf-diag"] = true;
     }
     doc["features"] = features;
 
@@ -367,6 +376,78 @@ static void handleDfu(HttpResponse &res)
 }
 
 // ---------------------------------------------------------------------------------------
+// /rfdiag
+// ---------------------------------------------------------------------------------------
+static bool rfDiagAvailable(HttpResponse &res)
+{
+    if (!configLoaded() || connectionState == radioFailed || !RfDiag_Supported())
+    {
+        sendError(res, 404, "RF diagnostics not available");
+        return false;
+    }
+    return true;
+}
+
+static void handleGetRfDiag(HttpResponse &res)
+{
+    if (!rfDiagAvailable(res))
+    {
+        return;
+    }
+    JsonDocument doc;
+    RfDiag_Describe(doc.to<JsonObject>());
+    sendJson(res, doc);
+}
+
+static void handleSetRfDiag(const HttpRequest &req, HttpResponse &res)
+{
+    if (!rfDiagAvailable(res))
+    {
+        return;
+    }
+    JsonDocument body;
+    if (!parseBody(req, res, body))
+    {
+        return;
+    }
+    int status;
+    const char *err = RfDiag_Apply(body.as<JsonVariantConst>(), status);
+    if (err)
+    {
+        sendError(res, status, err);
+        return;
+    }
+    handleGetRfDiag(res);
+}
+
+static void handleGetRfDiagSamples(const HttpRequest &req, HttpResponse &res)
+{
+    if (!rfDiagAvailable(res))
+    {
+        return;
+    }
+    char value[12];
+    uint32_t from = 0;
+    if (Http_QueryParam(req.query, "from", value, sizeof(value)))
+    {
+        from = strtoul(value, nullptr, 10);
+    }
+    const char *json;
+    const size_t len = RfDiag_Samples(from, &json);
+    res.send(200, "application/json", json, len);
+}
+
+static void handleEndRfDiag(HttpResponse &res)
+{
+    if (!rfDiagAvailable(res))
+    {
+        return;
+    }
+    sendStatus(res, "Rebooting to restore the link");
+    RfDiag_End();
+}
+
+// ---------------------------------------------------------------------------------------
 // CRSF tunnel
 // ---------------------------------------------------------------------------------------
 static void attachCrsfTunnel()
@@ -528,6 +609,14 @@ static void handleRequest(const HttpRequest &req, HttpResponse &res)
         handlePostCrsf(req, res);
     else if (strcmp(path, "/crsf") == 0 && get)
         handleGetCrsf(req, res);
+    else if (strcmp(path, "/rfdiag") == 0 && get)
+        handleGetRfDiag(res);
+    else if (strcmp(path, "/rfdiag") == 0 && post)
+        handleSetRfDiag(req, res);
+    else if (strcmp(path, "/rfdiag/samples") == 0 && get)
+        handleGetRfDiagSamples(req, res);
+    else if (strcmp(path, "/rfdiag/end") == 0 && post)
+        handleEndRfDiag(res);
     else
         sendError(res, 404, "not found");
 }
@@ -551,6 +640,7 @@ void USBConfig_Poll()
 {
     USBNet_Poll();
     serviceCrsfTunnel();
+    RfDiag_Service();
 }
 
 device_t USBConfig_device = {
