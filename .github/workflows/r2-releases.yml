@@ -1,0 +1,49 @@
+name: Publish releases to R2
+
+# Uploads existing GitHub releases to the titanlrs R2 bucket for the web flasher. New releases are
+# published by build.yml on their tag push; run this to backfill the ones from before that, or to
+# republish one.
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Release tags, space-separated (empty = every release)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Newer AWS CLI releases send checksum headers R2 rejects.
+      - name: Install downgraded AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: "2.22.35"
+
+      - name: Publish releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSIONS: ${{ inputs.versions }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          AWS_REGION: "auto"
+        run: |
+          tags=${VERSIONS:-$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')}
+          for tag in $tags; do
+            echo "::group::$tag"
+            rm -rf release && mkdir release
+            gh release download "$tag" --pattern 'firmware-*.zip' --dir release
+            unzip -q release/firmware-*.zip -d release
+            # The zip holds firmware-<version>/ (older ones: firmware/).
+            dir=$(find release -mindepth 1 -maxdepth 1 -type d | head -1)
+            .github/scripts/r2-publish.sh release "$tag" "$dir"
+            echo "::endgroup::"
+          done

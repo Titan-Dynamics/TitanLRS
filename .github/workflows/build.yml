@@ -251,62 +251,43 @@ jobs:
           name: firmware
           path: dist/**/*
 
-      - name: Create firmware zip bundle
-        run: |
-          cd dist
-          zip -r -9 ../firmware.zip ./firmware
+  # The web flasher reads firmware from the titanlrs R2 bucket at runtime, so new builds need no
+  # flasher redeploy. This job only runs once every build and test of a master push has passed, so
+  # it publishes the latest green master build ("Master (<commit>)" in the flasher). See
+  # .github/scripts/r2-publish.sh for the bucket layout.
+  publish-master:
+    needs: firmware
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # One publish at a time. A queued older publish is superseded by a newer one.
+    concurrency:
+      group: publish-master-r2
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
+      - name: Download firmware artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware
+          path: dist
+
+      # Newer AWS CLI releases send checksum headers R2 rejects.
       - name: Install downgraded AWS CLI
         uses: unfor19/install-aws-cli-action@v1
         with:
           version: "2.22.35"
 
-      - name: Upload firmware bundle to ExpressLRS artifactory
+      - name: Publish master build to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
           AWS_REGION: "auto"
-        run: |
-          # Skip AWS upload for tagged releases (we use GitHub Releases instead)
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo "This is a tagged release - skipping AWS upload (using GitHub Releases instead)"
-            exit 0
-          fi
-
-          aws --version
-          if [[ -z $AWS_ACCESS_KEY_ID || -z $AWS_SECRET_ACCESS_KEY || -z $AWS_ENDPOINT_URL ]]; then
-            echo "::warning title=Artifactory Skip::Credentials not defined. Skipping upload (expected for PRs from forks)."
-            exit 0
-          fi
-          
-          IS_TAG=$([[ "$GITHUB_REF_TYPE" == "tag" ]] && echo true || echo false)
-          ARTIFACT_EXISTS=$(aws s3api head-object --endpoint-url $AWS_ENDPOINT_URL --bucket expresslrs --key ExpressLRS/$GITHUB_SHA/firmware.zip > /dev/null 2>&1 && echo true || echo false)
-          
-          if [ "$IS_TAG" = "true" ] || [ "$ARTIFACT_EXISTS" = "false" ]; then
-            echo "Uploading firmware to artifactory..."
-            aws s3 cp --endpoint-url $AWS_ENDPOINT_URL firmware.zip s3://expresslrs/ExpressLRS/$GITHUB_SHA/firmware.zip
-          
-            echo "::group::Generating and Uploading Artifact Index"
-            aws s3 ls --endpoint-url $AWS_ENDPOINT_URL s3://expresslrs/ExpressLRS/ | awk '{print $2}' | sed s/\\/// > /tmp/hashes
-            echo '{' > index.json
-            echo '"branches": {' >> index.json
-            git branch --list --remotes --format '"%(refname:short)": "%(objectname)",' | grep origin/ | sed s/origin.// | grep -f /tmp/hashes | head -c-2 >> index.json
-            echo '' >> index.json
-            echo '},' >> index.json
-            echo '"tags": {' >> index.json
-            git tag --list --format '"%(refname:short)": "%(objectname)",' | grep -f /tmp/hashes | head -c-2 >> index.json
-            echo '' >> index.json
-            echo '}' >> index.json
-            echo '}' >> index.json
-          
-            aws s3 cp --endpoint-url $AWS_ENDPOINT_URL index.json s3://expresslrs/ExpressLRS/index.json
-            echo "::endgroup::"
-          
-            echo "::notice title=Artifactory Upload Success::Firmware for $GITHUB_SHA has been uploaded."
-          else
-            echo "::notice title=Artifactory Skip::Artifact already exists and this is not a tag push. Skipping overwrite."
-          fi
+        run: .github/scripts/r2-publish.sh master dist/firmware
 
   release:
     needs: firmware
@@ -351,3 +332,33 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish the release to R2 for the web flasher, once the GitHub release exists. Existing releases
+  # are uploaded with the "Publish releases to R2" workflow (r2-releases.yml).
+  publish-release:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Download firmware artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware
+          path: dist
+
+      # Newer AWS CLI releases send checksum headers R2 rejects.
+      - name: Install downgraded AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: "2.22.35"
+
+      - name: Publish release to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          AWS_REGION: "auto"
+        run: .github/scripts/r2-publish.sh release "$GITHUB_REF_NAME" dist/firmware
